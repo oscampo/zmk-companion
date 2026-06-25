@@ -43,7 +43,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "startup";    Description: "Start {#AppName} automatically with Windows"; \
-                    GroupDescription: "On login:"; Flags: checked
+                    GroupDescription: "On login:"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; \
                     GroupDescription: "Extras:"; Flags: unchecked
 
