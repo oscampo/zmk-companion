@@ -4,7 +4,7 @@ using ZmkCompanion.Core;
 
 namespace ZmkCompanion.Features;
 
-sealed class NflGame
+public sealed class NflGame
 {
     public string Away        { get; init; } = "";
     public string Home        { get; init; } = "";
