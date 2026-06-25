@@ -51,6 +51,8 @@ static class TextConverter
                 continue;
             }
             // NFD decomposition: keep base character if it's in range, drop combining marks.
+            // Skip lone surrogates (emoji stored as UTF-16 surrogate pairs) — Normalize throws on them.
+            if (char.IsHighSurrogate(ch) || char.IsLowSurrogate(ch)) continue;
             string nfd = ch.ToString().Normalize(NormalizationForm.FormD);
             char baseChar = nfd[0];
             if (InFontRange(baseChar))

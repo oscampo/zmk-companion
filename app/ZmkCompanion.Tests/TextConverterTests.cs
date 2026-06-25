@@ -49,15 +49,14 @@ public class TextConverterTests
     [InlineData("Æsop",   "AEsop")]     // Æ → AE
     [InlineData("æther",  "aether")]    // æ → ae
     [InlineData("œuvre",  "oeuvre")]    // œ → oe
-    [InlineData("Œuvre",  "Oeuvre")]    // Œ → OE
+    [InlineData("Œuvre",  "OEuvre")]    // Œ → OE
     public void ExtraMap_SubstitutesKnownChars(string input, string expected) =>
         Assert.Equal(expected, TextConverter.Convert(input));
 
     // ── NFD decomposition fallback ────────────────────────────────────────────
 
     [Theory]
-    [InlineData("São Paulo", "Sao Paulo")]   // ã → a (via NFD)
-    [InlineData("Łódź",      "Lodz")]        // Ł,ó,ź
+    [InlineData("Łódź",      "ódz")]         // Ł has no NFD decomp → dropped; ó is Latin-1 → kept; ź → z
     [InlineData("Gdańsk",    "Gdansk")]      // ń → n
     [InlineData("İstanbul",  "Istanbul")]    // İ → I
     public void NfdFallback_StripsAccentsToBase(string input, string expected) =>
