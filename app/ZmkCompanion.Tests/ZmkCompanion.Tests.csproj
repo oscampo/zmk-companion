@@ -18,6 +18,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\ZmkCompanion\ZmkCompanion.csproj" />
   </ItemGroup>
 
