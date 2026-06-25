@@ -24,7 +24,6 @@ DisableProgramGroupPage=yes
 
 OutputDir=output
 OutputBaseFilename=ZmkCompanion-Setup-{#AppVersion}
-SetupIconFile=..\app\ZmkCompanion\Resources\tray_green.ico
 UninstallDisplayIcon={app}\{#AppExe}
 
 Compression=lzma2/ultra64
