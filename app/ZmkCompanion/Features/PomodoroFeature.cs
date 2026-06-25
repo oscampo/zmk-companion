@@ -6,9 +6,9 @@ enum PomodoroPhase { Work, Break, LongBreak, Done }
 
 sealed class PomodoroConfig
 {
-    public int WorkMin  { get; init; } = 25;
-    public int BreakMin { get; init; } = 5;
-    public int Cycles   { get; init; } = 4;
+    public int WorkMin      { get; init; } = 25;
+    public int BreakMin     { get; init; } = 5;
+    public int Cycles       { get; init; } = 4;
     public int LongBreakMin { get; init; } = 15;
 
     private static readonly Dictionary<string, PomodoroConfig> Presets = new()
@@ -18,7 +18,6 @@ sealed class PomodoroConfig
         ["long"]    = new() { WorkMin = 50, BreakMin = 10, Cycles = 3, LongBreakMin = 20 },
     };
 
-    // Parses preset name or "work,break,cycles[,long_break]"
     public static PomodoroConfig Parse(string value)
     {
         if (Presets.TryGetValue(value.Trim().ToLower(), out var preset))
@@ -30,9 +29,9 @@ sealed class PomodoroConfig
         int[] nums = parts.Select(p => int.Parse(p.Trim())).ToArray();
         return new PomodoroConfig
         {
-            WorkMin = nums[0],
-            BreakMin = nums[1],
-            Cycles = nums[2],
+            WorkMin      = nums[0],
+            BreakMin     = nums[1],
+            Cycles       = nums[2],
             LongBreakMin = nums.Length == 4 ? nums[3] : 0,
         };
     }
@@ -40,26 +39,26 @@ sealed class PomodoroConfig
 
 sealed class PomodoroFeature : IDisposable
 {
-    // FiraCode Nerd Font progress bar glyphs (U+EE00–EE05)
-    private const char PbFirstFull  = '';
-    private const char PbMidFull    = '';
-    private const char PbLastFull   = '';
-    private const char PbEmpty      = '';
-    private const char PbFirstEmpty = '';
-    private const char PbEndEmpty   = '';
+    // FiraCode Nerd Font progress bar (U+EE00-EE05)
+    private const char PbFirstFull  = ''; // left filled
+    private const char PbMidFull    = ''; // middle filled
+    private const char PbLastFull   = ''; // right filled
+    private const char PbEmpty      = ''; // middle empty
+    private const char PbFirstEmpty = ''; // left empty
+    private const char PbEndEmpty   = ''; // right empty
 
-    // Phase icons (Font Awesome)
-    private const char IconWork  = '';  // nf-fa-gavel
-    private const char IconBreak = '';  // nf-fa-coffee
-    private const char IconLong  = '';  // nf-fa-hourglass
+    // Phase icons — Font Awesome (U+F000-F2E0)
+    private const char IconWork  = ''; // nf-fa-gavel
+    private const char IconBreak = ''; // nf-fa-coffee
+    private const char IconLong  = ''; // nf-fa-hourglass
 
     private readonly BleService _ble;
     private System.Windows.Forms.Timer? _timer;
 
-    public PomodoroPhase Phase    { get; private set; } = PomodoroPhase.Done;
-    public int CurrentCycle       { get; private set; }
-    public int TotalCycles        { get; private set; }
-    public int SecondsRemaining   { get; private set; }
+    public PomodoroPhase Phase          { get; private set; } = PomodoroPhase.Done;
+    public int CurrentCycle             { get; private set; }
+    public int TotalCycles              { get; private set; }
+    public int SecondsRemaining         { get; private set; }
 
     public event Action? StateChanged;
     public event Action? SessionCompleted;
@@ -79,15 +78,15 @@ sealed class PomodoroFeature : IDisposable
         _timer?.Stop();
         _timer?.Dispose();
         _timer = null;
-        Phase = PomodoroPhase.Done;
+        Phase  = PomodoroPhase.Done;
     }
 
     private PomodoroConfig? _cfg;
 
     private void EnterPhase(PomodoroPhase phase, int seconds, PomodoroConfig cfg)
     {
-        _cfg = cfg;
-        Phase = phase;
+        _cfg             = cfg;
+        Phase            = phase;
         SecondsRemaining = seconds;
         SendDisplay();
         StateChanged?.Invoke();
@@ -105,7 +104,6 @@ sealed class PomodoroFeature : IDisposable
         StateChanged?.Invoke();
 
         if (SecondsRemaining > 0) return;
-
         _timer?.Stop();
         AdvancePhase();
     }
@@ -155,8 +153,7 @@ sealed class PomodoroFeature : IDisposable
             PomodoroPhase.LongBreak => IconLong,
             _                       => IconWork,
         };
-        int doneCycles = Phase == PomodoroPhase.Work ? CurrentCycle - 1 : CurrentCycle - 1;
-        string bar  = ProgressBar(doneCycles, TotalCycles);
+        string bar  = ProgressBar(CurrentCycle - 1, TotalCycles);
         string time = FmtTime(SecondsRemaining);
         _ = _ble.SendAsync($"{time}\n {bar}\x01{icon}");
     }

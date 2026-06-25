@@ -20,8 +20,8 @@ sealed class NflFeature
     private const string ScoreboardUrl =
         "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100";
 
-    private const char IconTrophy = '';   // nf-fa-trophy
-    private const char IconBolt   = '';   // nf-fa-bolt
+    private const char IconTrophy = '\uF091';   // nf-fa-trophy
+    private const char IconBolt   = '\uF0E7';   // nf-fa-bolt
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
 

@@ -66,15 +66,15 @@ public class ProtocolTests
     [Fact]
     public void BuildText_WithIcon()
     {
-        string msg = Protocol.BuildText("Score", null, null, '');
-        Assert.Equal("Score\x01", msg);
+        string msg = Protocol.BuildText("Score", null, null, '\uF091');
+        Assert.Equal("Score\x01\uF091", msg);
     }
 
     [Fact]
     public void BuildText_TwoLinesWithIcon()
     {
-        string msg = Protocol.BuildText("GB  SF", "29 13", null, '');
-        Assert.Equal("GB  SF\n29 13\x01", msg);
+        string msg = Protocol.BuildText("GB  SF", "29 13", null, '\uF091');
+        Assert.Equal("GB  SF\n29 13\x01\uF091", msg);
     }
 
     [Fact]
@@ -88,9 +88,9 @@ public class ProtocolTests
     // ── BuildWeather ───────────────────────────────────────────────────────────
 
     [Theory]
-    [InlineData("Austin",  "38°C",  "Sunny",    '', "W:Austin\n38°C\nSunny\x01")]
-    [InlineData("New York","72°F",  "Cloudy",   '', "W:New York\n72°F\nCloudy\x01")]
-    [InlineData("London",  "15°C",  "Rain",     '', "W:London\n15°C\nRain\x01")]
+    [InlineData("Austin",  "38°C",  "Sunny",    '\uE30D', "W:Austin\n38°C\nSunny\x01\uE30D")]
+    [InlineData("New York","72°F",  "Cloudy",   '\uE303', "W:New York\n72°F\nCloudy\x01\uE303")]
+    [InlineData("London",  "15°C",  "Rain",     '\uE309', "W:London\n15°C\nRain\x01\uE309")]
     public void BuildWeather_CorrectFormat(
         string city, string temp, string label, char icon, string expected) =>
         Assert.Equal(expected, Protocol.BuildWeather(city, temp, label, icon));
@@ -98,7 +98,7 @@ public class ProtocolTests
     [Fact]
     public void BuildWeather_FitsIn64Bytes()
     {
-        string msg = Protocol.BuildWeather("SanFrancisco", "68°F", "PCloudy", '');
+        string msg = Protocol.BuildWeather("SanFrancisco", "68°F", "PCloudy", '\uE302');
         byte[] bytes = TextConverter.ToBytes(msg);
         Assert.True(bytes.Length <= 64, $"Weather payload too long: {bytes.Length}");
     }
