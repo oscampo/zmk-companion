@@ -28,10 +28,7 @@ sealed class TrayIcon : IDisposable
         _weather  = new WeatherFeature();
         _nfl      = new NflFeature();
 
-        _pomodoro.StateChanged    += RebuildMenu;
-        _pomodoro.SessionCompleted += () =>
-            _notify.ShowBalloonTip(3000, "ZMK Companion", "Pomodoro session done!", ToolTipIcon.Info);
-
+        // Initialize _notify first so lambdas below can safely reference it.
         _notify = new NotifyIcon
         {
             Visible = true,
@@ -40,6 +37,10 @@ sealed class TrayIcon : IDisposable
         };
         _notify.ContextMenuStrip = BuildMenu();
         _notify.DoubleClick += (_, _) => OnSendText();
+
+        _pomodoro.StateChanged     += RebuildMenu;
+        _pomodoro.SessionCompleted += () =>
+            _notify.ShowBalloonTip(3000, "ZMK Companion", "Pomodoro session done!", ToolTipIcon.Info);
     }
 
     // ── Connection state ──────────────────────────────────────────────────────

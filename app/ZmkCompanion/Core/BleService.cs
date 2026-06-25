@@ -45,7 +45,7 @@ sealed class BleService : IDisposable
     private static async Task<DeviceInformation?> FindKeyboardAsync(CancellationToken ct)
     {
         // Query paired BLE devices — keyboard is already bonded via HID profile.
-        string selector = BluetoothLEDevice.GetDeviceSelectorFromPairingState(isPaired: true);
+        string selector = BluetoothLEDevice.GetDeviceSelectorFromPairingState(true);
         var devices = await DeviceInformation.FindAllAsync(selector).AsTask(ct);
 
         foreach (var d in devices)
