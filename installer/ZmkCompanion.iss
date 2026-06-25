@@ -66,10 +66,6 @@ Root: HKCU; \
   Tasks: startup
 
 [Run]
-; Kill any running instance before files are replaced (upgrade scenario)
-Filename: "taskkill"; Parameters: "/f /im {#AppExe}"; \
-  Flags: runhidden skipifdoesntexist; BeforeInstall: True
-
 ; Launch after install (user can uncheck the checkbox)
 Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName} now"; \
   Flags: nowait postinstall skipifsilent
@@ -79,6 +75,16 @@ Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName} now"; \
 Filename: "taskkill"; Parameters: "/f /im {#AppExe}"; Flags: runhidden
 
 [Code]
+// Kill any running instance before files are replaced (upgrade scenario).
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
+begin
+  if CurStep = ssInstall then
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im {#AppExe}',
+         '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
 // Remove leftover settings directory on uninstall only if the user confirms.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
