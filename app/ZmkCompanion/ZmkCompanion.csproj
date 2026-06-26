@@ -13,14 +13,12 @@
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
   </PropertyGroup>
 
-  <!-- Publish: single self-contained .exe, no install of .NET runtime needed -->
-  <!-- Trimming and R2R are controlled via the workflow publish step, not here, -->
-  <!-- so that dotnet test never picks up trim-related properties.              -->
+  <!-- Publish: framework-dependent single-file .exe (requires .NET 8 Desktop Runtime). -->
+  <!-- Keeps the installer small; the Inno Setup script installs the runtime if needed. -->
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
+    <SelfContained>false</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
 </Project>
