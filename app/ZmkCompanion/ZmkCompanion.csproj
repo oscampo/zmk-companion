@@ -22,6 +22,9 @@
     <!-- IL trimming: removes unused framework code — cuts size from ~240 MB to ~40 MB -->
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>link</TrimMode>
+    <!-- Disable trim Roslyn analyzer during regular build/test — it only matters at publish time -->
+    <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
     <!-- R2R adds pre-JIT native blobs (+20–30 MB) with no benefit for a background tray app -->
     <PublishReadyToRun>false</PublishReadyToRun>
   </PropertyGroup>
