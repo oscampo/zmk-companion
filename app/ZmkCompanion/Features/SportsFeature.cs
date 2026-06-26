@@ -257,7 +257,7 @@ public sealed class SportsFeature
 
     // ── Cycle ─────────────────────────────────────────────────────────────────
 
-    public async Task CycleGamesAsync(BleService ble, List<SportsGame> games, CancellationToken ct)
+    internal async Task CycleGamesAsync(BleService ble, List<SportsGame> games, CancellationToken ct)
     {
         foreach (var game in games)
         {

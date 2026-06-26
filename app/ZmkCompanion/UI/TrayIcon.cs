@@ -13,10 +13,13 @@ sealed class TrayIcon : IDisposable
     private readonly AppSettings _settings;
     private readonly NotifyIcon _notify;
     private readonly PomodoroFeature _pomodoro;
-    private readonly WeatherFeature _weather;
-    private readonly SportsFeature _sports;
+    private readonly WeatherFeature  _weather;
+    private readonly SportsFeature   _sports;
+    private readonly CycleFeature    _cycle;
+    private readonly SynchronizationContext _uiCtx;
 
     private CancellationTokenSource? _sportsCts;
+    private CancellationTokenSource? _cycleCts;
 
     public event Action? ExitRequested;
 
@@ -24,9 +27,11 @@ sealed class TrayIcon : IDisposable
     {
         _ble      = ble;
         _settings = settings;
+        _uiCtx    = SynchronizationContext.Current ?? new SynchronizationContext();
         _pomodoro = new PomodoroFeature(ble);
         _weather  = new WeatherFeature();
         _sports   = new SportsFeature();
+        _cycle    = new CycleFeature(ble, _weather, _sports);
 
         // Initialize _notify first so lambdas below can safely reference it.
         _notify = new NotifyIcon
@@ -56,6 +61,7 @@ sealed class TrayIcon : IDisposable
     public void SetDisconnected()
     {
         _sportsCts?.Cancel();
+        _cycleCts?.Cancel();
         _pomodoro.Stop();
         _notify.Icon = MakeIcon(Color.OrangeRed);
         _notify.Text = "ZMK Companion — disconnected";
@@ -146,6 +152,15 @@ sealed class TrayIcon : IDisposable
         }
         strip.Items.Add(sportsSub);
 
+        // Cycle submenu
+        bool cycling = _cycleCts is { IsCancellationRequested: false };
+        var cycleSub = new ToolStripMenuItem(cycling ? "Cycle  [running]" : "Cycle") { Enabled = connected };
+        if (cycling)
+            cycleSub.DropDownItems.Add(new ToolStripMenuItem("Stop", null, (_, _) => OnCycleStop()));
+        else
+            cycleSub.DropDownItems.Add(new ToolStripMenuItem("Start", null, (_, _) => OnCycleStart()));
+        strip.Items.Add(cycleSub);
+
         strip.Items.Add(new ToolStripMenuItem("Send text…", null, (_, _) => OnSendText())
             { Enabled = connected });
 
@@ -235,6 +250,26 @@ sealed class TrayIcon : IDisposable
                 await _sports.CycleGamesAsync(_ble, games, _sportsCts.Token);
         });
 
+    private void OnCycleStart()
+    {
+        _sportsCts?.Cancel();
+        _cycleCts?.Cancel();
+        _cycleCts = new CancellationTokenSource();
+        var cts = _cycleCts;
+        _ = Task.Run(async () =>
+        {
+            await _cycle.RunAsync(_settings, cts.Token);
+            _uiCtx.Post(_ => RebuildMenu(), null);
+        });
+        RebuildMenu();
+    }
+
+    private void OnCycleStop()
+    {
+        _cycleCts?.Cancel();
+        RebuildMenu();
+    }
+
     private void OnSendText()
     {
         using var dlg = new TextInputDialog("Send to keyboard", "Text (up to 3 lines with \\n):", "");
@@ -278,6 +313,8 @@ sealed class TrayIcon : IDisposable
     {
         _sportsCts?.Cancel();
         _sportsCts?.Dispose();
+        _cycleCts?.Cancel();
+        _cycleCts?.Dispose();
         _pomodoro.Dispose();
         _notify.Visible = false;
         _notify.Dispose();
