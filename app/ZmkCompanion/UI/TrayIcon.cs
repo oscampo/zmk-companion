@@ -15,8 +15,7 @@ sealed class TrayIcon : IDisposable
     private readonly PomodoroFeature _pomodoro;
     private readonly WeatherFeature  _weather;
     private readonly SportsFeature   _sports;
-    private readonly CycleFeature    _cycle;
-    private readonly SynchronizationContext _uiCtx;
+    private readonly CycleFeature _cycle;
 
     private CancellationTokenSource? _sportsCts;
     private CancellationTokenSource? _cycleCts;
@@ -27,7 +26,6 @@ sealed class TrayIcon : IDisposable
     {
         _ble      = ble;
         _settings = settings;
-        _uiCtx    = SynchronizationContext.Current ?? new SynchronizationContext();
         _pomodoro = new PomodoroFeature(ble);
         _weather  = new WeatherFeature();
         _sports   = new SportsFeature();
@@ -269,14 +267,11 @@ sealed class TrayIcon : IDisposable
         {
             await _cycle.RunAsync(_settings, slide =>
             {
-                string tip = $"ZMK Companion - Cycling: {slide}";
+                string tip = $"ZMK Companion — Cycling: {slide}";
                 _notify.Text = tip.Length > 63 ? tip[..63] : tip;
             }, cts.Token);
-            // Restore normal tooltip and refresh menu
-            _notify.Text = _ble.DeviceName is { } n
-                ? $"ZMK Companion - {n}"
-                : "ZMK Companion - disconnected";
-            _uiCtx.Post(_ => RebuildMenu(), null);
+            // Tooltip and menu rebuild are handled by OnCycleStop / SetDisconnected
+            // on the UI thread. Do not touch WinForms controls from here.
         });
         RebuildMenu();
     }
