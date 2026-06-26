@@ -76,12 +76,33 @@ Filename: "taskkill"; Parameters: "/f /im {#AppExe}"; Flags: runhidden
 
 [Code]
 // Returns true if any .NET 8 Desktop Runtime x64 version is installed.
+// Uses "dotnet --list-runtimes" as the primary check (most reliable), with a
+// registry fallback for machines where dotnet.exe is not in PATH.
 function IsDotNet8DesktopInstalled: Boolean;
 var
+  TempFile: String;
+  Lines: TArrayOfString;
   Names: TArrayOfString;
-  I: Integer;
+  ResultCode, I: Integer;
 begin
   Result := False;
+
+  // Primary: ask dotnet CLI
+  TempFile := ExpandConstant('{tmp}\zmk-dotnet-runtimes.txt');
+  if Exec(ExpandConstant('{sys}\cmd.exe'),
+          '/C dotnet --list-runtimes > "' + TempFile + '" 2>&1',
+          '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  begin
+    if LoadStringsFromFile(TempFile, Lines) then
+      for I := 0 to High(Lines) do
+        if Pos('Microsoft.WindowsDesktop.App 8.', Lines[I]) = 1 then
+        begin
+          Result := True;
+          Exit;
+        end;
+  end;
+
+  // Fallback: registry
   if RegGetValueNames(HKLM,
       'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App',
       Names) then
