@@ -25,6 +25,14 @@ sealed class AppSettings
     // Team abbreviation filter for sports (e.g. "KC", "FRA")
     public string SportsTeam { get; set; } = "";
 
+    // Cycle mode configuration
+    public bool   CycleClock           { get; set; } = true;
+    public bool   CycleWeather         { get; set; } = true;
+    public bool   CyclePomodoro        { get; set; } = false;
+    public bool   CycleSports          { get; set; } = true;
+    public string CycleCustomText      { get; set; } = "";
+    public int    CycleIntervalSeconds { get; set; } = 10;
+
     public static AppSettings Load()
     {
         try

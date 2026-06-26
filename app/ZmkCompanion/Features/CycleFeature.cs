@@ -2,43 +2,94 @@ using ZmkCompanion.Core;
 
 namespace ZmkCompanion.Features;
 
-// Automatically cycles Clock -> Weather -> Sports results, then repeats.
+// Cycles through the user-selected display modes in sequence.
+// Each enabled slide is shown for CycleIntervalSeconds before advancing.
+// Failed steps (e.g. weather with no internet) are skipped silently.
 sealed class CycleFeature
 {
-    private const int ClockDurationMs   = 15_000;
-    private const int WeatherDurationMs = 15_000;
+    private readonly BleService      _ble;
+    private readonly WeatherFeature  _weather;
+    private readonly SportsFeature   _sports;
+    private readonly PomodoroFeature _pomodoro;
 
-    private readonly BleService    _ble;
-    private readonly WeatherFeature _weather;
-    private readonly SportsFeature  _sports;
-
-    public CycleFeature(BleService ble, WeatherFeature weather, SportsFeature sports)
+    public CycleFeature(BleService ble, WeatherFeature weather,
+                        SportsFeature sports, PomodoroFeature pomodoro)
     {
-        _ble     = ble;
-        _weather = weather;
-        _sports  = sports;
+        _ble      = ble;
+        _weather  = weather;
+        _sports   = sports;
+        _pomodoro = pomodoro;
     }
 
-    public async Task RunAsync(AppSettings settings, CancellationToken ct)
+    // onSlide: called with a short label each time a new slide starts ("Clock", "Weather", …).
+    public async Task RunAsync(AppSettings settings, Action<string> onSlide, CancellationToken ct)
     {
+        int ms = Math.Max(1000, settings.CycleIntervalSeconds * 1000);
+
         while (!ct.IsCancellationRequested)
         {
-            // Clock
-            await _ble.SendAsync(Protocol.BuildClock());
-            await Delay(ClockDurationMs, ct);
-            if (ct.IsCancellationRequested) break;
+            bool any = false;
 
-            // Weather
-            try { await _weather.FetchAndSendAsync(_ble, settings.City); }
-            catch { /* non-fatal — display stays on clock */ }
-            await Delay(WeatherDurationMs, ct);
-            if (ct.IsCancellationRequested) break;
+            // ── Clock ─────────────────────────────────────────────────────────
+            if (settings.CycleClock)
+            {
+                onSlide("Clock");
+                await _ble.SendAsync(Protocol.BuildClock());
+                await Delay(ms, ct);
+                any = true;
+            }
 
-            // Sports: last results, 5 s per game
-            var league = SportsFeature.FindLeague(settings.SportEspnPath) ?? SportsFeature.DefaultLeague;
-            var games  = await SportsFeature.FetchResultsAsync(league, settings.SportsTeam);
-            if (games.Count > 0)
-                await _sports.CycleGamesAsync(_ble, games, ct);
+            // ── Weather ───────────────────────────────────────────────────────
+            if (!ct.IsCancellationRequested && settings.CycleWeather)
+            {
+                onSlide("Weather");
+                try { await _weather.FetchAndSendAsync(_ble, settings.City); }
+                catch { /* skip silently */ }
+                await Delay(ms, ct);
+                any = true;
+            }
+
+            // ── Pomodoro (only when a session is running) ──────────────────────
+            if (!ct.IsCancellationRequested && settings.CyclePomodoro)
+            {
+                var text = _pomodoro.GetDisplayText();
+                if (text is not null)
+                {
+                    onSlide("Pomodoro");
+                    await _ble.SendAsync(text);
+                    await Delay(ms, ct);
+                    any = true;
+                }
+            }
+
+            // ── Sports: one interval per game ──────────────────────────────────
+            if (!ct.IsCancellationRequested && settings.CycleSports)
+            {
+                var league = SportsFeature.FindLeague(settings.SportEspnPath)
+                             ?? SportsFeature.DefaultLeague;
+                var games  = await SportsFeature.FetchResultsAsync(league, settings.SportsTeam);
+                foreach (var game in games)
+                {
+                    if (ct.IsCancellationRequested) break;
+                    onSlide("Sports");
+                    await _ble.SendAsync(SportsFeature.FormatGame(game));
+                    await Delay(ms, ct);
+                    any = true;
+                }
+            }
+
+            // ── Custom text ────────────────────────────────────────────────────
+            if (!ct.IsCancellationRequested && !string.IsNullOrEmpty(settings.CycleCustomText))
+            {
+                onSlide("Text");
+                await _ble.SendAsync(settings.CycleCustomText);
+                await Delay(ms, ct);
+                any = true;
+            }
+
+            // Nothing enabled — idle briefly to avoid a tight spin
+            if (!any && !ct.IsCancellationRequested)
+                await Delay(1000, ct);
         }
     }
 

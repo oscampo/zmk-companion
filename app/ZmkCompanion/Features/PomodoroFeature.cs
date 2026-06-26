@@ -182,5 +182,19 @@ sealed class PomodoroFeature : IDisposable
         return $"{m:D2}:{s:D2}";
     }
 
+    // Returns the formatted display text for the current state, or null if not running.
+    internal string? GetDisplayText()
+    {
+        if (Phase == PomodoroPhase.Done) return null;
+        char icon = Phase switch
+        {
+            PomodoroPhase.Work      => IconWork,
+            PomodoroPhase.Break     => IconBreak,
+            PomodoroPhase.LongBreak => IconLong,
+            _                       => IconWork,
+        };
+        return $"{FmtTime(SecondsRemaining)}\n {ProgressBar(CurrentCycle - 1, TotalCycles)}\x01{icon}";
+    }
+
     public void Dispose() => Stop();
 }

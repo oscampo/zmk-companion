@@ -31,7 +31,7 @@ sealed class TrayIcon : IDisposable
         _pomodoro = new PomodoroFeature(ble);
         _weather  = new WeatherFeature();
         _sports   = new SportsFeature();
-        _cycle    = new CycleFeature(ble, _weather, _sports);
+        _cycle    = new CycleFeature(ble, _weather, _sports, _pomodoro);
 
         // Initialize _notify first so lambdas below can safely reference it.
         _notify = new NotifyIcon
@@ -152,14 +152,19 @@ sealed class TrayIcon : IDisposable
         }
         strip.Items.Add(sportsSub);
 
-        // Cycle submenu
+        // Cycle
         bool cycling = _cycleCts is { IsCancellationRequested: false };
-        var cycleSub = new ToolStripMenuItem(cycling ? "Cycle  [running]" : "Cycle") { Enabled = connected };
         if (cycling)
+        {
+            var cycleSub = new ToolStripMenuItem("Cycle  [running]") { Enabled = connected };
             cycleSub.DropDownItems.Add(new ToolStripMenuItem("Stop", null, (_, _) => OnCycleStop()));
+            strip.Items.Add(cycleSub);
+        }
         else
-            cycleSub.DropDownItems.Add(new ToolStripMenuItem("Start", null, (_, _) => OnCycleStart()));
-        strip.Items.Add(cycleSub);
+        {
+            strip.Items.Add(new ToolStripMenuItem("Cycle…", null, (_, _) => OnCycleOpen())
+                { Enabled = connected });
+        }
 
         strip.Items.Add(new ToolStripMenuItem("Send text…", null, (_, _) => OnSendText())
             { Enabled = connected });
@@ -250,15 +255,27 @@ sealed class TrayIcon : IDisposable
                 await _sports.CycleGamesAsync(_ble, games, _sportsCts.Token);
         });
 
-    private void OnCycleStart()
+    private void OnCycleOpen()
     {
+        using var dlg = new CycleDialog(_settings);
+        if (dlg.ShowDialog() != DialogResult.OK) return;
+        _settings.Save();
+
         _sportsCts?.Cancel();
         _cycleCts?.Cancel();
         _cycleCts = new CancellationTokenSource();
         var cts = _cycleCts;
         _ = Task.Run(async () =>
         {
-            await _cycle.RunAsync(_settings, cts.Token);
+            await _cycle.RunAsync(_settings, slide =>
+            {
+                string tip = $"ZMK Companion - Cycling: {slide}";
+                _notify.Text = tip.Length > 63 ? tip[..63] : tip;
+            }, cts.Token);
+            // Restore normal tooltip and refresh menu
+            _notify.Text = _ble.DeviceName is { } n
+                ? $"ZMK Companion - {n}"
+                : "ZMK Companion - disconnected";
             _uiCtx.Post(_ => RebuildMenu(), null);
         });
         RebuildMenu();
@@ -267,6 +284,9 @@ sealed class TrayIcon : IDisposable
     private void OnCycleStop()
     {
         _cycleCts?.Cancel();
+        _notify.Text = _ble.DeviceName is { } n
+            ? $"ZMK Companion - {n}"
+            : "ZMK Companion - disconnected";
         RebuildMenu();
     }
 
