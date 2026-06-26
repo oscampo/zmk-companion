@@ -19,7 +19,7 @@ sealed class WeatherFeature
             : $"{data.TempC:F0}°C";
 
         string truncCity = data.City.Length > 12 ? data.City[..12] : data.City;
-        string message = Protocol.BuildWeather(truncCity, tempStr, data.Label, data.Icon);
+        string message = Protocol.BuildText(truncCity, tempStr, data.Label, data.Icon);
 
         bool sent = await ble.SendAsync(message);
         if (!sent)
