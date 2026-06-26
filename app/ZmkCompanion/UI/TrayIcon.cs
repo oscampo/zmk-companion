@@ -14,9 +14,9 @@ sealed class TrayIcon : IDisposable
     private readonly NotifyIcon _notify;
     private readonly PomodoroFeature _pomodoro;
     private readonly WeatherFeature _weather;
-    private readonly NflFeature _nfl;
+    private readonly SportsFeature _sports;
 
-    private CancellationTokenSource? _nflCts;
+    private CancellationTokenSource? _sportsCts;
 
     public event Action? ExitRequested;
 
@@ -26,7 +26,7 @@ sealed class TrayIcon : IDisposable
         _settings = settings;
         _pomodoro = new PomodoroFeature(ble);
         _weather  = new WeatherFeature();
-        _nfl      = new NflFeature();
+        _sports   = new SportsFeature();
 
         // Initialize _notify first so lambdas below can safely reference it.
         _notify = new NotifyIcon
@@ -55,7 +55,7 @@ sealed class TrayIcon : IDisposable
 
     public void SetDisconnected()
     {
-        _nflCts?.Cancel();
+        _sportsCts?.Cancel();
         _pomodoro.Stop();
         _notify.Icon = MakeIcon(Color.OrangeRed);
         _notify.Text = "ZMK Companion — disconnected";
@@ -128,19 +128,23 @@ sealed class TrayIcon : IDisposable
         }
         strip.Items.Add(pomSub);
 
-        // NFL submenu
-        var nflSub = new ToolStripMenuItem("NFL") { Enabled = connected };
-        nflSub.DropDownItems.Add(new ToolStripMenuItem("Last week results", null, (_, _) => OnNfl(false)));
-        nflSub.DropDownItems.Add(new ToolStripMenuItem("Next week schedule", null, (_, _) => OnNfl(true)));
-        if (!string.IsNullOrEmpty(_settings.NflTeam))
+        // Sports submenu
+        var league    = SportsFeature.FindLeague(_settings.SportEspnPath) ?? SportsFeature.DefaultLeague;
+        string menuLabel = league.Sport == SportKind.Soccer
+            ? $"Soccer: {league.ShortName}"
+            : league.DisplayName;
+        var sportsSub = new ToolStripMenuItem(menuLabel) { Enabled = connected };
+        sportsSub.DropDownItems.Add(new ToolStripMenuItem("Last results",  null, (_, _) => OnSports(false)));
+        sportsSub.DropDownItems.Add(new ToolStripMenuItem("Next schedule", null, (_, _) => OnSports(true)));
+        if (!string.IsNullOrEmpty(_settings.SportsTeam))
         {
-            nflSub.DropDownItems.Add(new ToolStripSeparator());
-            nflSub.DropDownItems.Add(new ToolStripMenuItem(
-                $"My team: {_settings.NflTeam} (results)", null, (_, _) => OnNflTeam(false)));
-            nflSub.DropDownItems.Add(new ToolStripMenuItem(
-                $"My team: {_settings.NflTeam} (schedule)", null, (_, _) => OnNflTeam(true)));
+            sportsSub.DropDownItems.Add(new ToolStripSeparator());
+            sportsSub.DropDownItems.Add(new ToolStripMenuItem(
+                $"{_settings.SportsTeam} results",  null, (_, _) => OnSportsTeam(false)));
+            sportsSub.DropDownItems.Add(new ToolStripMenuItem(
+                $"{_settings.SportsTeam} schedule", null, (_, _) => OnSportsTeam(true)));
         }
-        strip.Items.Add(nflSub);
+        strip.Items.Add(sportsSub);
 
         strip.Items.Add(new ToolStripMenuItem("Send text…", null, (_, _) => OnSendText())
             { Enabled = connected });
@@ -201,32 +205,34 @@ sealed class TrayIcon : IDisposable
         OnPomodoroStart(dlg.Value);
     }
 
-    private void OnNfl(bool nextWeek) =>
+    private void OnSports(bool schedule) =>
         _ = Task.Run(async () =>
         {
-            _nflCts?.Cancel();
-            _nflCts = new CancellationTokenSource();
-            var games = nextWeek
-                ? await NflFeature.FetchScheduleAsync()
-                : await NflFeature.FetchResultsAsync();
+            _sportsCts?.Cancel();
+            _sportsCts = new CancellationTokenSource();
+            var lg    = SportsFeature.FindLeague(_settings.SportEspnPath) ?? SportsFeature.DefaultLeague;
+            var games = schedule
+                ? await SportsFeature.FetchScheduleAsync(lg)
+                : await SportsFeature.FetchResultsAsync(lg);
             if (games.Count == 0)
-                _notify.ShowBalloonTip(3000, "NFL", "No games found.", ToolTipIcon.Info);
+                _notify.ShowBalloonTip(3000, lg.DisplayName, "No games found.", ToolTipIcon.Info);
             else
-                await _nfl.CycleGamesAsync(_ble, games, _nflCts.Token);
+                await _sports.CycleGamesAsync(_ble, games, _sportsCts.Token);
         });
 
-    private void OnNflTeam(bool nextWeek) =>
+    private void OnSportsTeam(bool schedule) =>
         _ = Task.Run(async () =>
         {
-            _nflCts?.Cancel();
-            _nflCts = new CancellationTokenSource();
-            var games = nextWeek
-                ? await NflFeature.FetchScheduleAsync(_settings.NflTeam)
-                : await NflFeature.FetchResultsAsync(_settings.NflTeam);
+            _sportsCts?.Cancel();
+            _sportsCts = new CancellationTokenSource();
+            var lg    = SportsFeature.FindLeague(_settings.SportEspnPath) ?? SportsFeature.DefaultLeague;
+            var games = schedule
+                ? await SportsFeature.FetchScheduleAsync(lg, _settings.SportsTeam)
+                : await SportsFeature.FetchResultsAsync(lg, _settings.SportsTeam);
             if (games.Count == 0)
-                _notify.ShowBalloonTip(3000, "NFL", $"No games for {_settings.NflTeam}.", ToolTipIcon.Info);
+                _notify.ShowBalloonTip(3000, lg.DisplayName, $"No games for {_settings.SportsTeam}.", ToolTipIcon.Info);
             else
-                await _nfl.CycleGamesAsync(_ble, games, _nflCts.Token);
+                await _sports.CycleGamesAsync(_ble, games, _sportsCts.Token);
         });
 
     private void OnSendText()
@@ -270,8 +276,8 @@ sealed class TrayIcon : IDisposable
 
     public void Dispose()
     {
-        _nflCts?.Cancel();
-        _nflCts?.Dispose();
+        _sportsCts?.Cancel();
+        _sportsCts?.Dispose();
         _pomodoro.Dispose();
         _notify.Visible = false;
         _notify.Dispose();

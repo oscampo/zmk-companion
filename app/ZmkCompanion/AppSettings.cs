@@ -20,6 +20,10 @@ sealed class AppSettings
     public string NflTeam { get; set; } = "";
     // Pomodoro preset: "classic" | "short" | "long" | "work,break,cycles[,long_break]"
     public string PomodoroPreset { get; set; } = "classic";
+    // Sports mode: ESPN sport/league path, e.g. "football/nfl", "soccer/fifa.world"
+    public string SportEspnPath { get; set; } = "football/nfl";
+    // Team abbreviation filter for sports (e.g. "KC", "FRA")
+    public string SportsTeam { get; set; } = "";
 
     public static AppSettings Load()
     {
@@ -28,7 +32,11 @@ sealed class AppSettings
             if (File.Exists(_path))
             {
                 var json = File.ReadAllText(_path);
-                return JsonSerializer.Deserialize<AppSettings>(json, _json) ?? new AppSettings();
+                var s = JsonSerializer.Deserialize<AppSettings>(json, _json) ?? new AppSettings();
+                // Migrate: promote old NflTeam to SportsTeam on first load with new settings
+                if (string.IsNullOrEmpty(s.SportsTeam) && !string.IsNullOrEmpty(s.NflTeam))
+                    s.SportsTeam = s.NflTeam;
+                return s;
             }
         }
         catch { /* corrupt file → defaults */ }
