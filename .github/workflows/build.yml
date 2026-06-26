@@ -37,8 +37,6 @@ jobs:
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
           -p:PublishTrimmed=true
-          -p:TrimMode=link
-          -p:SuppressTrimAnalysisWarnings=true
           -p:PublishReadyToRun=false
 
       - name: Install Inno Setup 6
