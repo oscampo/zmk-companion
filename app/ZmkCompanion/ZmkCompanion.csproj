@@ -13,12 +13,14 @@
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
   </PropertyGroup>
 
-  <!-- Publish: self-contained single-file .exe — no .NET runtime required on target machine. -->
+  <!-- Publish: framework-dependent single-file .exe (requires .NET 8 Desktop Runtime). -->
+  <!-- RollForward=LatestPatch: use highest available 8.0.x patch, even if minimum patch is -->
+  <!-- absent/corrupted. Ensures the app finds 8.0.28+ when 8.0.27 exists but is broken.   -->
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
+    <SelfContained>false</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <RollForward>LatestPatch</RollForward>
   </PropertyGroup>
 
 </Project>

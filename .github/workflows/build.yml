@@ -33,10 +33,9 @@ jobs:
           dotnet publish app/ZmkCompanion/ZmkCompanion.csproj
           --configuration Release
           --runtime win-x64
-          --self-contained true
+          --self-contained false
           -p:PublishSingleFile=true
-          -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:PublishReadyToRun=false
+          -p:RollForward=LatestPatch
 
       - name: Install Inno Setup 6
         run: choco install innosetup --no-progress --yes
