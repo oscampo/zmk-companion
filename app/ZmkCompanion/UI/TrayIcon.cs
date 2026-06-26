@@ -167,9 +167,13 @@ sealed class TrayIcon : IDisposable
     private void OnWeather() =>
         _ = Task.Run(async () =>
         {
-            try { await _weather.FetchAndSendAsync(_ble, _settings.City); }
+            try
+            {
+                var (_, summary) = await _weather.FetchAndSendAsync(_ble, _settings.City);
+                _notify.ShowBalloonTip(3000, "Weather", summary, ToolTipIcon.Info);
+            }
             catch (Exception ex)
-            { _notify.ShowBalloonTip(3000, "Weather error", ex.Message, ToolTipIcon.Error); }
+            { _notify.ShowBalloonTip(4000, "Weather error", ex.Message, ToolTipIcon.Error); }
         });
 
     private void OnPomodoroStart(string preset)

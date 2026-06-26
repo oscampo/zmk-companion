@@ -21,7 +21,9 @@ sealed class WeatherFeature
         string truncCity = data.City.Length > 12 ? data.City[..12] : data.City;
         string message = Protocol.BuildWeather(truncCity, tempStr, data.Label, data.Icon);
 
-        await ble.SendAsync(message);
+        bool sent = await ble.SendAsync(message);
+        if (!sent)
+            throw new Exception("BLE write failed — is the keyboard still connected?");
         return (message, $"{truncCity}: {data.Icon} {tempStr}, {data.Label}");
     }
 
@@ -43,10 +45,13 @@ sealed class WeatherFeature
         }
         else
         {
-            // Auto-detect via ip-api (no key required)
-            var loc = await Http.GetFromJsonAsync<JsonObject>("https://ipapi.co/json/");
-            lat = loc!["latitude"]!.GetValue<double>();
-            lon = loc!["longitude"]!.GetValue<double>();
+            // Auto-detect via ip-api.com (free, ~45 req/min, no key required).
+            // Note: free tier is HTTP-only.
+            var loc = await Http.GetFromJsonAsync<JsonObject>("http://ip-api.com/json/");
+            if (loc?["status"]?.GetValue<string>() != "success")
+                throw new Exception("IP geolocation failed — specify a city in Settings.");
+            lat = loc["lat"]!.GetValue<double>();
+            lon = loc["lon"]!.GetValue<double>();
             resolvedCity = loc["city"]?.GetValue<string>() ?? "?";
         }
 
