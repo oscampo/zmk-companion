@@ -13,12 +13,12 @@
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
   </PropertyGroup>
 
-  <!-- Publish: framework-dependent single-file .exe (requires .NET 8 Desktop Runtime). -->
-  <!-- Keeps the installer small; the Inno Setup script installs the runtime if needed. -->
+  <!-- Publish: self-contained single-file .exe — no .NET runtime required on target machine. -->
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>false</SelfContained>
+    <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
 </Project>
