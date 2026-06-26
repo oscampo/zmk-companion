@@ -14,19 +14,13 @@
   </PropertyGroup>
 
   <!-- Publish: single self-contained .exe, no install of .NET runtime needed -->
+  <!-- Trimming and R2R are controlled via the workflow publish step, not here, -->
+  <!-- so that dotnet test never picks up trim-related properties.              -->
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <!-- IL trimming: removes unused framework code — cuts size from ~240 MB to ~40 MB -->
-    <PublishTrimmed>true</PublishTrimmed>
-    <TrimMode>link</TrimMode>
-    <!-- Disable trim Roslyn analyzer during regular build/test — it only matters at publish time -->
-    <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
-    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
-    <!-- R2R adds pre-JIT native blobs (+20–30 MB) with no benefit for a background tray app -->
-    <PublishReadyToRun>false</PublishReadyToRun>
   </PropertyGroup>
 
 </Project>
