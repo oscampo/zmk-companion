@@ -10,6 +10,7 @@ sealed class CycleDialog : Form
     private readonly CheckBox _chkWeather;
     private readonly CheckBox _chkPomodoro;
     private readonly CheckBox _chkSports;
+    private readonly ComboBox _cboSportsMode;
     private readonly CheckBox _chkText;
     private readonly TextBox  _txtText;
     private readonly ComboBox _cboInterval;
@@ -20,6 +21,13 @@ sealed class CycleDialog : Form
         ("10 s", 10),
         ("30 s", 30),
         ("60 s", 60),
+    ];
+
+    private static readonly (string Label, string Mode)[] SportsModes =
+    [
+        ("Live",           "live"),
+        ("Last (my team)", "last"),
+        ("Next (my team)", "next"),
     ];
 
     public CycleDialog(AppSettings settings)
@@ -35,11 +43,33 @@ sealed class CycleDialog : Form
 
         Controls.Add(MakeLabel("Items to include:", 12));
 
-        _chkClock    = MakeCheck("Clock",               settings.CycleClock,    32);
-        _chkWeather  = MakeCheck("Weather",             settings.CycleWeather,  55);
-        _chkPomodoro = MakeCheck("Pomodoro (if active)",settings.CyclePomodoro, 78);
-        _chkSports   = MakeCheck("Sports",              settings.CycleSports,  101);
+        _chkClock    = MakeCheck("Clock",                settings.CycleClock,    32);
+        _chkWeather  = MakeCheck("Weather",              settings.CycleWeather,  55);
+        _chkPomodoro = MakeCheck("Pomodoro (if active)", settings.CyclePomodoro, 78);
 
+        // Sports: checkbox + mode ComboBox on same line
+        _chkSports = new CheckBox
+        {
+            Text     = "Sports:",
+            Checked  = settings.CycleSports,
+            Location = new Point(12, 101),
+            Size     = new Size(64, 23),
+            AutoSize = false,
+        };
+        _cboSportsMode = new ComboBox
+        {
+            Location      = new Point(80, 101),
+            Size          = new Size(248, 23),
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Enabled       = settings.CycleSports,
+        };
+        foreach (var (label, _) in SportsModes)
+            _cboSportsMode.Items.Add(label);
+        int modeIdx = Array.FindIndex(SportsModes, t => t.Mode == settings.CycleSportsMode);
+        _cboSportsMode.SelectedIndex = modeIdx >= 0 ? modeIdx : 0;
+        _chkSports.CheckedChanged += (_, _) => _cboSportsMode.Enabled = _chkSports.Checked;
+
+        // Text: checkbox + textbox on same line
         _chkText = new CheckBox
         {
             Text     = "Text:",
@@ -56,7 +86,9 @@ sealed class CycleDialog : Form
             Enabled  = !string.IsNullOrEmpty(settings.CycleCustomText),
         };
         _chkText.CheckedChanged += (_, _) => _txtText.Enabled = _chkText.Checked;
-        Controls.AddRange([_chkClock, _chkWeather, _chkPomodoro, _chkSports, _chkText, _txtText]);
+
+        Controls.AddRange([_chkClock, _chkWeather, _chkPomodoro,
+                           _chkSports, _cboSportsMode, _chkText, _txtText]);
 
         Controls.Add(MakeLabel("Interval per item:", 157));
         _cboInterval = new ComboBox
@@ -99,6 +131,7 @@ sealed class CycleDialog : Form
         _settings.CycleWeather         = _chkWeather.Checked;
         _settings.CyclePomodoro        = _chkPomodoro.Checked;
         _settings.CycleSports          = _chkSports.Checked;
+        _settings.CycleSportsMode      = SportsModes[_cboSportsMode.SelectedIndex].Mode;
         _settings.CycleCustomText      = _chkText.Checked ? _txtText.Text.Trim() : "";
         _settings.CycleIntervalSeconds = Intervals[_cboInterval.SelectedIndex].Seconds;
     }

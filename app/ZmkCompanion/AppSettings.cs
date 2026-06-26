@@ -30,6 +30,8 @@ sealed class AppSettings
     public bool   CycleWeather         { get; set; } = true;
     public bool   CyclePomodoro        { get; set; } = false;
     public bool   CycleSports          { get; set; } = true;
+    // "live" | "last" | "next"  (applies team filter for last/next)
+    public string CycleSportsMode      { get; set; } = "live";
     public string CycleCustomText      { get; set; } = "";
     public int    CycleIntervalSeconds { get; set; } = 10;
 

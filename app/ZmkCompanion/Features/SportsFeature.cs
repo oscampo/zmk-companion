@@ -60,6 +60,15 @@ public sealed class SportsFeature
     public static SportsLeague? FindLeague(string espnPath) =>
         AllLeagues.FirstOrDefault(l => l.EspnPath == espnPath);
 
+    // Fetches games currently in progress for a league (no week/day walking needed).
+    public static async Task<List<SportsGame>> FetchLiveAsync(SportsLeague league, string teamFilter = "")
+    {
+        string url  = $"{BaseUrl}/{league.EspnPath}/scoreboard?limit=100";
+        var    data = await GetJsonAsync(url);
+        if (data is null) return [];
+        return ParseGames(data, league, teamFilter).Where(g => g.StatusState == "in").ToList();
+    }
+
     // Fetches the most recent completed games for a league (optionally filtered by team abbreviation).
     public static Task<List<SportsGame>> FetchResultsAsync(SportsLeague league, string teamFilter = "") =>
         league.WeekBased

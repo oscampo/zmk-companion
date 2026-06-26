@@ -62,12 +62,17 @@ sealed class CycleFeature
                 }
             }
 
-            // ── Sports: one interval per game ──────────────────────────────────
+            // ── Sports ────────────────────────────────────────────────────────
             if (!ct.IsCancellationRequested && settings.CycleSports)
             {
                 var league = SportsFeature.FindLeague(settings.SportEspnPath)
                              ?? SportsFeature.DefaultLeague;
-                var games  = await SportsFeature.FetchResultsAsync(league, settings.SportsTeam);
+                var games = settings.CycleSportsMode switch
+                {
+                    "last" => await SportsFeature.FetchResultsAsync(league, settings.SportsTeam),
+                    "next" => await SportsFeature.FetchScheduleAsync(league, settings.SportsTeam),
+                    _      => await SportsFeature.FetchLiveAsync(league),   // "live" (default)
+                };
                 foreach (var game in games)
                 {
                     if (ct.IsCancellationRequested) break;
@@ -76,6 +81,7 @@ sealed class CycleFeature
                     await Delay(ms, ct);
                     any = true;
                 }
+                // If no games found (e.g. nothing live), skip silently with no delay.
             }
 
             // ── Custom text ────────────────────────────────────────────────────
