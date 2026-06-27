@@ -65,6 +65,14 @@ Root: HKCU; \
   Flags: uninsdeletevalue; \
   Tasks: startup
 
+; Add install dir to user PATH so "zkc" works from any terminal
+Root: HKCU; \
+  Subkey: "Environment"; \
+  ValueType: expandsz; \
+  ValueName: "Path"; \
+  ValueData: "{olddata};{app}"; \
+  Flags: uninsdeletevalue
+
 [Run]
 ; Launch after install (user can uncheck the checkbox)
 Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName} now"; \

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
 using ZmkCompanion.Core;
@@ -165,8 +166,7 @@ sealed class TrayIcon : IDisposable
                 { Enabled = connected });
         }
 
-        strip.Items.Add(new ToolStripMenuItem("Send text…", null, (_, _) => OnSendText())
-            { Enabled = connected });
+        strip.Items.Add(new ToolStripMenuItem("Terminal / Send text…", null, (_, _) => OnSendText()));
 
         strip.Items.Add(new ToolStripSeparator());
 
@@ -313,10 +313,14 @@ sealed class TrayIcon : IDisposable
 
     private void OnSendText()
     {
-        using var dlg = new TextInputDialog("Send to keyboard", "Text (up to 3 lines with \\n):", "");
-        if (dlg.ShowDialog() != DialogResult.OK) return;
-        string text = dlg.Value.Replace("\\n", "\n");
-        _ = _ble.SendAsync(text);
+        string exeDir  = Path.GetDirectoryName(Environment.ProcessPath)
+                         ?? AppDomain.CurrentDomain.BaseDirectory;
+        string exePath = Path.Combine(exeDir, "zkc.exe");
+        Process.Start(new ProcessStartInfo("cmd.exe", $"/K \"\"{exePath}\" --help\"")
+        {
+            UseShellExecute  = true,
+            WorkingDirectory = exeDir,
+        });
     }
 
     private void OnReconnect() =>
