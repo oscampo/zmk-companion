@@ -20,8 +20,11 @@ sealed class AppSettings
     public string NflTeam { get; set; } = "";
     // Pomodoro preset: "classic" | "short" | "long" | "work,break,cycles[,long_break]"
     public string PomodoroPreset { get; set; } = "classic";
-    // Sports mode: ESPN sport/league path, e.g. "football/nfl", "soccer/fifa.world"
-    public string SportEspnPath { get; set; } = "football/nfl";
+    // Selected leagues as ESPN paths, e.g. ["football/nfl", "soccer/eng.1"]
+    public List<string> SelectedLeagues { get; set; } = ["football/nfl"];
+    // Kept for migration from older settings; not written after migration.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SportEspnPath { get; set; }
     // Team abbreviation filter for sports (e.g. "KC", "FRA")
     public string SportsTeam { get; set; } = "";
 
@@ -43,9 +46,17 @@ sealed class AppSettings
             {
                 var json = File.ReadAllText(_path);
                 var s = JsonSerializer.Deserialize<AppSettings>(json, _json) ?? new AppSettings();
-                // Migrate: promote old NflTeam to SportsTeam on first load with new settings
+                // Migrate NflTeam → SportsTeam
                 if (string.IsNullOrEmpty(s.SportsTeam) && !string.IsNullOrEmpty(s.NflTeam))
                     s.SportsTeam = s.NflTeam;
+                // Migrate SportEspnPath (single) → SelectedLeagues (list)
+                if ((s.SelectedLeagues == null || s.SelectedLeagues.Count == 0) &&
+                    !string.IsNullOrEmpty(s.SportEspnPath))
+                    s.SelectedLeagues = [s.SportEspnPath];
+                if (s.SelectedLeagues == null || s.SelectedLeagues.Count == 0)
+                    s.SelectedLeagues = ["football/nfl"];
+                // Clear legacy field so it isn't written back
+                s.SportEspnPath = null;
                 return s;
             }
         }

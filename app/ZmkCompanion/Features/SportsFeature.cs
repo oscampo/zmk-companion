@@ -58,7 +58,25 @@ public sealed class SportsFeature
     public static SportsLeague DefaultLeague => AllLeagues[0]; // NFL
 
     public static SportsLeague? FindLeague(string espnPath) =>
-        AllLeagues.FirstOrDefault(l => l.EspnPath == espnPath);
+        AllLeagues.FirstOrDefault(l => l.EspnPath.Equals(espnPath, StringComparison.OrdinalIgnoreCase));
+
+    // Returns a known league or builds a minimal one from the ESPN path.
+    public static SportsLeague FindOrCreate(string espnPath)
+    {
+        var found = FindLeague(espnPath);
+        if (found != null) return found;
+        var parts    = espnPath.Split('/', 2);
+        string sport = parts.Length > 0 ? parts[0] : "football";
+        string slug  = parts.Length > 1 ? parts[1] : espnPath;
+        SportKind sk = sport switch
+        {
+            "soccer"     => SportKind.Soccer,
+            "basketball" => SportKind.Basketball,
+            "hockey"     => SportKind.Hockey,
+            _            => SportKind.Football,
+        };
+        return new SportsLeague(espnPath, slug, slug, sk, WeekBased: sk == SportKind.Football && slug == "nfl");
+    }
 
     // Fetches games currently in progress for a league (no week/day walking needed).
     public static async Task<List<SportsGame>> FetchLiveAsync(SportsLeague league, string teamFilter = "")

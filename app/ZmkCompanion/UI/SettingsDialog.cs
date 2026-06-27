@@ -8,24 +8,24 @@ sealed class SettingsDialog : Form
 {
     private readonly AppSettings _settings;
     private readonly TextBox  _cityBox;
-    private readonly ComboBox _sportBox;
-    private readonly ComboBox _leagueBox;
+    private readonly Button   _btnLeagues;
     private readonly TextBox  _teamBox;
     private readonly ComboBox _pomodoroBox;
 
-    // Parallel list that tracks which SportsLeague each _leagueBox item represents.
-    private readonly List<SportsLeague> _leagueItems = [];
+    // Working copy; assigned to _settings only on OK.
+    private List<string> _pendingLeagues;
 
     public SettingsDialog(AppSettings settings)
     {
-        _settings = settings;
+        _settings       = settings;
+        _pendingLeagues = settings.SelectedLeagues.ToList();
 
         Text            = "ZMK Companion - Settings";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition   = FormStartPosition.CenterScreen;
         MinimizeBox     = false;
         MaximizeBox     = false;
-        ClientSize      = new Size(340, 330);
+        ClientSize      = new Size(340, 266);
 
         int y = 12;
         Controls.Add(MakeLabel("Weather city (blank = auto):", y));
@@ -33,28 +33,19 @@ sealed class SettingsDialog : Form
         Controls.Add(_cityBox);
 
         y += 54;
-        Controls.Add(MakeLabel("Sport:", y));
-        _sportBox = new ComboBox
+        Controls.Add(MakeLabel("Sports leagues:", y));
+        _btnLeagues = new Button
         {
-            Location      = new Point(12, y + 20),
-            Size          = new Size(316, 23),
-            DropDownStyle = ComboBoxStyle.DropDownList,
+            Text      = LeaguesSummary(_pendingLeagues),
+            Location  = new Point(12, y + 20),
+            Size      = new Size(316, 26),
+            TextAlign = System.Drawing.ContentAlignment.MiddleLeft,
         };
-        _sportBox.Items.AddRange(["Football (NFL)", "Soccer", "Basketball (NBA)", "Hockey (NHL)"]);
-        Controls.Add(_sportBox);
+        _btnLeagues.Click += OnConfigureLeagues;
+        Controls.Add(_btnLeagues);
 
-        y += 54;
-        Controls.Add(MakeLabel("League:", y));
-        _leagueBox = new ComboBox
-        {
-            Location      = new Point(12, y + 20),
-            Size          = new Size(316, 23),
-            DropDownStyle = ComboBoxStyle.DropDownList,
-        };
-        Controls.Add(_leagueBox);
-
-        y += 54;
-        Controls.Add(MakeLabel("Team filter (abbreviation, e.g. KC, FRA):", y));
+        y += 58;
+        Controls.Add(MakeLabel("Team filter (abbreviation, e.g. KC, COL):", y));
         _teamBox = MakeTextBox(settings.SportsTeam, y + 20);
         Controls.Add(_teamBox);
 
@@ -89,61 +80,31 @@ sealed class SettingsDialog : Form
         CancelButton = cancel;
         Controls.AddRange([ok, cancel]);
 
-        _sportBox.SelectedIndexChanged += (_, _) => PopulateLeagues();
-        InitSportSelection(settings.SportEspnPath);
-
         FormClosing += OnClosing;
     }
 
-    private void InitSportSelection(string espnPath)
+    private void OnConfigureLeagues(object? sender, EventArgs e)
     {
-        var league = SportsFeature.FindLeague(espnPath) ?? SportsFeature.DefaultLeague;
-        _sportBox.SelectedIndex = league.Sport switch
-        {
-            SportKind.Soccer     => 1,
-            SportKind.Basketball => 2,
-            SportKind.Hockey     => 3,
-            _                    => 0,
-        };
-        // SelectedIndexChanged fires synchronously above and populates _leagueItems.
-        int idx = _leagueItems.FindIndex(l => l.EspnPath == espnPath);
-        if (idx >= 0) _leagueBox.SelectedIndex = idx;
-    }
-
-    private void PopulateLeagues()
-    {
-        _leagueItems.Clear();
-        _leagueBox.Items.Clear();
-
-        var sport = _sportBox.SelectedIndex switch
-        {
-            1 => SportKind.Soccer,
-            2 => SportKind.Basketball,
-            3 => SportKind.Hockey,
-            _ => SportKind.Football,
-        };
-
-        foreach (var l in SportsFeature.AllLeagues.Where(l => l.Sport == sport))
-        {
-            _leagueItems.Add(l);
-            _leagueBox.Items.Add(l.DisplayName);
-        }
-
-        if (_leagueBox.Items.Count > 0)
-            _leagueBox.SelectedIndex = 0;
-
-        // Disable when only one league exists for the sport (e.g. NFL, NBA, NHL).
-        _leagueBox.Enabled = _leagueBox.Items.Count > 1;
+        using var dlg = new LeaguePickerDialog(_pendingLeagues);
+        if (dlg.ShowDialog() != DialogResult.OK) return;
+        _pendingLeagues     = dlg.SelectedPaths.ToList();
+        _btnLeagues.Text    = LeaguesSummary(_pendingLeagues);
     }
 
     private void OnClosing(object? sender, FormClosingEventArgs e)
     {
         if (DialogResult != DialogResult.OK) return;
-        _settings.City           = _cityBox.Text.Trim();
-        _settings.PomodoroPreset = _pomodoroBox.Text.Trim();
-        _settings.SportsTeam     = _teamBox.Text.Trim().ToUpper();
-        if (_leagueBox.SelectedIndex >= 0 && _leagueBox.SelectedIndex < _leagueItems.Count)
-            _settings.SportEspnPath = _leagueItems[_leagueBox.SelectedIndex].EspnPath;
+        _settings.City            = _cityBox.Text.Trim();
+        _settings.PomodoroPreset  = _pomodoroBox.Text.Trim();
+        _settings.SportsTeam      = _teamBox.Text.Trim().ToUpper();
+        _settings.SelectedLeagues = _pendingLeagues;
+    }
+
+    private static string LeaguesSummary(List<string> paths)
+    {
+        if (paths.Count == 0) return "No leagues selected — click to configure";
+        if (paths.Count == 1) return SportsFeature.FindOrCreate(paths[0]).DisplayName;
+        return $"{paths.Count} leagues selected";
     }
 
     private static Label MakeLabel(string text, int y) =>

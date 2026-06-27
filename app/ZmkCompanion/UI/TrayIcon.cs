@@ -133,11 +133,12 @@ sealed class TrayIcon : IDisposable
         strip.Items.Add(pomSub);
 
         // Sports submenu
-        var league    = SportsFeature.FindLeague(_settings.SportEspnPath) ?? SportsFeature.DefaultLeague;
-        string menuLabel = league.Sport == SportKind.Soccer
-            ? $"Soccer: {league.ShortName}"
-            : league.DisplayName;
-        var sportsSub = new ToolStripMenuItem(menuLabel) { Enabled = connected };
+        string sportsLabel = _settings.SelectedLeagues.Count == 1
+            ? (SportsFeature.FindOrCreate(_settings.SelectedLeagues[0]) is { } lg
+                ? (lg.Sport == SportKind.Soccer ? $"Soccer: {lg.ShortName}" : lg.DisplayName)
+                : "Sports")
+            : $"Sports ({_settings.SelectedLeagues.Count})";
+        var sportsSub = new ToolStripMenuItem(sportsLabel) { Enabled = connected };
         sportsSub.DropDownItems.Add(new ToolStripMenuItem("Last results",  null, (_, _) => OnSports(false)));
         sportsSub.DropDownItems.Add(new ToolStripMenuItem("Next schedule", null, (_, _) => OnSports(true)));
         if (!string.IsNullOrEmpty(_settings.SportsTeam))
@@ -228,19 +229,26 @@ sealed class TrayIcon : IDisposable
         {
             _sportsCts?.Cancel();
             _sportsCts = new CancellationTokenSource();
-            var ct    = _sportsCts.Token;
-            var lg    = SportsFeature.FindLeague(_settings.SportEspnPath) ?? SportsFeature.DefaultLeague;
-            var games = schedule
-                ? await SportsFeature.FetchScheduleAsync(lg)
-                : await SportsFeature.FetchResultsAsync(lg);
-            if (games.Count == 0)
-                _notify.ShowBalloonTip(3000, lg.DisplayName, "No games found.", ToolTipIcon.Info);
-            else
+            var ct      = _sportsCts.Token;
+            var leagues = _settings.SelectedLeagues.Count > 0
+                ? _settings.SelectedLeagues.Select(SportsFeature.FindOrCreate).ToList()
+                : [SportsFeature.DefaultLeague];
+
+            bool anyGames = false;
+            foreach (var lg in leagues)
             {
+                if (ct.IsCancellationRequested) break;
+                var games = schedule
+                    ? await SportsFeature.FetchScheduleAsync(lg)
+                    : await SportsFeature.FetchResultsAsync(lg);
+                if (games.Count == 0) continue;
+                anyGames = true;
                 await _sports.CycleGamesAsync(_ble, games, ct);
-                if (!ct.IsCancellationRequested)
-                    await _ble.SendAsync(Protocol.BuildClock());
             }
+            if (!anyGames)
+                _notify.ShowBalloonTip(3000, "Sports", "No games found.", ToolTipIcon.Info);
+            else if (!ct.IsCancellationRequested)
+                await _ble.SendAsync(Protocol.BuildClock());
         });
 
     private void OnSportsTeam(bool schedule) =>
@@ -248,19 +256,27 @@ sealed class TrayIcon : IDisposable
         {
             _sportsCts?.Cancel();
             _sportsCts = new CancellationTokenSource();
-            var ct    = _sportsCts.Token;
-            var lg    = SportsFeature.FindLeague(_settings.SportEspnPath) ?? SportsFeature.DefaultLeague;
-            var games = schedule
-                ? await SportsFeature.FetchScheduleAsync(lg, _settings.SportsTeam)
-                : await SportsFeature.FetchResultsAsync(lg, _settings.SportsTeam);
-            if (games.Count == 0)
-                _notify.ShowBalloonTip(3000, lg.DisplayName, $"No games for {_settings.SportsTeam}.", ToolTipIcon.Info);
-            else
+            var ct      = _sportsCts.Token;
+            var leagues = _settings.SelectedLeagues.Count > 0
+                ? _settings.SelectedLeagues.Select(SportsFeature.FindOrCreate).ToList()
+                : [SportsFeature.DefaultLeague];
+
+            bool anyGames = false;
+            foreach (var lg in leagues)
             {
+                if (ct.IsCancellationRequested) break;
+                var games = schedule
+                    ? await SportsFeature.FetchScheduleAsync(lg, _settings.SportsTeam)
+                    : await SportsFeature.FetchResultsAsync(lg, _settings.SportsTeam);
+                if (games.Count == 0) continue;
+                anyGames = true;
                 await _sports.CycleGamesAsync(_ble, games, ct);
-                if (!ct.IsCancellationRequested)
-                    await _ble.SendAsync(Protocol.BuildClock());
             }
+            if (!anyGames)
+                _notify.ShowBalloonTip(3000, "Sports",
+                    $"No games for {_settings.SportsTeam}.", ToolTipIcon.Info);
+            else if (!ct.IsCancellationRequested)
+                await _ble.SendAsync(Protocol.BuildClock());
         });
 
     private void OnCycleOpen()
