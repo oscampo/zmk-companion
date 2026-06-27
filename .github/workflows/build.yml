@@ -28,9 +28,18 @@ jobs:
       - name: Test
         run: dotnet test app/ZmkCompanion.sln --configuration Release --logger "console;verbosity=normal"
 
-      - name: Publish
+      - name: Publish tray app
         run: >
           dotnet publish app/ZmkCompanion/ZmkCompanion.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained false
+          -p:PublishSingleFile=true
+          -p:RollForward=LatestPatch
+
+      - name: Publish CLI
+        run: >
+          dotnet publish app/ZmkCompanionCli/ZmkCompanionCli.csproj
           --configuration Release
           --runtime win-x64
           --self-contained false
