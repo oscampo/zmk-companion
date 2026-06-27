@@ -7,7 +7,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>ZmkCompanion</AssemblyName>
+    <AssemblyName>zkc</AssemblyName>
     <RootNamespace>ZmkCompanion</RootNamespace>
     <Version>1.0.0</Version>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>

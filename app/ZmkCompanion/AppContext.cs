@@ -7,9 +7,10 @@ namespace ZmkCompanion;
 sealed class ZmkAppContext : ApplicationContext
 {
     private readonly AppSettings _settings;
-    private readonly BleService _ble;
-    private readonly TrayIcon _tray;
+    private readonly BleService  _ble;
+    private readonly TrayIcon    _tray;
     private readonly ClockFeature _clock;
+    private readonly PipeServer  _pipe;
 
     // Cancellation for the background connect loop
     private readonly CancellationTokenSource _cts = new();
@@ -20,6 +21,8 @@ sealed class ZmkAppContext : ApplicationContext
         _ble      = new BleService();
         _tray     = new TrayIcon(_ble, _settings);
         _clock    = new ClockFeature(_ble);
+        _pipe     = new PipeServer(_ble);
+        _pipe.Start();
 
         _ble.Connected    += OnConnected;
         _ble.Disconnected += OnDisconnected;
@@ -71,6 +74,7 @@ sealed class ZmkAppContext : ApplicationContext
         {
             _cts.Cancel();
             _cts.Dispose();
+            _pipe.Dispose();
             _clock.Dispose();
             _tray.Dispose();
             _ble.Dispose();
