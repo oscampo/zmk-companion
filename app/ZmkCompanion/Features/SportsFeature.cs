@@ -354,8 +354,11 @@ public sealed class SportsFeature
 
         if (!string.IsNullOrWhiteSpace(teamFilter))
         {
-            string tf = teamFilter.ToUpper();
-            games = games.Where(g => g.Away == tf || g.Home == tf).ToList();
+            var teams = teamFilter
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(t => t.ToUpper())
+                .ToHashSet();
+            games = games.Where(g => teams.Contains(g.Away) || teams.Contains(g.Home)).ToList();
         }
         return games;
     }
