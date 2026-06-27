@@ -37,7 +37,8 @@ sealed class ZmkAppContext : ApplicationContext
     {
         Application.Idle -= OnFirstIdle;
         _ble.SetUiContext(SynchronizationContext.Current!);
-        _pipe.Start(() => _clock.PauseFor(TimeSpan.FromSeconds(30)));
+        var uiCtx = SynchronizationContext.Current!;
+        _pipe.Start(() => uiCtx.Post(_ => _clock.PauseFor(TimeSpan.FromSeconds(30)), null));
         _ = ConnectLoopAsync(_cts.Token);
     }
 
