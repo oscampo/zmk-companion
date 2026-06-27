@@ -316,10 +316,13 @@ sealed class TrayIcon : IDisposable
         string exeDir  = Path.GetDirectoryName(Environment.ProcessPath)
                          ?? AppDomain.CurrentDomain.BaseDirectory;
         string exePath = Path.Combine(exeDir, "zkc.exe");
-        Process.Start(new ProcessStartInfo("cmd.exe", $"/K \"\"{exePath}\" --help\"")
+        // "start" creates a fully independent console window with no handle relationship
+        // back to this process, preventing ShellExecuteEx from blocking the STA UI thread.
+        string args = $"/c start \"ZMK Companion\" /D \"{exeDir}\" cmd /K \"\"{exePath}\" --help\"";
+        Process.Start(new ProcessStartInfo("cmd.exe", args)
         {
-            UseShellExecute  = true,
-            WorkingDirectory = exeDir,
+            UseShellExecute = false,
+            CreateNoWindow  = true,
         });
     }
 
