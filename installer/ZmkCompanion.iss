@@ -4,7 +4,7 @@
 
 #define AppName    "ZMK Companion"
 #define AppVersion "1.0.0"
-#define AppExe     "ZmkCompanion.exe"
+#define AppExe     "zkc.exe"
 #define PublishDir "..\app\ZmkCompanion\bin\Release\net8.0-windows10.0.19041.0\win-x64\publish"
 
 [Setup]
