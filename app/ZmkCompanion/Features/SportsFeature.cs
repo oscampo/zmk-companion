@@ -215,7 +215,7 @@ public sealed class SportsFeature
         var parts = g.StatusDetail.Split(" - ", 2);
         string dateS = parts.Length > 0 ? parts[0].Trim() : g.StatusDetail[..Math.Min(5, g.StatusDetail.Length)];
         string timeS = FormatTimeShort(parts.Length > 1 ? parts[1].Trim() : "");
-        return $"{g.Away}  {g.Home}\n{dateS} {timeS}\n{lg}".TrimEnd();
+        return $"{g.Away}  {g.Home}\n{dateS}\n{timeS}";
     }
 
     private static string FormatBasketball(SportsGame g)
@@ -234,7 +234,7 @@ public sealed class SportsFeature
         var parts = g.StatusDetail.Split(" - ", 2);
         string dateS = parts.Length > 0 ? parts[0].Trim() : g.StatusDetail[..Math.Min(5, g.StatusDetail.Length)];
         string timeS = FormatTimeShort(parts.Length > 1 ? parts[1].Trim() : "");
-        return $"{g.Away}  {g.Home}\n{dateS} {timeS}\n{lg}".TrimEnd();
+        return $"{g.Away}  {g.Home}\n{dateS}\n{timeS}";
     }
 
     private static string FormatHockey(SportsGame g)
@@ -253,7 +253,7 @@ public sealed class SportsFeature
         var parts = g.StatusDetail.Split(" - ", 2);
         string dateS = parts.Length > 0 ? parts[0].Trim() : g.StatusDetail[..Math.Min(5, g.StatusDetail.Length)];
         string timeS = FormatTimeShort(parts.Length > 1 ? parts[1].Trim() : "");
-        return $"{g.Away}  {g.Home}\n{dateS} {timeS}\n{lg}".TrimEnd();
+        return $"{g.Away}  {g.Home}\n{dateS}\n{timeS}";
     }
 
     // "4:25 PM ET" -> "4:25p"  |  "1:00 AM ET" -> "1:00a"
@@ -308,6 +308,20 @@ public sealed class SportsFeature
             var statusType = comp["status"]?["type"];
             string state  = statusType?["state"]?.GetValue<string>()       ?? "pre";
             string detail = statusType?["shortDetail"]?.GetValue<string>() ?? "";
+
+            // shortDetail can be "Scheduled" (no date info) for non-NFL leagues.
+            // Fall back to comp["date"] (ISO 8601 UTC) converted to local time.
+            if (state == "pre" && !detail.Contains(" - "))
+            {
+                string? iso = comp["date"]?.GetValue<string>();
+                if (!string.IsNullOrEmpty(iso) &&
+                    DateTime.TryParse(iso, null,
+                        System.Globalization.DateTimeStyles.RoundtripKind, out var utc))
+                {
+                    var local = utc.ToLocalTime();
+                    detail = $"{local:M/d} - {local:h:mm tt}";
+                }
+            }
 
             games.Add(new SportsGame
             {

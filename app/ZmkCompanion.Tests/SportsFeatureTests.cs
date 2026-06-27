@@ -116,13 +116,14 @@ public class SportsFeatureTests
     }
 
     [Fact]
-    public void FormatGame_Soccer_Pre_ThreeLines()
+    public void FormatGame_Soccer_Pre_DateAndTime()
     {
         var g = MakeGame(Pl, "ARS", "CHE", "", "", "pre", "8/17 - 12:30 PM ET");
         string[] lines = SportsFeature.FormatGame(g).Split('\n');
         Assert.Equal(3, lines.Length);
         Assert.Contains("ARS", lines[0]);
-        Assert.Contains("PL", lines[2]);
+        Assert.Contains("8/17", lines[1]);
+        Assert.Contains("12:30p", lines[2]);
     }
 
     // ── NBA format ────────────────────────────────────────────────────────────
