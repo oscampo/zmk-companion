@@ -13,10 +13,11 @@ internal sealed class PipeServer : IDisposable
 
     private readonly BleService _ble;
     private readonly CancellationTokenSource _cts = new();
+    private Action? _onSend;
 
     internal PipeServer(BleService ble) => _ble = ble;
 
-    internal void Start() => _ = ServeAsync(_cts.Token);
+    internal void Start(Action? onSend = null) { _onSend = onSend; _ = ServeAsync(_cts.Token); }
 
     private async Task ServeAsync(CancellationToken ct)
     {
@@ -51,6 +52,7 @@ internal sealed class PipeServer : IDisposable
 
             if (cmd.StartsWith("SEND\t"))
             {
+                _onSend?.Invoke();
                 bool ok;
                 try   { ok = await _ble.SendAsync(cmd[5..].Replace("\\n", "\n")); }
                 catch { ok = false; }
@@ -62,7 +64,10 @@ internal sealed class PipeServer : IDisposable
                 string? line;
                 while ((line = await reader.ReadLineAsync(ct)) != null)
                     if (line.StartsWith("LINE\t"))
+                    {
+                        _onSend?.Invoke();
                         try { await _ble.SendAsync(line[5..].Replace("\\n", "\n")); } catch { }
+                    }
             }
             else if (cmd == "PING")
             {

@@ -20,6 +20,16 @@ sealed class ClockFeature : IDisposable
         _timer.Start();
     }
 
+    // Stops the clock timer for `duration`, then restarts it (and re-syncs the clock).
+    // Called when the CLI sends text so the display shows the text before the clock resumes.
+    public void PauseFor(TimeSpan duration)
+    {
+        Stop();
+        var t = new System.Windows.Forms.Timer { Interval = (int)duration.TotalMilliseconds };
+        t.Tick += (_, _) => { t.Stop(); t.Dispose(); Start(); };
+        t.Start();
+    }
+
     public void Stop()
     {
         _timer?.Stop();
