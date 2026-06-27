@@ -34,7 +34,8 @@ internal static class CliRunner
 
             await writer.WriteLineAsync($"SEND\t{text}");
             string? response = await reader.ReadLineAsync();
-            return response == "OK" ? 0 : 1;
+            if (response == "OK") return 0;
+            return Err(response?.Length > 4 ? response[4..] : "send failed");
         }
         catch (Exception ex) { return Err(ex.Message); }
     }

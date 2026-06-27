@@ -51,8 +51,8 @@ internal sealed class PipeServer : IDisposable
 
             if (cmd.StartsWith("SEND\t"))
             {
-                await _ble.SendAsync(cmd[5..].Replace("\\n", "\n"));
-                await writer.WriteLineAsync("OK");
+                bool ok = await _ble.SendAsync(cmd[5..].Replace("\\n", "\n"));
+                await writer.WriteLineAsync(ok ? "OK" : "ERR not connected or send failed");
             }
             else if (cmd == "WATCH")
             {
