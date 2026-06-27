@@ -51,7 +51,9 @@ internal sealed class PipeServer : IDisposable
 
             if (cmd.StartsWith("SEND\t"))
             {
-                bool ok = await _ble.SendAsync(cmd[5..].Replace("\\n", "\n"));
+                bool ok;
+                try   { ok = await _ble.SendAsync(cmd[5..].Replace("\\n", "\n")); }
+                catch { ok = false; }
                 await writer.WriteLineAsync(ok ? "OK" : "ERR not connected or send failed");
             }
             else if (cmd == "WATCH")
@@ -60,7 +62,7 @@ internal sealed class PipeServer : IDisposable
                 string? line;
                 while ((line = await reader.ReadLineAsync(ct)) != null)
                     if (line.StartsWith("LINE\t"))
-                        await _ble.SendAsync(line[5..].Replace("\\n", "\n"));
+                        try { await _ble.SendAsync(line[5..].Replace("\\n", "\n")); } catch { }
             }
             else if (cmd == "PING")
             {

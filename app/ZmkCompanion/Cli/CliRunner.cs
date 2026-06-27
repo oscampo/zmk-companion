@@ -34,8 +34,9 @@ internal static class CliRunner
 
             await writer.WriteLineAsync($"SEND\t{text}");
             string? response = await reader.ReadLineAsync();
-            if (response == "OK") return 0;
-            return Err(response?.Length > 4 ? response[4..] : "send failed");
+            if (response is null)  return Err("no response from tray app (pipe closed unexpectedly)");
+            if (response == "OK") { Console.WriteLine("Sent."); return 0; }
+            return Err(response.Length > 4 ? response[4..] : "send failed");
         }
         catch (Exception ex) { return Err(ex.Message); }
     }
