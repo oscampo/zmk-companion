@@ -228,6 +228,7 @@ sealed class TrayIcon : IDisposable
         {
             _sportsCts?.Cancel();
             _sportsCts = new CancellationTokenSource();
+            var ct    = _sportsCts.Token;
             var lg    = SportsFeature.FindLeague(_settings.SportEspnPath) ?? SportsFeature.DefaultLeague;
             var games = schedule
                 ? await SportsFeature.FetchScheduleAsync(lg)
@@ -235,7 +236,11 @@ sealed class TrayIcon : IDisposable
             if (games.Count == 0)
                 _notify.ShowBalloonTip(3000, lg.DisplayName, "No games found.", ToolTipIcon.Info);
             else
-                await _sports.CycleGamesAsync(_ble, games, _sportsCts.Token);
+            {
+                await _sports.CycleGamesAsync(_ble, games, ct);
+                if (!ct.IsCancellationRequested)
+                    await _ble.SendAsync(Protocol.BuildClock());
+            }
         });
 
     private void OnSportsTeam(bool schedule) =>
@@ -243,6 +248,7 @@ sealed class TrayIcon : IDisposable
         {
             _sportsCts?.Cancel();
             _sportsCts = new CancellationTokenSource();
+            var ct    = _sportsCts.Token;
             var lg    = SportsFeature.FindLeague(_settings.SportEspnPath) ?? SportsFeature.DefaultLeague;
             var games = schedule
                 ? await SportsFeature.FetchScheduleAsync(lg, _settings.SportsTeam)
@@ -250,7 +256,11 @@ sealed class TrayIcon : IDisposable
             if (games.Count == 0)
                 _notify.ShowBalloonTip(3000, lg.DisplayName, $"No games for {_settings.SportsTeam}.", ToolTipIcon.Info);
             else
-                await _sports.CycleGamesAsync(_ble, games, _sportsCts.Token);
+            {
+                await _sports.CycleGamesAsync(_ble, games, ct);
+                if (!ct.IsCancellationRequested)
+                    await _ble.SendAsync(Protocol.BuildClock());
+            }
         });
 
     private void OnCycleOpen()

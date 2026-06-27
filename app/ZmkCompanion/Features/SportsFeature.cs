@@ -272,7 +272,7 @@ public sealed class SportsFeature
         {
             if (ct.IsCancellationRequested) break;
             await ble.SendAsync(FormatGame(game));
-            await Task.Delay(5000, ct);
+            try { await Task.Delay(5000, ct); } catch (OperationCanceledException) { break; }
         }
     }
 
