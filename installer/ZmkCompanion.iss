@@ -2,10 +2,12 @@
 ; Requires: Inno Setup 6.3+ (https://jrsoftware.org/isinfo.php)
 ; Build: ISCC.exe ZmkCompanion.iss   (or run build.ps1)
 
-#define AppName    "ZMK Companion"
-#define AppVersion "1.0.0"
-#define AppExe     "zkc.exe"
-#define PublishDir "..\app\ZmkCompanion\bin\Release\net8.0-windows10.0.19041.0\win-x64\publish"
+#define AppName      "ZMK Companion"
+#define AppVersion   "1.0.0"
+#define AppExe       "ZmkCompanion.exe"
+#define CliExe       "zkc.exe"
+#define PublishDir   "..\app\ZmkCompanion\bin\Release\net8.0-windows10.0.19041.0\win-x64\publish"
+#define CliPublishDir "..\app\ZmkCompanionCli\bin\Release\net8.0-windows\win-x64\publish"
 
 [Setup]
 AppId={{8F3A2B1C-4D5E-6F70-A891-BC23DE456F78}
@@ -48,7 +50,8 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; \
                     GroupDescription: "Extras:"; Flags: unchecked
 
 [Files]
-Source: "{#PublishDir}\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\{#AppExe}";    DestDir: "{app}"; Flags: ignoreversion
+Source: "{#CliPublishDir}\{#CliExe}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#AppName}";          Filename: "{app}\{#AppExe}"
@@ -80,7 +83,7 @@ Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName} now"; \
 
 [UninstallRun]
 ; Stop the running app before uninstall removes its files
-Filename: "taskkill"; Parameters: "/f /im {#AppExe}"; Flags: runhidden
+Filename: "taskkill"; Parameters: "/f /im {#AppExe}"; Flags: runhidden; RunOnceId: "KillTray"
 
 [Code]
 // Returns true if any .NET 8 Desktop Runtime x64 is installed.
@@ -160,6 +163,7 @@ begin
   if CurStep = ssInstall then
     Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im {#AppExe}',
          '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    // zkc.exe (CLI) is a short-lived process; no need to kill it separately.
 end;
 
 // Remove leftover settings directory on uninstall only if the user confirms.
