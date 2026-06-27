@@ -23,9 +23,12 @@ sealed class BleService : IDisposable
 
     private BluetoothLEDevice? _device;
     private GattCharacteristic? _characteristic;
-    private readonly SynchronizationContext _uiContext = SynchronizationContext.Current
+    private SynchronizationContext _uiContext = SynchronizationContext.Current
         ?? new SynchronizationContext();
     private bool _disposed;
+
+    // Called once after Application.Run() installs the real WindowsFormsSynchronizationContext.
+    internal void SetUiContext(SynchronizationContext ctx) => _uiContext = ctx;
 
     // ── Discovery ─────────────────────────────────────────────────────────────
 

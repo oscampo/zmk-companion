@@ -22,12 +22,22 @@ sealed class ZmkAppContext : ApplicationContext
         _tray     = new TrayIcon(_ble, _settings);
         _clock    = new ClockFeature(_ble);
         _pipe     = new PipeServer(_ble);
-        _pipe.Start();
 
-        _ble.Connected    += OnConnected;
-        _ble.Disconnected += OnDisconnected;
+        _ble.Connected      += OnConnected;
+        _ble.Disconnected   += OnDisconnected;
         _tray.ExitRequested += OnExit;
 
+        // Defer startup until Application.Run() installs WindowsFormsSynchronizationContext.
+        // This ensures BleService events fire on the UI thread and PipeServer awaits resume
+        // on the STA thread — preventing COM/WinRT marshaling deadlocks.
+        Application.Idle += OnFirstIdle;
+    }
+
+    private void OnFirstIdle(object? sender, EventArgs e)
+    {
+        Application.Idle -= OnFirstIdle;
+        _ble.SetUiContext(SynchronizationContext.Current!);
+        _pipe.Start();
         _ = ConnectLoopAsync(_cts.Token);
     }
 
