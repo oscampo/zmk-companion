@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
 using ZmkCompanion.Core;
@@ -20,8 +19,12 @@ sealed class TrayIcon : IDisposable
 
     private CancellationTokenSource? _sportsCts;
     private CancellationTokenSource? _cycleCts;
+    private TerminalDialog? _terminal;
 
     public event Action? ExitRequested;
+
+    // Set by AppContext to pause the clock when text is sent from the dialog.
+    internal Action? OnSend { get; set; }
 
     public TrayIcon(BleService ble, AppSettings settings)
     {
@@ -313,17 +316,14 @@ sealed class TrayIcon : IDisposable
 
     private void OnSendText()
     {
-        string exeDir  = Path.GetDirectoryName(Environment.ProcessPath)
-                         ?? AppDomain.CurrentDomain.BaseDirectory;
-        string exePath = Path.Combine(exeDir, "zkc.exe");
-        // "start" creates a fully independent console window with no handle relationship
-        // back to this process, preventing ShellExecuteEx from blocking the STA UI thread.
-        string args = $"/c start \"ZMK Companion\" /D \"{exeDir}\" cmd /K \"\"{exePath}\" --help\"";
-        Process.Start(new ProcessStartInfo("cmd.exe", args)
+        if (_terminal is { IsDisposed: false })
         {
-            UseShellExecute = false,
-            CreateNoWindow  = true,
-        });
+            _terminal.BringToFront();
+            _terminal.Activate();
+            return;
+        }
+        _terminal = new TerminalDialog(_ble, OnSend);
+        _terminal.Show();
     }
 
     private void OnReconnect() =>

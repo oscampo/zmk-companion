@@ -37,8 +37,12 @@ sealed class ZmkAppContext : ApplicationContext
     {
         Application.Idle -= OnFirstIdle;
         _ble.SetUiContext(SynchronizationContext.Current!);
+        // Runs on UI thread — safe to call WinForms timer directly.
+        void pauseClock() => _clock.PauseFor(TimeSpan.FromSeconds(30));
+        _tray.OnSend = pauseClock;
+        // Pipe server runs on thread pool — must post to UI thread.
         var uiCtx = SynchronizationContext.Current!;
-        _pipe.Start(() => uiCtx.Post(_ => _clock.PauseFor(TimeSpan.FromSeconds(30)), null));
+        _pipe.Start(() => uiCtx.Post(_ => pauseClock(), null));
         _ = ConnectLoopAsync(_cts.Token);
     }
 
