@@ -48,18 +48,29 @@ sealed class ZmkAppContext : ApplicationContext
         // GattCharacteristic is never touched from an MTA thread.
         _pipe.Start(async text =>
         {
+            TrayLog($"[TRAY] sendText callback: posting to UI thread for '{text}'");
             var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             uiCtx.Post(async _ =>
             {
+                TrayLog("[TRAY] UI thread: pausing clock...");
                 try
                 {
                     _clock.PauseFor(TimeSpan.FromSeconds(30));
+                    TrayLog("[TRAY] UI thread: calling BleService.SendAsync...");
                     bool ok = await _ble.SendAsync(text);
+                    TrayLog($"[TRAY] UI thread: SendAsync returned {ok}. Setting TCS.");
                     tcs.SetResult(ok);
                 }
-                catch (Exception ex) { tcs.SetException(ex); }
+                catch (Exception ex)
+                {
+                    TrayLog($"[TRAY] UI thread: exception: {ex.Message}");
+                    tcs.SetException(ex);
+                }
             }, null);
-            return await tcs.Task;
+            TrayLog("[TRAY] sendText callback: awaiting TCS...");
+            bool result = await tcs.Task;
+            TrayLog($"[TRAY] sendText callback: TCS completed with {result}");
+            return result;
         });
 
         _ = ConnectLoopAsync(_cts.Token);
@@ -94,6 +105,12 @@ sealed class ZmkAppContext : ApplicationContext
             if (!_ble.IsConnected && !_cts.IsCancellationRequested)
                 await _ble.ScanAndConnectAsync(_cts.Token);
         });
+    }
+
+    private static void TrayLog(string msg)
+    {
+        string line = $"{DateTime.Now:HH:mm:ss.fff} {msg}";
+        try { File.AppendAllText(Path.Combine(Path.GetTempPath(), "zkc-debug.log"), line + Environment.NewLine); } catch { }
     }
 
     private void OnExit()

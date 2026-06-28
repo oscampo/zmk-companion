@@ -13,6 +13,7 @@ namespace ZmkCompanion.Core;
 internal sealed class PipeServer : IDisposable
 {
     internal const string PipeName = "ZmkCompanionPipe";
+    private static readonly string LogFile = Path.Combine(Path.GetTempPath(), "zkc-debug.log");
 
     private readonly CancellationTokenSource _cts = new();
     private Func<string, Task<bool>>? _sendText;
@@ -27,6 +28,7 @@ internal sealed class PipeServer : IDisposable
         // the UI thread suspends waiting for the TCS while the work that completes
         // the TCS is queued on the same UI thread.
         _ = Task.Run(() => ServeAsync(_cts.Token));
+        Log("[TRAY] PipeServer started on thread pool.");
     }
 
     private async Task ServeAsync(CancellationToken ct)
@@ -41,11 +43,13 @@ internal sealed class PipeServer : IDisposable
                 PipeOptions.Asynchronous);
             try
             {
+                Log("[TRAY] Waiting for client connection...");
                 await pipe.WaitForConnectionAsync(ct);
-                _ = HandleAsync(pipe, ct);   // handle concurrently; next iteration creates a new server instance
+                Log("[TRAY] Client connected. Spawning HandleAsync.");
+                _ = HandleAsync(pipe, ct);
             }
             catch (OperationCanceledException) { await pipe.DisposeAsync(); break; }
-            catch                              { await pipe.DisposeAsync(); }
+            catch (Exception ex)               { Log($"[TRAY] ServeAsync error: {ex.Message}"); await pipe.DisposeAsync(); }
         }
     }
 
@@ -57,13 +61,19 @@ internal sealed class PipeServer : IDisposable
 
         try
         {
+            Log("[TRAY] HandleAsync: reading command...");
             string? cmd = await reader.ReadLineAsync(ct);
+            Log($"[TRAY] HandleAsync: command = '{cmd ?? "<null>"}'");
             if (cmd is null) return;
 
             if (cmd.StartsWith("SEND\t"))
             {
-                bool ok = await Send(cmd[5..].Replace("\\n", "\n"));
+                string text = cmd[5..].Replace("\\n", "\n");
+                Log($"[TRAY] Calling _sendText('{text}')...");
+                bool ok = await Send(text);
+                Log($"[TRAY] _sendText returned: {ok}. Writing response...");
                 await writer.WriteLineAsync(ok ? "OK" : "ERR not connected or send failed");
+                Log("[TRAY] Response written.");
             }
             else if (cmd == "WATCH")
             {
@@ -78,11 +88,17 @@ internal sealed class PipeServer : IDisposable
                 await writer.WriteLineAsync("PONG");
             }
         }
-        catch { }
+        catch (Exception ex) { Log($"[TRAY] HandleAsync exception: {ex.Message}"); }
     }
 
     private Task<bool> Send(string text) =>
         _sendText is not null ? _sendText(text) : Task.FromResult(false);
+
+    private static void Log(string msg)
+    {
+        string line = $"{DateTime.Now:HH:mm:ss.fff} {msg}";
+        try { File.AppendAllText(LogFile, line + Environment.NewLine); } catch { }
+    }
 
     public void Dispose() { _cts.Cancel(); _cts.Dispose(); }
 }
