@@ -1,9 +1,10 @@
 using System.IO.Pipes;
+using System.Text;
 
 namespace ZmkCompanion.Core;
 
 // Named pipe server that lets the zkc CLI relay text to the running tray app.
-// Protocol (line-based UTF-8):
+// Protocol (line-based UTF-8, no BOM):
 //   SEND\t<text>  → OK
 //   WATCH         → READY, then reads LINE\t<text> lines until client disconnects
 //   PING          → PONG
@@ -13,7 +14,9 @@ namespace ZmkCompanion.Core;
 internal sealed class PipeServer : IDisposable
 {
     internal const string PipeName = "ZmkCompanionPipe";
-    private static readonly string LogFile = Path.Combine(Path.GetTempPath(), "zkc-debug.log");
+    // Separate log file from CLI (zkc-cli.log) to eliminate file-lock contention.
+    private static readonly string LogFile = Path.Combine(Path.GetTempPath(), "zkc-tray.log");
+    private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
     private readonly CancellationTokenSource _cts = new();
     private Func<string, Task<bool>>? _sendText;
@@ -21,26 +24,24 @@ internal sealed class PipeServer : IDisposable
     internal void Start(Func<string, Task<bool>>? sendText = null)
     {
         _sendText = sendText;
-        // Task.Run ensures ServeAsync and all its continuations (including HandleAsync)
-        // run on the thread pool, not the UI thread. Without this, Start() called from
-        // OnFirstIdle would cause ServeAsync continuations to post back to the UI
-        // SynchronizationContext, and the TCS await inside _sendText would deadlock:
-        // the UI thread suspends waiting for the TCS while the work that completes
-        // the TCS is queued on the same UI thread.
         _ = Task.Run(() => ServeAsync(_cts.Token));
-        Log("[TRAY] PipeServer started on thread pool.");
+        Log("[TRAY] PipeServer started.");
     }
 
     private async Task ServeAsync(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
+            // PipeOptions.None (synchronous I/O) avoids overlapped-read timing
+            // issues where the client's WriteFile blocks until the server posts
+            // a kernel-level ReadFile. Sync pipes use the kernel buffer
+            // unconditionally, so the client write completes immediately.
             var pipe = new NamedPipeServerStream(
                 PipeName,
                 PipeDirection.InOut,
                 NamedPipeServerStream.MaxAllowedServerInstances,
                 PipeTransmissionMode.Byte,
-                PipeOptions.Asynchronous);
+                PipeOptions.None);
             try
             {
                 Log("[TRAY] Waiting for client connection...");
@@ -55,25 +56,26 @@ internal sealed class PipeServer : IDisposable
 
     private async Task HandleAsync(NamedPipeServerStream pipe, CancellationToken ct)
     {
+        Log("[TRAY] HandleAsync: ENTRY");
         using var _p = pipe;
-        using var reader = new StreamReader(pipe, System.Text.Encoding.UTF8, leaveOpen: true);
-        using var writer = new StreamWriter(pipe, System.Text.Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
+        using var reader = new StreamReader(pipe, Utf8NoBom, leaveOpen: true);
+        using var writer = new StreamWriter(pipe, Utf8NoBom, leaveOpen: true) { AutoFlush = true };
 
         try
         {
             Log("[TRAY] HandleAsync: reading command...");
             string? cmd = await reader.ReadLineAsync(ct);
-            Log($"[TRAY] HandleAsync: command = '{cmd ?? "<null>"}'");
+            Log($"[TRAY] HandleAsync: command='{cmd ?? "<null>"}'");
             if (cmd is null) return;
 
             if (cmd.StartsWith("SEND\t"))
             {
                 string text = cmd[5..].Replace("\\n", "\n");
-                Log($"[TRAY] Calling _sendText('{text}')...");
+                Log($"[TRAY] HandleAsync: calling sendText('{text}')");
                 bool ok = await Send(text);
-                Log($"[TRAY] _sendText returned: {ok}. Writing response...");
+                Log($"[TRAY] HandleAsync: sendText={ok} — writing response");
                 await writer.WriteLineAsync(ok ? "OK" : "ERR not connected or send failed");
-                Log("[TRAY] Response written.");
+                Log("[TRAY] HandleAsync: response written.");
             }
             else if (cmd == "WATCH")
             {
@@ -88,7 +90,7 @@ internal sealed class PipeServer : IDisposable
                 await writer.WriteLineAsync("PONG");
             }
         }
-        catch (Exception ex) { Log($"[TRAY] HandleAsync exception: {ex.Message}"); }
+        catch (Exception ex) { Log($"[TRAY] HandleAsync exception: {ex.GetType().Name}: {ex.Message}"); }
     }
 
     private Task<bool> Send(string text) =>

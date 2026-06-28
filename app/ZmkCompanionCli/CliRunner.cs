@@ -1,11 +1,14 @@
 using System.IO.Pipes;
+using System.Text;
 
 namespace ZmkCompanionCli;
 
 internal static class CliRunner
 {
     private const string PipeName = "ZmkCompanionPipe";
-    private static readonly string LogFile = Path.Combine(Path.GetTempPath(), "zkc-debug.log");
+    // Separate log from tray (zkc-tray.log) — avoids cross-process file-lock contention.
+    private static readonly string LogFile = Path.Combine(Path.GetTempPath(), "zkc-cli.log");
+    private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
     public static async Task<int> RunAsync(string[] args)
     {
@@ -91,10 +94,10 @@ internal static class CliRunner
     }
 
     private static StreamWriter Writer(NamedPipeClientStream pipe) =>
-        new(pipe, System.Text.Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
+        new(pipe, Utf8NoBom, leaveOpen: true) { AutoFlush = true };
 
     private static StreamReader Reader(NamedPipeClientStream pipe) =>
-        new(pipe, System.Text.Encoding.UTF8, leaveOpen: true);
+        new(pipe, Utf8NoBom, leaveOpen: true);
 
     private static int TrayNotRunning()
     {

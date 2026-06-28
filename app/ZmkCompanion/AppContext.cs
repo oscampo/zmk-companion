@@ -115,7 +115,7 @@ sealed class ZmkAppContext : ApplicationContext
     private static void TrayLog(string msg)
     {
         string line = $"{DateTime.Now:HH:mm:ss.fff} {msg}";
-        try { File.AppendAllText(Path.Combine(Path.GetTempPath(), "zkc-debug.log"), line + Environment.NewLine); } catch { }
+        try { File.AppendAllText(Path.Combine(Path.GetTempPath(), "zkc-tray.log"), line + Environment.NewLine); } catch { }
     }
 
     private void OnExit()
