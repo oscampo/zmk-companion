@@ -96,29 +96,24 @@ sealed class BleService : IDisposable
     // ── Send ──────────────────────────────────────────────────────────────────
 
     // Returns true if the write succeeded.
-    // Always dispatches the WinRT write to the UI (STA) thread via _uiContext so callers
-    // on the thread pool (e.g. pipe server) don't hit COM cross-apartment issues.
-    public Task<bool> SendAsync(string message)
+    // Must be called from the UI (STA) thread — GattCharacteristic is STA-affine.
+    // Thread pool callers (e.g. pipe server) must dispatch to UI thread before calling.
+    public async Task<bool> SendAsync(string message)
     {
         var ch = _characteristic;
-        if (ch is null) return Task.FromResult(false);
+        if (ch is null) return false;
 
         byte[] data = TextConverter.ToBytes(message);
         var dw = new DataWriter();
         dw.WriteBytes(data);
         IBuffer buffer = dw.DetachBuffer();
 
-        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _uiContext.Post(async _ =>
+        try
         {
-            try
-            {
-                var result = await ch.WriteValueWithResultAsync(buffer);
-                tcs.SetResult(result.Status == GattCommunicationStatus.Success);
-            }
-            catch (Exception ex) { tcs.SetException(ex); }
-        }, null);
-        return tcs.Task;
+            var result = await ch.WriteValueWithResultAsync(buffer);
+            return result.Status == GattCommunicationStatus.Success;
+        }
+        catch { return false; }
     }
 
     // ── Connection events ─────────────────────────────────────────────────────

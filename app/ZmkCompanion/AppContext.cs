@@ -21,7 +21,7 @@ sealed class ZmkAppContext : ApplicationContext
         _ble      = new BleService();
         _tray     = new TrayIcon(_ble, _settings);
         _clock    = new ClockFeature(_ble);
-        _pipe     = new PipeServer(_ble);
+        _pipe     = new PipeServer();
 
         _ble.Connected      += OnConnected;
         _ble.Disconnected   += OnDisconnected;
@@ -37,12 +37,31 @@ sealed class ZmkAppContext : ApplicationContext
     {
         Application.Idle -= OnFirstIdle;
         _ble.SetUiContext(SynchronizationContext.Current!);
-        // Runs on UI thread — safe to call WinForms timer directly.
+        var uiCtx = SynchronizationContext.Current!;
+
+        // Called on the UI thread by TerminalDialog before each send.
         void pauseClock() => _clock.PauseFor(TimeSpan.FromSeconds(30));
         _tray.OnSend = pauseClock;
-        // Pipe server runs on thread pool — must post to UI thread.
-        var uiCtx = SynchronizationContext.Current!;
-        _pipe.Start(() => uiCtx.Post(_ => pauseClock(), null));
+
+        // Pipe server receives text on the thread pool. Dispatch everything —
+        // clock pause AND the BLE write — to the UI (STA) thread via TCS so
+        // GattCharacteristic is never touched from an MTA thread.
+        _pipe.Start(async text =>
+        {
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            uiCtx.Post(async _ =>
+            {
+                try
+                {
+                    _clock.PauseFor(TimeSpan.FromSeconds(30));
+                    bool ok = await _ble.SendAsync(text);
+                    tcs.SetResult(ok);
+                }
+                catch (Exception ex) { tcs.SetException(ex); }
+            }, null);
+            return await tcs.Task;
+        });
+
         _ = ConnectLoopAsync(_cts.Token);
     }
 

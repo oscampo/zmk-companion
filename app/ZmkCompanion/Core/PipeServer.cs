@@ -7,17 +7,21 @@ namespace ZmkCompanion.Core;
 //   SEND\t<text>  → OK
 //   WATCH         → READY, then reads LINE\t<text> lines until client disconnects
 //   PING          → PONG
+//
+// PipeServer does NOT call BleService directly. All BLE writes are done by the
+// _sendText delegate provided by AppContext, which dispatches to the UI thread.
 internal sealed class PipeServer : IDisposable
 {
     internal const string PipeName = "ZmkCompanionPipe";
 
-    private readonly BleService _ble;
     private readonly CancellationTokenSource _cts = new();
-    private Action? _onSend;
+    private Func<string, Task<bool>>? _sendText;
 
-    internal PipeServer(BleService ble) => _ble = ble;
-
-    internal void Start(Action? onSend = null) { _onSend = onSend; _ = ServeAsync(_cts.Token); }
+    internal void Start(Func<string, Task<bool>>? sendText = null)
+    {
+        _sendText = sendText;
+        _ = ServeAsync(_cts.Token);
+    }
 
     private async Task ServeAsync(CancellationToken ct)
     {
@@ -52,10 +56,7 @@ internal sealed class PipeServer : IDisposable
 
             if (cmd.StartsWith("SEND\t"))
             {
-                _onSend?.Invoke();
-                bool ok;
-                try   { ok = await _ble.SendAsync(cmd[5..].Replace("\\n", "\n")); }
-                catch { ok = false; }
+                bool ok = await Send(cmd[5..].Replace("\\n", "\n"));
                 await writer.WriteLineAsync(ok ? "OK" : "ERR not connected or send failed");
             }
             else if (cmd == "WATCH")
@@ -64,10 +65,7 @@ internal sealed class PipeServer : IDisposable
                 string? line;
                 while ((line = await reader.ReadLineAsync(ct)) != null)
                     if (line.StartsWith("LINE\t"))
-                    {
-                        _onSend?.Invoke();
-                        try { await _ble.SendAsync(line[5..].Replace("\\n", "\n")); } catch { }
-                    }
+                        await Send(line[5..].Replace("\\n", "\n"));
             }
             else if (cmd == "PING")
             {
@@ -76,6 +74,9 @@ internal sealed class PipeServer : IDisposable
         }
         catch { }
     }
+
+    private Task<bool> Send(string text) =>
+        _sendText is not null ? _sendText(text) : Task.FromResult(false);
 
     public void Dispose() { _cts.Cancel(); _cts.Dispose(); }
 }
