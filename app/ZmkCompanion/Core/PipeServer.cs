@@ -20,7 +20,13 @@ internal sealed class PipeServer : IDisposable
     internal void Start(Func<string, Task<bool>>? sendText = null)
     {
         _sendText = sendText;
-        _ = ServeAsync(_cts.Token);
+        // Task.Run ensures ServeAsync and all its continuations (including HandleAsync)
+        // run on the thread pool, not the UI thread. Without this, Start() called from
+        // OnFirstIdle would cause ServeAsync continuations to post back to the UI
+        // SynchronizationContext, and the TCS await inside _sendText would deadlock:
+        // the UI thread suspends waiting for the TCS while the work that completes
+        // the TCS is queued on the same UI thread.
+        _ = Task.Run(() => ServeAsync(_cts.Token));
     }
 
     private async Task ServeAsync(CancellationToken ct)
