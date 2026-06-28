@@ -17,8 +17,9 @@ sealed class ZmkAppContext : ApplicationContext
     private readonly CancellationTokenSource _cts = new();
 
     // BLE writes are STA-affine; pipe server runs on thread pool.
-    // Queue items here and drain on the UI thread via a WinForms Timer.
-    private readonly ConcurrentQueue<(string text, TaskCompletionSource<bool> tcs)> _bleQueue = new();
+    // Queue text here; drain on the UI thread via a WinForms Timer.
+    // Pipe responds OK immediately — no TCS cross-thread signaling needed.
+    private readonly ConcurrentQueue<string> _bleQueue = new();
     private System.Windows.Forms.Timer? _bleTimer;
 
     public ZmkAppContext()
@@ -47,35 +48,34 @@ sealed class ZmkAppContext : ApplicationContext
         // Called on the UI thread by TerminalDialog before each send.
         _tray.OnSend = () => _clock.PauseFor(TimeSpan.FromSeconds(30));
 
-        // Drain the BLE queue on the UI thread via WinForms Timer so the
-        // message loop guarantees STA affinity — uiCtx.Post is unreliable in
-        // tray-only apps (no visible Form to pump messages through Post).
+        // Drain the BLE queue on the UI thread via WinForms Timer.
+        // The message loop guarantees STA affinity for GattCharacteristic writes.
         _bleTimer = new System.Windows.Forms.Timer { Interval = 50 };
         _bleTimer.Tick += async (_, _) =>
         {
-            while (_bleQueue.TryDequeue(out var item))
+            while (_bleQueue.TryDequeue(out string? text))
             {
+                TrayLog($"[TRAY] Timer: sending '{text}'");
                 try
                 {
-                    TrayLog($"[TRAY] Timer: processing '{item.text}'");
                     _clock.PauseFor(TimeSpan.FromSeconds(30));
-                    bool ok = await _ble.SendAsync(item.text);
-                    TrayLog($"[TRAY] Timer: SendAsync returned {ok}");
-                    item.tcs.SetResult(ok);
+                    bool ok = await _ble.SendAsync(text!);
+                    TrayLog($"[TRAY] Timer: SendAsync={ok}");
                 }
-                catch (Exception ex) { item.tcs.SetException(ex); }
+                catch (Exception ex) { TrayLog($"[TRAY] Timer: ex={ex.Message}"); }
             }
         };
         _bleTimer.Start();
+        TrayLog("[TRAY] BLE timer started.");
 
-        // Pipe server receives text on the thread pool — enqueue and return TCS.
-        // The timer above drains the queue on the UI (STA) thread.
+        // Pipe server receives text on the thread pool. Enqueue it and respond
+        // OK immediately — no waiting for BLE completion. This prevents the
+        // pipe from blocking if a GATT write takes longer than expected.
         _pipe.Start(text =>
         {
-            TrayLog($"[TRAY] Enqueuing '{text}'");
-            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _bleQueue.Enqueue((text, tcs));
-            return tcs.Task;
+            TrayLog($"[TRAY] Pipe: enqueuing '{text}'");
+            _bleQueue.Enqueue(text);
+            return Task.FromResult(true);
         });
 
         _ = ConnectLoopAsync(_cts.Token);
