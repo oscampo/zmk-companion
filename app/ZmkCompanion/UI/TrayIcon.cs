@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
 using ZmkCompanion.Core;
@@ -19,12 +20,8 @@ sealed class TrayIcon : IDisposable
 
     private CancellationTokenSource? _sportsCts;
     private CancellationTokenSource? _cycleCts;
-    private TerminalDialog? _terminal;
 
     public event Action? ExitRequested;
-
-    // Set by AppContext to pause the clock when text is sent from the dialog.
-    internal Action? OnSend { get; set; }
 
     public TrayIcon(BleService ble, AppSettings settings)
     {
@@ -314,16 +311,20 @@ sealed class TrayIcon : IDisposable
         RebuildMenu();
     }
 
-    private void OnSendText()
+    private static void OnSendText()
     {
-        if (_terminal is { IsDisposed: false })
+        // Open a CMD window pre-loaded with zkc --help so the user can
+        // type zkc commands directly from the terminal.
+        try
         {
-            _terminal.BringToFront();
-            _terminal.Activate();
-            return;
+            Process.Start(new ProcessStartInfo
+            {
+                FileName        = "cmd.exe",
+                Arguments       = "/k zkc --help",
+                UseShellExecute = true,
+            });
         }
-        _terminal = new TerminalDialog(_ble, OnSend);
-        _terminal.Show();
+        catch { }
     }
 
     private void OnReconnect() =>

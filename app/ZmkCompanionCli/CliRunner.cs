@@ -6,8 +6,6 @@ namespace ZmkCompanionCli;
 internal static class CliRunner
 {
     private const string PipeName = "ZmkCompanionPipe";
-    // Separate log from tray (zkc-tray.log) — avoids cross-process file-lock contention.
-    private static readonly string LogFile = Path.Combine(Path.GetTempPath(), "zkc-cli.log");
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
     public static async Task<int> RunAsync(string[] args)
@@ -21,7 +19,6 @@ internal static class CliRunner
         if (args.Length >= 1 && args[0] is "--watch" or "-w")
             return await WatchAsync();
 
-        // Everything else is treated as the message text
         return await SendAsync(string.Join(" ", args));
     }
 
@@ -31,55 +28,43 @@ internal static class CliRunner
     {
         try
         {
-            Log($"[CLI] Connecting to pipe '{PipeName}'...");
             using var pipe = Connect(out bool connected);
-            if (!connected) { Log("[CLI] Pipe connect TIMEOUT — tray not running"); return TrayNotRunning(); }
-            Log($"[CLI] Connected. Sending: SEND\\t{text}");
+            if (!connected) return TrayNotRunning();
 
             using var writer = Writer(pipe);
             using var reader = Reader(pipe);
 
             await writer.WriteLineAsync($"SEND\t{text}");
-            Log("[CLI] Command written. Waiting for response...");
 
             string? response = await reader.ReadLineAsync();
-            Log($"[CLI] Response received: '{response ?? "<null>"}'");
-
             if (response is null)  return Err("no response from tray app (pipe closed unexpectedly)");
             if (response == "OK") { Console.WriteLine("Sent."); return 0; }
             return Err(response.Length > 4 ? response[4..] : "send failed");
         }
-        catch (Exception ex) { Log($"[CLI] Exception: {ex}"); return Err(ex.Message); }
+        catch (Exception ex) { return Err(ex.Message); }
     }
 
     private static async Task<int> WatchAsync()
     {
         try
         {
-            Log($"[CLI] WATCH mode. Connecting to pipe '{PipeName}'...");
             using var pipe = Connect(out bool connected);
-            if (!connected) { Log("[CLI] Pipe connect TIMEOUT — tray not running"); return TrayNotRunning(); }
-            Log("[CLI] Connected. Sending WATCH...");
+            if (!connected) return TrayNotRunning();
 
             using var writer = Writer(pipe);
             using var reader = Reader(pipe);
 
             await writer.WriteLineAsync("WATCH");
-            Log("[CLI] Waiting for READY...");
             string? ready = await reader.ReadLineAsync();
-            Log($"[CLI] Got: '{ready}'");
             if (ready != "READY") return 1;
 
             string? line;
             while ((line = Console.ReadLine()) != null)
-            {
-                Log($"[CLI] Sending LINE: {line}");
                 await writer.WriteLineAsync($"LINE\t{line}");
-            }
 
             return 0;
         }
-        catch (Exception ex) { Log($"[CLI] Exception: {ex}"); return Err(ex.Message); }
+        catch (Exception ex) { return Err(ex.Message); }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -106,13 +91,6 @@ internal static class CliRunner
     }
 
     private static int Err(string msg) { Console.Error.WriteLine($"zkc: {msg}"); return 1; }
-
-    private static void Log(string msg)
-    {
-        string line = $"{DateTime.Now:HH:mm:ss.fff} {msg}";
-        Console.Error.WriteLine(line);
-        try { File.AppendAllText(LogFile, line + Environment.NewLine); } catch { }
-    }
 
     private static void PrintHelp() => Console.WriteLine("""
         zkc — ZMK Keyboard Companion CLI
