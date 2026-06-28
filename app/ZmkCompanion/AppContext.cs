@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using ZmkCompanion.Core;
 using ZmkCompanion.Features;
 using ZmkCompanion.UI;
@@ -14,6 +15,11 @@ sealed class ZmkAppContext : ApplicationContext
 
     // Cancellation for the background connect loop
     private readonly CancellationTokenSource _cts = new();
+
+    // BLE writes are STA-affine; pipe server runs on thread pool.
+    // Queue items here and drain on the UI thread via a WinForms Timer.
+    private readonly ConcurrentQueue<(string text, TaskCompletionSource<bool> tcs)> _bleQueue = new();
+    private System.Windows.Forms.Timer? _bleTimer;
 
     public ZmkAppContext()
     {
@@ -37,40 +43,39 @@ sealed class ZmkAppContext : ApplicationContext
     {
         Application.Idle -= OnFirstIdle;
         _ble.SetUiContext(SynchronizationContext.Current!);
-        var uiCtx = SynchronizationContext.Current!;
 
         // Called on the UI thread by TerminalDialog before each send.
-        void pauseClock() => _clock.PauseFor(TimeSpan.FromSeconds(30));
-        _tray.OnSend = pauseClock;
+        _tray.OnSend = () => _clock.PauseFor(TimeSpan.FromSeconds(30));
 
-        // Pipe server receives text on the thread pool. Dispatch everything —
-        // clock pause AND the BLE write — to the UI (STA) thread via TCS so
-        // GattCharacteristic is never touched from an MTA thread.
-        _pipe.Start(async text =>
+        // Drain the BLE queue on the UI thread via WinForms Timer so the
+        // message loop guarantees STA affinity — uiCtx.Post is unreliable in
+        // tray-only apps (no visible Form to pump messages through Post).
+        _bleTimer = new System.Windows.Forms.Timer { Interval = 50 };
+        _bleTimer.Tick += async (_, _) =>
         {
-            TrayLog($"[TRAY] sendText callback: posting to UI thread for '{text}'");
-            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            uiCtx.Post(async _ =>
+            while (_bleQueue.TryDequeue(out var item))
             {
-                TrayLog("[TRAY] UI thread: pausing clock...");
                 try
                 {
+                    TrayLog($"[TRAY] Timer: processing '{item.text}'");
                     _clock.PauseFor(TimeSpan.FromSeconds(30));
-                    TrayLog("[TRAY] UI thread: calling BleService.SendAsync...");
-                    bool ok = await _ble.SendAsync(text);
-                    TrayLog($"[TRAY] UI thread: SendAsync returned {ok}. Setting TCS.");
-                    tcs.SetResult(ok);
+                    bool ok = await _ble.SendAsync(item.text);
+                    TrayLog($"[TRAY] Timer: SendAsync returned {ok}");
+                    item.tcs.SetResult(ok);
                 }
-                catch (Exception ex)
-                {
-                    TrayLog($"[TRAY] UI thread: exception: {ex.Message}");
-                    tcs.SetException(ex);
-                }
-            }, null);
-            TrayLog("[TRAY] sendText callback: awaiting TCS...");
-            bool result = await tcs.Task;
-            TrayLog($"[TRAY] sendText callback: TCS completed with {result}");
-            return result;
+                catch (Exception ex) { item.tcs.SetException(ex); }
+            }
+        };
+        _bleTimer.Start();
+
+        // Pipe server receives text on the thread pool — enqueue and return TCS.
+        // The timer above drains the queue on the UI (STA) thread.
+        _pipe.Start(text =>
+        {
+            TrayLog($"[TRAY] Enqueuing '{text}'");
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _bleQueue.Enqueue((text, tcs));
+            return tcs.Task;
         });
 
         _ = ConnectLoopAsync(_cts.Token);
@@ -125,6 +130,8 @@ sealed class ZmkAppContext : ApplicationContext
         {
             _cts.Cancel();
             _cts.Dispose();
+            _bleTimer?.Stop();
+            _bleTimer?.Dispose();
             _pipe.Dispose();
             _clock.Dispose();
             _tray.Dispose();
