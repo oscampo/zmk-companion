@@ -7,7 +7,7 @@ namespace ZmkCompanion.Core;
 interface IWidget : IDisposable
 {
     // Region of the 68×160 canvas this widget occupies.
-    Rectangle Bounds { get; }
+    Rectangle Bounds { get; set; }
 
     // Fired on the UI thread when the widget's content has changed.
     event Action? Invalidated;

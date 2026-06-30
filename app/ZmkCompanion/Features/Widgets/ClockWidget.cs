@@ -6,7 +6,7 @@ namespace ZmkCompanion.Features.Widgets;
 
 sealed class ClockWidget : IWidget
 {
-    public Rectangle Bounds { get; } = new(0, 0, BitmapFrame.Width, BitmapFrame.Height);
+    public Rectangle Bounds { get; set; } = new(0, 0, BitmapFrame.Width, BitmapFrame.Height);
 
     public event Action? Invalidated;
 

@@ -16,7 +16,6 @@ sealed class ZmkAppContext : ApplicationContext
     private readonly CancellationTokenSource _cts = new();
 
     // Pipe callbacks run on the thread pool; compositor/WinForms timers need STA.
-    // Enqueue here and drain on the UI thread via a WinForms Timer.
     private readonly ConcurrentQueue<string> _textQueue = new();
     private System.Windows.Forms.Timer? _drainTimer;
 
@@ -27,13 +26,15 @@ sealed class ZmkAppContext : ApplicationContext
         _tray     = new TrayIcon(_ble, _settings);
 
         _compositor = new DisplayCompositor(_ble);
-        _compositor.Add(new ClockWidget());
+        foreach (var p in _settings.Canvas)
+            _compositor.Add(CreateWidget(p));
 
         _pipe = new PipeServer();
 
-        _ble.Connected      += OnConnected;
-        _ble.Disconnected   += OnDisconnected;
-        _tray.ExitRequested += OnExit;
+        _ble.Connected             += OnConnected;
+        _ble.Disconnected          += OnDisconnected;
+        _tray.ExitRequested        += OnExit;
+        _tray.CanvasEditorRequested += OnCanvasEditor;
 
         Application.Idle += OnFirstIdle;
     }
@@ -67,6 +68,27 @@ sealed class ZmkAppContext : ApplicationContext
 
         _ = ConnectLoopAsync(_cts.Token);
     }
+
+    // ── Canvas editor ─────────────────────────────────────────────────────────
+
+    private void OnCanvasEditor()
+    {
+        var form = new CanvasEditorForm(_settings, ApplyCanvas);
+        form.Show();
+    }
+
+    internal void ApplyCanvas(List<WidgetPlacement> canvas)
+    {
+        _settings.Canvas = canvas;
+        _settings.Save();
+        _compositor.Rebuild(canvas.Select(CreateWidget));
+        if (_ble.IsConnected) _compositor.StartAll();
+    }
+
+    private static IWidget CreateWidget(WidgetPlacement p) => p.Type switch
+    {
+        _ => new ClockWidget { Bounds = p.ToRectangle() },
+    };
 
     // ── Connection lifecycle ──────────────────────────────────────────────────
 

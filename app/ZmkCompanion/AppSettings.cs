@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ZmkCompanion.Core;
 
 namespace ZmkCompanion;
 
@@ -15,6 +16,9 @@ sealed class AppSettings
         WriteIndented = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
+
+    // Canvas widget layout — persisted as JSON array of placements.
+    public List<WidgetPlacement> Canvas { get; set; } = [new WidgetPlacement()];
 
     public string City { get; set; } = "";
     public string NflTeam { get; set; } = "";

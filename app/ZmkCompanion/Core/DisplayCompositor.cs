@@ -30,6 +30,15 @@ sealed class DisplayCompositor : IDisposable
         _widgets.Remove(widget);
     }
 
+    // Replaces all widgets, disposing the old ones. Does not start the new ones.
+    public void Rebuild(IEnumerable<IWidget> newWidgets)
+    {
+        StopAll();
+        foreach (var w in _widgets) { w.Invalidated -= OnInvalidated; w.Dispose(); }
+        _widgets.Clear();
+        foreach (var w in newWidgets) Add(w);
+    }
+
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     public void StartAll() { foreach (var w in _widgets) w.Start(); }

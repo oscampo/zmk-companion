@@ -22,6 +22,7 @@ sealed class TrayIcon : IDisposable
     private CancellationTokenSource? _cycleCts;
 
     public event Action? ExitRequested;
+    public event Action? CanvasEditorRequested;
 
     public TrayIcon(BleService ble, AppSettings settings)
     {
@@ -170,6 +171,8 @@ sealed class TrayIcon : IDisposable
         }
 
         strip.Items.Add(new ToolStripMenuItem("Terminal / Send text…", null, (_, _) => OnSendText()));
+        strip.Items.Add(new ToolStripMenuItem("Canvas…",              null, (_, _) => CanvasEditorRequested?.Invoke())
+            { Enabled = connected });
 
         strip.Items.Add(new ToolStripSeparator());
 
