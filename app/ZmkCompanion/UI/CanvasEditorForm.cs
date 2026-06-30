@@ -8,8 +8,7 @@ using ZmkCompanion.Features.Widgets;
 namespace ZmkCompanion.UI;
 
 // Visual canvas editor: shows the 68×160 display at 3× scale.
-// X/Y in the bounds panel represent the CENTER of the widget region,
-// so a full-canvas Clock shows CX=34, CY=80 rather than X=0, Y=0.
+// CX/CY coordinates represent the CENTER of each widget's bounding box.
 sealed class CanvasEditorForm : Form
 {
     private const int Zoom    = 3;
@@ -17,6 +16,7 @@ sealed class CanvasEditorForm : Form
     private const int CanvasH = BitmapFrame.Height * Zoom;  // 480
 
     private readonly AppSettings                   _settings;
+    private readonly LiveState                     _liveState;
     private readonly Action<List<WidgetPlacement>> _onApply;
 
     private readonly List<WidgetPlacement> _placements = [];
@@ -32,21 +32,23 @@ sealed class CanvasEditorForm : Form
     private readonly NumericUpDown _nudCX, _nudCY, _nudW, _nudH;
     private readonly CheckBox      _chkFull;
     private readonly Panel         _propsPanel;
+    private readonly GroupBox      _grpProps;
     private          bool          _suppressNud;
     private          int           _propsY;
 
     // ── Construction ─────────────────────────────────────────────────────────
 
-    public CanvasEditorForm(AppSettings settings, Action<List<WidgetPlacement>> onApply)
+    public CanvasEditorForm(AppSettings settings, LiveState liveState, Action<List<WidgetPlacement>> onApply)
     {
-        _settings = settings;
-        _onApply  = onApply;
+        _settings  = settings;
+        _liveState = liveState;
+        _onApply   = onApply;
 
         Text            = "ZMK Companion — Canvas Editor";
         FormBorderStyle = FormBorderStyle.FixedSingle;
         StartPosition   = FormStartPosition.CenterScreen;
         MaximizeBox     = false;
-        ClientSize      = new Size(492, 572);
+        ClientSize      = new Size(532, 630);
 
         // ── Left: canvas preview ─────────────────────────────────────────────
         _canvas = new Panel
@@ -65,24 +67,24 @@ sealed class CanvasEditorForm : Form
         int rx = CanvasW + 20;  // 224
 
         // ── Widgets group ────────────────────────────────────────────────────
-        var grpWidgets = new GroupBox { Text = "Widgets", Location = new Point(rx, 8), Size = new Size(258, 218) };
+        var grpWidgets = new GroupBox { Text = "Widgets", Location = new Point(rx, 8), Size = new Size(298, 218) };
 
-        _listWidgets = new ListBox { Location = new Point(8, 20), Size = new Size(242, 138) };
+        _listWidgets = new ListBox { Location = new Point(8, 20), Size = new Size(282, 138) };
         _listWidgets.SelectedIndexChanged += OnListSelectionChanged;
         grpWidgets.Controls.Add(_listWidgets);
 
-        var btnAdd = new Button { Text = "Add ▾", Location = new Point(8, 166), Size = new Size(115, 26) };
+        var btnAdd = new Button { Text = "Add ▾", Location = new Point(8, 166), Size = new Size(135, 26) };
         btnAdd.Click += OnAddClick;
         grpWidgets.Controls.Add(btnAdd);
 
-        var btnRemove = new Button { Text = "Remove", Location = new Point(131, 166), Size = new Size(111, 26) };
+        var btnRemove = new Button { Text = "Remove", Location = new Point(151, 166), Size = new Size(131, 26) };
         btnRemove.Click += OnRemoveClick;
         grpWidgets.Controls.Add(btnRemove);
 
         Controls.Add(grpWidgets);
 
         // ── Position & size group ─────────────────────────────────────────────
-        var grpBounds = new GroupBox { Text = "Position && Size  (CX / CY = center)", Location = new Point(rx, 234), Size = new Size(258, 130) };
+        var grpBounds = new GroupBox { Text = "Position && Size  (CX / CY = center)", Location = new Point(rx, 234), Size = new Size(298, 130) };
 
         grpBounds.Controls.Add(MakeLbl("CX:", 4,  24)); _nudCX = MakeNud(30,  20, 0, BitmapFrame.Width);
         grpBounds.Controls.Add(MakeLbl("CY:", 98, 24)); _nudCY = MakeNud(124, 20, 0, BitmapFrame.Height);
@@ -102,18 +104,23 @@ sealed class CanvasEditorForm : Form
 
         Controls.Add(grpBounds);
 
-        // ── Properties group ─────────────────────────────────────────────────
-        var grpProps = new GroupBox { Text = "Properties", Location = new Point(rx, 372), Size = new Size(258, 140) };
-        _propsPanel = new Panel { Location = new Point(4, 16), Size = new Size(250, 118) };
-        grpProps.Controls.Add(_propsPanel);
-        Controls.Add(grpProps);
+        // ── Properties group (scrollable, rebuilt per widget type) ────────────
+        _grpProps = new GroupBox { Text = "Properties", Location = new Point(rx, 372), Size = new Size(298, 210) };
+        _propsPanel = new Panel
+        {
+            Location    = new Point(4, 18),
+            Size        = new Size(288, 188),
+            AutoScroll  = true,
+        };
+        _grpProps.Controls.Add(_propsPanel);
+        Controls.Add(_grpProps);
 
         // ── Bottom buttons ────────────────────────────────────────────────────
-        var btnApply = new Button { Text = "Apply && Send", Location = new Point(rx, 524), Size = new Size(120, 32) };
+        var btnApply = new Button { Text = "Apply && Send", Location = new Point(rx, 594), Size = new Size(138, 30) };
         btnApply.Click += (_, _) => Apply();
         Controls.Add(btnApply);
 
-        var btnClose = new Button { Text = "Close", Location = new Point(rx + 128, 524), Size = new Size(110, 32) };
+        var btnClose = new Button { Text = "Close", Location = new Point(rx + 148, 594), Size = new Size(110, 30) };
         btnClose.Click += (_, _) => Close();
         Controls.Add(btnClose);
 
@@ -142,11 +149,13 @@ sealed class CanvasEditorForm : Form
         }
     }
 
-    internal static IWidget MakePreview(WidgetPlacement p)
+    internal IWidget MakePreview(WidgetPlacement p)
     {
         var bounds = p.ToRectangle();
         return p.Type switch
         {
+            "label"      => new LabelWidget(_liveState)      { Bounds = bounds, Config = p.GetConfig<LabelConfig>() },
+            "profilebar" => new ProfileBarWidget(_liveState) { Bounds = bounds, Config = p.GetConfig<ProfileBarConfig>() },
             "battery"    => new BatteryWidget    { Bounds = bounds, Config = p.GetConfig<BatteryConfig>() },
             "connection" => new ConnectionWidget { Bounds = bounds, Config = p.GetConfig<ConnectionConfig>() },
             _            => new ClockWidget      { Bounds = bounds, Config = p.GetConfig<ClockConfig>() },
@@ -241,7 +250,7 @@ sealed class CanvasEditorForm : Form
         _listWidgets.SelectedIndexChanged -= OnListSelectionChanged;
         _listWidgets.BeginUpdate();
         _listWidgets.Items.Clear();
-        foreach (var p in _placements) _listWidgets.Items.Add(WidgetLabel(p.Type));
+        foreach (var p in _placements) _listWidgets.Items.Add(WidgetListLabel(p));
         if (_sel >= 0 && _sel < _listWidgets.Items.Count) _listWidgets.SelectedIndex = _sel;
         _listWidgets.EndUpdate();
         _listWidgets.SelectedIndexChanged += OnListSelectionChanged;
@@ -265,12 +274,12 @@ sealed class CanvasEditorForm : Form
     private void OnAddClick(object? sender, EventArgs e)
     {
         var menu = new ContextMenuStrip();
-        menu.Items.Add(new ToolStripMenuItem("Clock",      null, (_, _) => AddWidget("clock")));
-        menu.Items.Add(new ToolStripMenuItem("Battery",    null, (_, _) => AddWidget("battery")));
-        menu.Items.Add(new ToolStripMenuItem("Connection", null, (_, _) => AddWidget("connection")));
-        menu.Items.Add(new ToolStripMenuItem("Weather",    null, (_, _) => AddWidget("weather"))  { Enabled = false });
-        menu.Items.Add(new ToolStripMenuItem("Pomodoro",   null, (_, _) => AddWidget("pomodoro")) { Enabled = false });
-        menu.Items.Add(new ToolStripMenuItem("Text",       null, (_, _) => AddWidget("text"))     { Enabled = false });
+        menu.Items.Add(new ToolStripMenuItem("Label (generic)",  null, (_, _) => AddWidget("label")));
+        menu.Items.Add(new ToolStripMenuItem("Profile Bar (BLE 1-5)", null, (_, _) => AddWidget("profilebar")));
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripMenuItem("Clock (legacy)",   null, (_, _) => AddWidget("clock")));
+        menu.Items.Add(new ToolStripMenuItem("Battery (legacy)", null, (_, _) => AddWidget("battery")));
+        menu.Items.Add(new ToolStripMenuItem("Connection (legacy)", null, (_, _) => AddWidget("connection")));
         var btn = (Button)sender!;
         menu.Show(btn, new Point(0, btn.Height));
     }
@@ -278,6 +287,9 @@ sealed class CanvasEditorForm : Form
     private void AddWidget(string type)
     {
         var p = new WidgetPlacement { Type = type };
+        // Default label: a centered clock, big font
+        if (type == "label")
+            p.SetConfig(new LabelConfig { Template = "{time}", Size = 24f, Bold = true });
         _placements.Add(p);
         _previews.Add(MakePreview(p));
         _sel = _placements.Count - 1;
@@ -300,16 +312,23 @@ sealed class CanvasEditorForm : Form
         _canvas.Invalidate();
     }
 
-    private static string WidgetLabel(string type) => type switch
+    private static string WidgetListLabel(WidgetPlacement p)
     {
-        "clock"      => "Clock",
-        "battery"    => "Battery",
-        "connection" => "Connection",
-        "weather"    => "Weather",
-        "pomodoro"   => "Pomodoro",
-        "text"       => "Text",
-        _            => type,
-    };
+        if (p.Type == "label")
+        {
+            var cfg = p.GetConfig<LabelConfig>();
+            string preview = cfg.Template.Length > 22 ? cfg.Template[..22] + "…" : cfg.Template;
+            return $"Label: {preview}";
+        }
+        return p.Type switch
+        {
+            "profilebar" => "Profile Bar",
+            "clock"      => "Clock (legacy)",
+            "battery"    => "Battery (legacy)",
+            "connection" => "Connection (legacy)",
+            _            => p.Type,
+        };
+    }
 
     // ── Bounds panel ──────────────────────────────────────────────────────────
 
@@ -373,22 +392,198 @@ sealed class CanvasEditorForm : Form
 
         switch (p.Type)
         {
-            case "clock":
-                BuildClockProps(p);
-                break;
-            case "battery":
-                BuildBatteryProps(p);
-                break;
-            case "connection":
-                BuildConnectionProps(p);
-                break;
+            case "label":      BuildLabelProps(p);      break;
+            case "profilebar": BuildProfileBarProps(p); break;
+            case "clock":      BuildClockProps(p);      break;
+            case "battery":    BuildBatteryProps(p);    break;
+            case "connection": BuildConnectionProps(p); break;
         }
+
+        // Expand scrollable area height to content
+        _propsPanel.AutoScrollMinSize = new Size(0, _propsY + 4);
     }
+
+    // ── Label properties ──────────────────────────────────────────────────────
+
+    private void BuildLabelProps(WidgetPlacement p)
+    {
+        var cfg = p.GetConfig<LabelConfig>();
+
+        // Template row
+        AddLabel("Template:");
+        var txtTemplate = new TextBox
+        {
+            Text      = cfg.Template,
+            Location  = new Point(0, _propsY),
+            Size      = new Size(284, 23),
+        };
+        txtTemplate.TextChanged += (_, _) =>
+        {
+            var c = p.GetConfig<LabelConfig>(); c.Template = txtTemplate.Text; p.SetConfig(c);
+            if (_previews[_sel] is LabelWidget w) { w.Config = c; w.Start(); }
+            RefreshListEntry();
+            _canvas.Invalidate();
+        };
+        _propsPanel.Controls.Add(txtTemplate);
+        _propsY += 27;
+
+        // Binding quick-insert buttons — row 1
+        AddBindingButtons(p, txtTemplate,
+        [
+            ("{battery.icon}",    "bat icon"),
+            ("{battery.percent}", "bat %"),
+            ("{conn.icon}",       "conn icon"),
+            ("{conn.type}",       "type"),
+            ("{conn.profile}",    "profile#"),
+        ]);
+        // Row 2
+        AddBindingButtons(p, txtTemplate,
+        [
+            ("{time}",   "time"),
+            ("{time24}", "time24"),
+            ("{ampm}",   "AM/PM"),
+            ("{date}",   "date"),
+            ("{date.month}", "month"),
+            ("{date.day}",   "day"),
+        ]);
+
+        // Glyph picker button
+        var btnGlyph = new Button
+        {
+            Text     = "Insert Glyph…",
+            Location = new Point(0, _propsY),
+            Size     = new Size(120, 24),
+        };
+        btnGlyph.Click += (_, _) =>
+        {
+            using var dlg = new GlyphPickerDialog();
+            if (dlg.ShowDialog(this) == DialogResult.OK && dlg.SelectedGlyph is { } g)
+            {
+                int pos = txtTemplate.SelectionStart;
+                txtTemplate.Text = txtTemplate.Text.Insert(pos, g);
+                txtTemplate.SelectionStart = pos + g.Length;
+            }
+        };
+        _propsPanel.Controls.Add(btnGlyph);
+        _propsY += 30;
+
+        // Font size
+        AddLabel("Size (px):");
+        var nudSize = new NumericUpDown
+        {
+            Location  = new Point(68, _propsY),
+            Size      = new Size(60, 23),
+            Minimum   = 6,
+            Maximum   = 60,
+            Value     = (decimal)Math.Clamp(cfg.Size, 6, 60),
+        };
+        nudSize.ValueChanged += (_, _) =>
+        {
+            var c = p.GetConfig<LabelConfig>(); c.Size = (float)nudSize.Value; p.SetConfig(c);
+            if (_previews[_sel] is LabelWidget w) w.Config = c;
+            _canvas.Invalidate();
+        };
+        _propsPanel.Controls.Add(nudSize);
+        _propsY += 28;
+
+        // Bold + NerdFont checkboxes on same row
+        var chkBold = new CheckBox { Text = "Bold", Checked = cfg.Bold, Location = new Point(0, _propsY), Size = new Size(70, 22) };
+        chkBold.CheckedChanged += (_, _) =>
+        {
+            var c = p.GetConfig<LabelConfig>(); c.Bold = chkBold.Checked; p.SetConfig(c);
+            if (_previews[_sel] is LabelWidget w) w.Config = c;
+            _canvas.Invalidate();
+        };
+        _propsPanel.Controls.Add(chkBold);
+
+        var chkNerd = new CheckBox { Text = "Nerd Font", Checked = cfg.UseNerdFont, Location = new Point(78, _propsY), Size = new Size(100, 22) };
+        chkNerd.CheckedChanged += (_, _) =>
+        {
+            var c = p.GetConfig<LabelConfig>(); c.UseNerdFont = chkNerd.Checked; p.SetConfig(c);
+            if (_previews[_sel] is LabelWidget w) w.Config = c;
+            _canvas.Invalidate();
+        };
+        _propsPanel.Controls.Add(chkNerd);
+        _propsY += 26;
+
+        // 24h checkbox
+        var chk24 = new CheckBox { Text = "Force 24h", Checked = cfg.Use24h, Location = new Point(0, _propsY), Size = new Size(130, 22) };
+        chk24.CheckedChanged += (_, _) =>
+        {
+            var c = p.GetConfig<LabelConfig>(); c.Use24h = chk24.Checked; p.SetConfig(c);
+            if (_previews[_sel] is LabelWidget w) w.Config = c;
+            _canvas.Invalidate();
+        };
+        _propsPanel.Controls.Add(chk24);
+        _propsY += 26;
+
+        // Alignment
+        AddLabel("Align:");
+        var cmbAlign = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Location      = new Point(46, _propsY),
+            Size          = new Size(90, 23),
+        };
+        cmbAlign.Items.AddRange(["center", "left", "right"]);
+        cmbAlign.SelectedItem = cfg.Align is "left" or "right" ? cfg.Align : "center";
+        cmbAlign.SelectedIndexChanged += (_, _) =>
+        {
+            var c = p.GetConfig<LabelConfig>(); c.Align = (string)cmbAlign.SelectedItem!; p.SetConfig(c);
+            if (_previews[_sel] is LabelWidget w) w.Config = c;
+            _canvas.Invalidate();
+        };
+        _propsPanel.Controls.Add(cmbAlign);
+        _propsY += 30;
+    }
+
+    private void AddBindingButtons(WidgetPlacement p, TextBox target, (string Token, string Label)[] items)
+    {
+        int x = 0;
+        foreach (var (token, label) in items)
+        {
+            int w = Math.Max(40, label.Length * 7 + 8);
+            if (x + w > 284) { x = 0; _propsY += 24; }
+            var btn = new Button
+            {
+                Text      = label,
+                Tag       = token,
+                Location  = new Point(x, _propsY),
+                Size      = new Size(w, 22),
+                FlatStyle = FlatStyle.Flat,
+                Font      = new Font("Segoe UI", 7.5f),
+            };
+            btn.Click += (_, _) =>
+            {
+                int pos = target.SelectionStart;
+                target.Text = target.Text.Insert(pos, token);
+                target.SelectionStart = pos + token.Length;
+                target.Focus();
+            };
+            _propsPanel.Controls.Add(btn);
+            x += w + 2;
+        }
+        _propsY += 26;
+    }
+
+    // ── ProfileBar properties ─────────────────────────────────────────────────
+
+    private void BuildProfileBarProps(WidgetPlacement p)
+    {
+        var cfg = p.GetConfig<ProfileBarConfig>();
+        AddPropScale(cfg.Scale, v =>
+        {
+            var c = p.GetConfig<ProfileBarConfig>(); c.Scale = v; p.SetConfig(c);
+            if (_previews[_sel] is ProfileBarWidget w) w.Config = c;
+            _canvas.Invalidate();
+        });
+    }
+
+    // ── Legacy widget properties ──────────────────────────────────────────────
 
     private void BuildClockProps(WidgetPlacement p)
     {
         var cfg = p.GetConfig<ClockConfig>();
-
         AddPropBool("24-hour format", cfg.Use24h, v =>
         {
             var c = p.GetConfig<ClockConfig>(); c.Use24h = v; p.SetConfig(c);
@@ -418,7 +613,6 @@ sealed class CanvasEditorForm : Form
     private void BuildBatteryProps(WidgetPlacement p)
     {
         var cfg = p.GetConfig<BatteryConfig>();
-
         AddPropBool("Show icon", cfg.ShowIcon, v =>
         {
             var c = p.GetConfig<BatteryConfig>(); c.ShowIcon = v; p.SetConfig(c);
@@ -442,7 +636,6 @@ sealed class CanvasEditorForm : Form
     private void BuildConnectionProps(WidgetPlacement p)
     {
         var cfg = p.GetConfig<ConnectionConfig>();
-
         AddPropBool("Show icon", cfg.ShowIcon, v =>
         {
             var c = p.GetConfig<ConnectionConfig>(); c.ShowIcon = v; p.SetConfig(c);
@@ -469,53 +662,57 @@ sealed class CanvasEditorForm : Form
         });
     }
 
+    // ── Property helpers ──────────────────────────────────────────────────────
+
+    private void AddLabel(string text)
+    {
+        _propsPanel.Controls.Add(new Label
+        {
+            Text     = text,
+            Location = new Point(0, _propsY),
+            Size     = new Size(280, 16),
+            AutoSize = false,
+        });
+        _propsY += 18;
+    }
+
     private void AddPropBool(string label, bool value, Action<bool> onChange)
     {
         var chk = new CheckBox
         {
-            Text      = label,
-            Checked   = value,
-            Location  = new Point(0, _propsY),
-            Size      = new Size(246, 22),
-            AutoSize  = false,
+            Text     = label,
+            Checked  = value,
+            Location = new Point(0, _propsY),
+            Size     = new Size(284, 22),
+            AutoSize = false,
         };
         chk.CheckedChanged += (_, _) => onChange(chk.Checked);
         _propsPanel.Controls.Add(chk);
         _propsY += 26;
     }
 
-    // Size knob: 40%-200% scale applied to a widget's icon/font sizes.
     private void AddPropScale(float value, Action<float> onChange)
     {
-        var lbl = new Label
-        {
-            Text     = "Size:",
-            Location = new Point(0, _propsY + 2),
-            Size     = new Size(38, 20),
-            AutoSize = false,
-        };
-        _propsPanel.Controls.Add(lbl);
-
+        _propsPanel.Controls.Add(new Label { Text = "Size:", Location = new Point(0, _propsY + 2), Size = new Size(40, 20) });
         var nud = new NumericUpDown
         {
-            Location      = new Point(40, _propsY),
-            Size          = new Size(60, 23),
-            Minimum       = 40,
-            Maximum       = 200,
-            Increment     = 10,
-            Value         = (decimal)Math.Clamp(value * 100, 40, 200),
+            Location  = new Point(42, _propsY),
+            Size      = new Size(60, 23),
+            Minimum   = 40, Maximum = 200, Increment = 10,
+            Value     = (decimal)Math.Clamp(value * 100, 40, 200),
         };
-        var pct = new Label
-        {
-            Text     = "%",
-            Location = new Point(104, _propsY + 2),
-            Size     = new Size(20, 20),
-            AutoSize = false,
-        };
+        _propsPanel.Controls.Add(new Label { Text = "%", Location = new Point(106, _propsY + 2), Size = new Size(20, 20) });
         nud.ValueChanged += (_, _) => onChange((float)nud.Value / 100f);
         _propsPanel.Controls.Add(nud);
-        _propsPanel.Controls.Add(pct);
-        _propsY += 28;
+        _propsY += 30;
+    }
+
+    private void RefreshListEntry()
+    {
+        if (_sel < 0 || _sel >= _placements.Count) return;
+        _listWidgets.SelectedIndexChanged -= OnListSelectionChanged;
+        _listWidgets.Items[_sel] = WidgetListLabel(_placements[_sel]);
+        _listWidgets.SelectedIndexChanged += OnListSelectionChanged;
     }
 
     // ── Dispose ───────────────────────────────────────────────────────────────

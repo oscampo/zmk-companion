@@ -12,6 +12,7 @@ sealed class ZmkAppContext : ApplicationContext
     private readonly TrayIcon          _tray;
     private readonly DisplayCompositor _compositor;
     private readonly PipeServer        _pipe;
+    private readonly LiveState         _liveState = new();
 
     private readonly CancellationTokenSource _cts = new();
 
@@ -77,6 +78,8 @@ sealed class ZmkAppContext : ApplicationContext
 
     private void OnBatteryLevelChanged(byte level)
     {
+        _liveState.UpdateBattery(level, false);
+        // Legacy rigid widgets still wired for backwards compat.
         foreach (var w in _compositor.Widgets.OfType<BatteryWidget>())
             w.Update(level, false);
     }
@@ -85,6 +88,8 @@ sealed class ZmkAppContext : ApplicationContext
     {
         bool usb     = (status & 0x01) != 0;
         int  profile = (status >> 1) & 0x07;
+        _liveState.UpdateConnection(usb, profile);
+        // Legacy rigid widgets still wired for backwards compat.
         foreach (var w in _compositor.Widgets.OfType<ConnectionWidget>())
             w.Update(usb, profile);
     }
@@ -93,7 +98,7 @@ sealed class ZmkAppContext : ApplicationContext
 
     private void OnCanvasEditor()
     {
-        var form = new CanvasEditorForm(_settings, ApplyCanvas);
+        var form = new CanvasEditorForm(_settings, _liveState, ApplyCanvas);
         form.Show();
     }
 
@@ -105,11 +110,14 @@ sealed class ZmkAppContext : ApplicationContext
         if (_ble.IsConnected) _compositor.StartAll();
     }
 
-    private static IWidget CreateWidget(WidgetPlacement p)
+    private IWidget CreateWidget(WidgetPlacement p)
     {
         var bounds = p.ToRectangle();
         return p.Type switch
         {
+            "label"      => new LabelWidget(_liveState)      { Bounds = bounds, Config = p.GetConfig<LabelConfig>() },
+            "profilebar" => new ProfileBarWidget(_liveState) { Bounds = bounds, Config = p.GetConfig<ProfileBarConfig>() },
+            // Legacy rigid widgets — still supported for saved configs.
             "battery"    => new BatteryWidget    { Bounds = bounds, Config = p.GetConfig<BatteryConfig>() },
             "connection" => new ConnectionWidget { Bounds = bounds, Config = p.GetConfig<ConnectionConfig>() },
             _            => new ClockWidget      { Bounds = bounds, Config = p.GetConfig<ClockConfig>() },
