@@ -130,13 +130,29 @@ sealed class BleService : IDisposable
         catch { return false; }
     }
 
+    // Diagnostic string set on every SendBitmapAsync call; null on success.
+    public string? LastBitmapError { get; private set; }
+
     // Sends a 1,440-byte bitmap frame via characteristic 0x1525 in 240-byte chunks.
     // Header per chunk: [2B offset LE][2B total LE][data].
     // Must be called from the UI (STA) thread.
     public async Task<bool> SendBitmapAsync(byte[] frame)
     {
         var ch = _bitmapCharacteristic;
-        if (ch is null) return false;
+        if (ch is null) { LastBitmapError = "char is null"; return false; }
+
+        // Choose write type based on what the characteristic actually declares.
+        var props = ch.CharacteristicProperties;
+        GattWriteOption writeOpt;
+        if (props.HasFlag(GattCharacteristicProperties.WriteWithoutResponse))
+            writeOpt = GattWriteOption.WriteWithoutResponse;
+        else if (props.HasFlag(GattCharacteristicProperties.Write))
+            writeOpt = GattWriteOption.WriteWithResponse;
+        else
+        {
+            LastBitmapError = $"props={props} — no write permission on 0x1525";
+            return false;
+        }
 
         const int chunkData = 240;
         ushort total = (ushort)frame.Length;
@@ -150,12 +166,16 @@ sealed class BleService : IDisposable
             dw.WriteBytes(frame[offset..(offset + len)]);
             try
             {
-                var result = await ch.WriteValueWithResultAsync(
-                    dw.DetachBuffer(), GattWriteOption.WriteWithoutResponse);
-                if (result.Status != GattCommunicationStatus.Success) return false;
+                var result = await ch.WriteValueWithResultAsync(dw.DetachBuffer(), writeOpt);
+                if (result.Status != GattCommunicationStatus.Success)
+                {
+                    LastBitmapError = $"chunk@{offset} status={result.Status} proto={result.ProtocolError} opt={writeOpt} props={props}";
+                    return false;
+                }
             }
-            catch { return false; }
+            catch (Exception ex) { LastBitmapError = $"chunk@{offset} ex={ex.Message}"; return false; }
         }
+        LastBitmapError = null;
         return true;
     }
 

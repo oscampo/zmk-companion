@@ -55,7 +55,7 @@ sealed class ClockFeature : IDisposable
         }
         using var bmp = RenderClock();
         bool ok = await _ble.SendBitmapAsync(BitmapFrame.Pack(bmp));
-        if (!ok) SendFailed?.Invoke("0x1525 write failed — check firmware characteristic permissions");
+        if (!ok) SendFailed?.Invoke(_ble.LastBitmapError ?? "unknown");
     }
 
     private static Bitmap RenderClock()
