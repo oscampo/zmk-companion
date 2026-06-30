@@ -54,7 +54,7 @@ sealed class LabelWidget : IWidget
     public void Render(Graphics g)
     {
         var    cfg  = Config;
-        string text = _state.Expand(cfg.Template, cfg.Use24h);
+        string text = _state.Expand(cfg.Template, cfg.Use24h, cfg);
         if (text.Length == 0) return;
 
         g.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;

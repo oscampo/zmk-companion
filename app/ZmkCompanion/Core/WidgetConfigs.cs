@@ -32,10 +32,37 @@ sealed class LabelConfig
     public bool   UseNerdFont { get; set; } = true;   // Fira Code NF (supports glyphs + ASCII)
     public bool   Use24h      { get; set; } = false;  // force 24h for {time} binding
     public string Align       { get; set; } = "center"; // "left" | "center" | "right"
+
+    // Glyph style for digit characters in {time}/{date}/{date.day}/{conn.profile}:
+    // "text" | "box" | "box_outline" | "box_multiple" | "box_multiple_outline"
+    // | "plain" | "circle" | "circle_outline"  (plain/circle: only digits 1-9)
+    public string NumericStyle { get; set; } = "text";
+
+    // Glyph style for letter characters in {date}/{date.month}:
+    // "text" | "plain" | "box" | "box_outline" | "circle" | "circle_outline"
+    public string AlphaStyle { get; set; } = "text";
+
+    // Battery icon style for {battery.icon}:
+    // "nf" = FA 5-tier (default), "md_level" = MD 10-step, "md_threshold" = MD low/med/high
+    public string BatteryGlyphStyle { get; set; } = "nf";
+
+    // Glyphs shown for {conn.icon}: one when BLE-connected, one when USB-connected.
+    // Default: FA bluetooth and FA USB (both BMP, U+F293 / U+F287)
+    public string ConnBleGlyph { get; set; } = "";
+    public string ConnUsbGlyph { get; set; } = "";
 }
 
 // Profile bar widget: 5 numbered boxes, active BLE profile inverted.
 sealed class ProfileBarConfig
 {
     public float Scale { get; set; } = 1.0f;
+
+    // Glyph style used for the ACTIVE profile number (1-5).
+    // "gdi" = classic GDI+ inverted box (default).
+    // Other values: any NerdFont.NumericGlyph style key ("box", "circle", etc.)
+    public string ActiveStyle { get; set; } = "gdi";
+
+    // Glyph style used for INACTIVE profile numbers (1-5).
+    // "gdi" = classic GDI+ outlined box (default).
+    public string InactiveStyle { get; set; } = "gdi";
 }

@@ -535,6 +535,103 @@ sealed class CanvasEditorForm : Form
         };
         _propsPanel.Controls.Add(cmbAlign);
         _propsY += 30;
+
+        // ── Glyph styles ──────────────────────────────────────────────────────
+        AddLabel("─ Glyph styles ─");
+
+        // Numeric style (digits in {time} / {date} / {conn.profile})
+        AddPropComboRow("Digit style:", NerdFont.NumericStyleLabel,
+            ["text", "box", "box_outline", "box_multiple", "box_multiple_outline", "plain", "circle", "circle_outline"],
+            cfg.NumericStyle, v =>
+            {
+                var c = p.GetConfig<LabelConfig>(); c.NumericStyle = v; p.SetConfig(c);
+                if (_previews[_sel] is LabelWidget w) w.Config = c;
+                _canvas.Invalidate();
+            });
+
+        // Alpha style (letters in {date} / {date.month})
+        AddPropComboRow("Letter style:", NerdFont.AlphaStyleLabel,
+            ["text", "plain", "box", "box_outline", "circle", "circle_outline"],
+            cfg.AlphaStyle, v =>
+            {
+                var c = p.GetConfig<LabelConfig>(); c.AlphaStyle = v; p.SetConfig(c);
+                if (_previews[_sel] is LabelWidget w) w.Config = c;
+                _canvas.Invalidate();
+            });
+
+        // Battery icon style
+        AddPropComboRow("Battery icon:", s => s switch
+            {
+                "md_level"     => "MD level (10-90%)",
+                "md_threshold" => "MD threshold",
+                _              => "NF classic",
+            },
+            ["nf", "md_level", "md_threshold"],
+            cfg.BatteryGlyphStyle, v =>
+            {
+                var c = p.GetConfig<LabelConfig>(); c.BatteryGlyphStyle = v; p.SetConfig(c);
+                if (_previews[_sel] is LabelWidget w) w.Config = c;
+                _canvas.Invalidate();
+            });
+
+        // BLE / USB paired glyph pickers for {conn.icon}
+        AddLabel("Conn icon glyphs ({conn.icon}):");
+        AddConnGlyphRow(p, "BLE:", cfg.ConnBleGlyph, NerdFont.Bluetooth,
+            v => { var c = p.GetConfig<LabelConfig>(); c.ConnBleGlyph = v; p.SetConfig(c);
+                   if (_previews[_sel] is LabelWidget w) w.Config = c; _canvas.Invalidate(); });
+        AddConnGlyphRow(p, "USB:", cfg.ConnUsbGlyph, NerdFont.Usb,
+            v => { var c = p.GetConfig<LabelConfig>(); c.ConnUsbGlyph = v; p.SetConfig(c);
+                   if (_previews[_sel] is LabelWidget w) w.Config = c; _canvas.Invalidate(); });
+    }
+
+    // Row with a label + dropdown mapped through a label-lookup function.
+    private void AddPropComboRow(string label, Func<string, string> labelFn,
+        string[] keys, string selected, Action<string> onChange)
+    {
+        _propsPanel.Controls.Add(new Label { Text = label, Location = new Point(0, _propsY + 3), Size = new Size(78, 18) });
+        var cmb = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Location      = new Point(80, _propsY),
+            Size          = new Size(200, 23),
+        };
+        foreach (var k in keys) cmb.Items.Add(labelFn(k));
+        int idx = Array.IndexOf(keys, selected);
+        cmb.SelectedIndex = idx >= 0 ? idx : 0;
+        cmb.SelectedIndexChanged += (_, _) =>
+        {
+            int i = cmb.SelectedIndex;
+            if (i >= 0 && i < keys.Length) onChange(keys[i]);
+        };
+        _propsPanel.Controls.Add(cmb);
+        _propsY += 28;
+    }
+
+    // Row with a label + button that shows the current glyph and opens GlyphPickerDialog on click.
+    private void AddConnGlyphRow(WidgetPlacement p, string label, string current, string fallback, Action<string> onChange)
+    {
+        string displayGlyph = current is { Length: > 0 } ? current : fallback;
+
+        _propsPanel.Controls.Add(new Label { Text = label, Location = new Point(0, _propsY + 3), Size = new Size(34, 18) });
+        var btn = new Button
+        {
+            Text      = displayGlyph,
+            Font      = NerdFont.CreateFont(14f),
+            Location  = new Point(36, _propsY),
+            Size      = new Size(36, 26),
+            FlatStyle = FlatStyle.Flat,
+        };
+        btn.Click += (_, _) =>
+        {
+            using var dlg = new GlyphPickerDialog();
+            if (dlg.ShowDialog(this) == DialogResult.OK && dlg.SelectedGlyph is { } g)
+            {
+                btn.Text = g;
+                onChange(g);
+            }
+        };
+        _propsPanel.Controls.Add(btn);
+        _propsY += 30;
     }
 
     private void AddBindingButtons(WidgetPlacement p, TextBox target, (string Token, string Label)[] items)
@@ -571,6 +668,27 @@ sealed class CanvasEditorForm : Form
     private void BuildProfileBarProps(WidgetPlacement p)
     {
         var cfg = p.GetConfig<ProfileBarConfig>();
+
+        // Active profile glyph style
+        AddPropComboRow("Active style:", NerdFont.NumericStyleLabel,
+            ["gdi", "box", "box_outline", "box_multiple", "box_multiple_outline", "plain", "circle", "circle_outline"],
+            cfg.ActiveStyle, v =>
+            {
+                var c = p.GetConfig<ProfileBarConfig>(); c.ActiveStyle = v; p.SetConfig(c);
+                if (_previews[_sel] is ProfileBarWidget w) w.Config = c;
+                _canvas.Invalidate();
+            });
+
+        // Inactive profile glyph style
+        AddPropComboRow("Inactive style:", NerdFont.NumericStyleLabel,
+            ["gdi", "box", "box_outline", "box_multiple", "box_multiple_outline", "plain", "circle", "circle_outline"],
+            cfg.InactiveStyle, v =>
+            {
+                var c = p.GetConfig<ProfileBarConfig>(); c.InactiveStyle = v; p.SetConfig(c);
+                if (_previews[_sel] is ProfileBarWidget w) w.Config = c;
+                _canvas.Invalidate();
+            });
+
         AddPropScale(cfg.Scale, v =>
         {
             var c = p.GetConfig<ProfileBarConfig>(); c.Scale = v; p.SetConfig(c);
