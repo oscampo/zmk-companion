@@ -9,15 +9,19 @@ namespace ZmkCompanion.Core;
 static class NerdFont
 {
     private static readonly PrivateFontCollection _pfc;
+    private static readonly byte[]               _fontData;
     public  static readonly FontFamily            Family;
 
     static NerdFont()
     {
-        _pfc   = Load();
+        (_pfc, _fontData) = Load();
         Family = _pfc.Families[0];
     }
 
-    private static PrivateFontCollection Load()
+    // Raw bytes of the embedded Fira Code NF font (used by FontCmapReader).
+    internal static byte[] GetFontData() => _fontData;
+
+    private static (PrivateFontCollection pfc, byte[] data) Load()
     {
         var pfc  = new PrivateFontCollection();
         var asm  = typeof(NerdFont).Assembly;
@@ -33,7 +37,7 @@ static class NerdFont
         try   { pfc.AddMemoryFont(handle.AddrOfPinnedObject(), len); }
         finally { handle.Free(); }
 
-        return pfc;
+        return (pfc, buf);
     }
 
     public static Font CreateFont(float sizePx, FontStyle style = FontStyle.Regular) =>
@@ -124,11 +128,14 @@ static class NerdFont
             "box_outline"          => Md(_numBoxOutline[digit]),
             "box_multiple"         => Md(_numBoxMultiple[digit]),
             "box_multiple_outline" => Md(_numBoxMultipleOutline[digit]),
-            // plain: md-numeric_1…9 (no '0' glyph)
-            "plain" when digit > 0          => Md(0xF0B3A + digit - 1),
-            // circle: sequential pairs F0CA0/F0CA1 … F0CB0/F0CB1 (digits 1–9 only)
-            "circle" when digit > 0         => Md(0xF0CA0 + (digit - 1) * 2),
-            "circle_outline" when digit > 0 => Md(0xF0CA1 + (digit - 1) * 2),
+            // plain: md-numeric_1…9; no '0' — use alpha_o as visual substitute
+            "plain" when digit == 0         => AlphaGlyph('o', "plain"),
+            "plain"                         => Md(0xF0B3A + digit - 1),
+            // circle: no '0' — use alpha_o circle as substitute
+            "circle" when digit == 0        => AlphaGlyph('o', "circle"),
+            "circle"                        => Md(0xF0CA0 + (digit - 1) * 2),
+            "circle_outline" when digit == 0 => AlphaGlyph('o', "circle_outline"),
+            "circle_outline"                => Md(0xF0CA1 + (digit - 1) * 2),
             _ => null,
         };
     }

@@ -89,7 +89,7 @@ sealed class ProfileBarWidget : IWidget
     {
         float scale    = Math.Clamp(cfg.Scale, 0.4f, 2.0f);
         float fontSize = Math.Max(8f, 16f * scale);
-        float gap      = 2f * scale;
+        float gap      = 2f * scale + cfg.LetterSpacing;
         using var font = NerdFont.CreateFont(fontSize);
 
         int active = _state.BleProfile;  // 0-4

@@ -536,6 +536,25 @@ sealed class CanvasEditorForm : Form
         _propsPanel.Controls.Add(cmbAlign);
         _propsY += 30;
 
+        // Letter spacing NUD
+        _propsPanel.Controls.Add(new Label { Text = "Spacing:", Location = new Point(0, _propsY + 3), Size = new Size(54, 18) });
+        var nudLS = new NumericUpDown
+        {
+            Location      = new Point(56, _propsY),
+            Size          = new Size(64, 23),
+            Minimum       = -4, Maximum = 20, Increment = (decimal)0.5, DecimalPlaces = 1,
+            Value         = (decimal)Math.Clamp(cfg.LetterSpacing, -4, 20),
+        };
+        _propsPanel.Controls.Add(new Label { Text = "px", Location = new Point(124, _propsY + 3), Size = new Size(22, 18) });
+        nudLS.ValueChanged += (_, _) =>
+        {
+            var c = p.GetConfig<LabelConfig>(); c.LetterSpacing = (float)nudLS.Value; p.SetConfig(c);
+            if (_previews[_sel] is LabelWidget w) w.Config = c;
+            _canvas.Invalidate();
+        };
+        _propsPanel.Controls.Add(nudLS);
+        _propsY += 28;
+
         // ── Glyph styles ──────────────────────────────────────────────────────
         AddLabel("─ Glyph styles ─");
 
@@ -688,6 +707,25 @@ sealed class CanvasEditorForm : Form
                 if (_previews[_sel] is ProfileBarWidget w) w.Config = c;
                 _canvas.Invalidate();
             });
+
+        // Letter spacing between profile glyphs
+        _propsPanel.Controls.Add(new Label { Text = "Spacing:", Location = new Point(0, _propsY + 3), Size = new Size(54, 18) });
+        var nudPLS = new NumericUpDown
+        {
+            Location      = new Point(56, _propsY),
+            Size          = new Size(64, 23),
+            Minimum       = -4, Maximum = 20, Increment = (decimal)0.5, DecimalPlaces = 1,
+            Value         = (decimal)Math.Clamp(cfg.LetterSpacing, -4, 20),
+        };
+        _propsPanel.Controls.Add(new Label { Text = "px", Location = new Point(124, _propsY + 3), Size = new Size(22, 18) });
+        nudPLS.ValueChanged += (_, _) =>
+        {
+            var c = p.GetConfig<ProfileBarConfig>(); c.LetterSpacing = (float)nudPLS.Value; p.SetConfig(c);
+            if (_previews[_sel] is ProfileBarWidget w) w.Config = c;
+            _canvas.Invalidate();
+        };
+        _propsPanel.Controls.Add(nudPLS);
+        _propsY += 28;
 
         AddPropScale(cfg.Scale, v =>
         {

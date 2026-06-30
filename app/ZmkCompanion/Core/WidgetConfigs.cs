@@ -65,4 +65,7 @@ sealed class ProfileBarConfig
     // Glyph style used for INACTIVE profile numbers (1-5).
     // "gdi" = classic GDI+ outlined box (default).
     public string InactiveStyle { get; set; } = "gdi";
+
+    // Extra pixels between profile glyphs (negative = tighten).
+    public float LetterSpacing { get; set; } = 0f;
 }
