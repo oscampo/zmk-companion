@@ -15,7 +15,7 @@ sealed class ConnectionWidget : IWidget
 
     private System.Windows.Forms.Timer? _timer;
 
-    // Called by BleService when status characteristic 0x1526 updates.
+    // Called by AppContext when BleService fires StatusChanged (0x1526).
     internal void Update(bool usbActive, int bleProfile)
     {
         _usbActive  = usbActive;
@@ -38,27 +38,24 @@ sealed class ConnectionWidget : IWidget
     {
         g.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
 
-        // Line 1: connection type icon + label
-        // Line 2: BLE profile slot (1-5)
-        string typeLine    = _usbActive ? "USB" : "BLE";
-        string profileLine = _bleProfile >= 0 ? $"Profile {_bleProfile + 1}" : "";
+        string icon  = _usbActive ? NerdFont.Usb : NerdFont.Bluetooth;
+        string label = _usbActive ? "USB" : (_bleProfile >= 0 ? $"BLE {_bleProfile + 1}" : "BLE");
 
-        using var mainFont  = new Font("Consolas", 14f, FontStyle.Bold,    GraphicsUnit.Pixel);
-        using var smallFont = new Font("Consolas", 10f, FontStyle.Regular, GraphicsUnit.Pixel);
+        using var iconFont  = NerdFont.CreateFont(28f);
+        using var labelFont = new Font("Consolas", 11f, FontStyle.Regular, GraphicsUnit.Pixel);
 
-        SizeF mainSz  = g.MeasureString(typeLine,    mainFont);
-        SizeF smallSz = g.MeasureString(profileLine, smallFont);
+        SizeF iconSz  = g.MeasureString(icon,  iconFont);
+        SizeF labelSz = g.MeasureString(label, labelFont);
 
         float cx = Bounds.X + Bounds.Width  / 2f;
         float cy = Bounds.Y + Bounds.Height / 2f;
-        float totalH = mainSz.Height + (profileLine.Length > 0 ? 2f + smallSz.Height : 0f);
+        float totalH = iconSz.Height + 2f + labelSz.Height;
 
-        float mainY = cy - totalH / 2f;
-        g.DrawString(typeLine, mainFont, Brushes.White, cx - mainSz.Width / 2f, mainY);
+        float iconY  = cy - totalH / 2f;
+        float labelY = iconY + iconSz.Height + 2f;
 
-        if (profileLine.Length > 0)
-            g.DrawString(profileLine, smallFont, Brushes.White,
-                cx - smallSz.Width / 2f, mainY + mainSz.Height + 2f);
+        g.DrawString(icon,  iconFont,  Brushes.White, cx - iconSz.Width  / 2f, iconY);
+        g.DrawString(label, labelFont, Brushes.White, cx - labelSz.Width / 2f, labelY);
     }
 
     public void Dispose() => Stop();

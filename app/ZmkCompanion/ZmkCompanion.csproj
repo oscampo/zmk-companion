@@ -13,6 +13,10 @@
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\FiraCodeNerdFont-Regular.ttf" />
+  </ItemGroup>
+
   <!-- Publish: framework-dependent single-file .exe (requires .NET 8 Desktop Runtime). -->
   <!-- RollForward=LatestPatch: use highest available 8.0.x patch, even if minimum patch is -->
   <!-- absent/corrupted. Ensures the app finds 8.0.28+ when 8.0.27 exists but is broken.   -->

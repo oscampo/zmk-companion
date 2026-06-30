@@ -15,7 +15,7 @@ sealed class BatteryWidget : IWidget
 
     private System.Windows.Forms.Timer? _timer;
 
-    // Called by BleService (or mock) when status characteristic updates.
+    // Called by AppContext when BleService fires BatteryLevelChanged.
     internal void Update(int level, bool charging)
     {
         _level    = level;
@@ -27,7 +27,6 @@ sealed class BatteryWidget : IWidget
     {
         Stop();
         Invalidated?.Invoke();
-        // Refresh every 60 s in case notifications are missed.
         _timer = new System.Windows.Forms.Timer { Interval = 60_000 };
         _timer.Tick += (_, _) => Invalidated?.Invoke();
         _timer.Start();
@@ -39,10 +38,10 @@ sealed class BatteryWidget : IWidget
     {
         g.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
 
-        string icon  = BatteryIcon(_level, _charging);
-        string label = _level < 0 ? "??" : $"{_level}%";
+        string icon  = NerdFont.BatteryGlyph(_level, _charging);
+        string label = _level < 0 ? "--" : $"{_level}%";
 
-        using var iconFont  = new Font("Consolas", 24f, FontStyle.Regular, GraphicsUnit.Pixel);
+        using var iconFont  = NerdFont.CreateFont(28f);
         using var labelFont = new Font("Consolas", 11f, FontStyle.Regular, GraphicsUnit.Pixel);
 
         SizeF iconSz  = g.MeasureString(icon,  iconFont);
@@ -57,20 +56,6 @@ sealed class BatteryWidget : IWidget
 
         g.DrawString(icon,  iconFont,  Brushes.White, cx - iconSz.Width  / 2f, iconY);
         g.DrawString(label, labelFont, Brushes.White, cx - labelSz.Width / 2f, labelY);
-    }
-
-    private static string BatteryIcon(int level, bool charging)
-    {
-        if (charging) return "+";           // placeholder until Nerd Font embedded
-        return level switch
-        {
-            < 0        => "?",
-            < 20       => "[ ]",
-            < 40       => "[. ]",
-            < 60       => "[..]",
-            < 80       => "[==]",
-            _          => "[==]",
-        };
     }
 
     public void Dispose() => Stop();
