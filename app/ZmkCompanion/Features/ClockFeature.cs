@@ -45,17 +45,29 @@ sealed class ClockFeature : IDisposable
     }
 
     public event Action<string>? SendFailed;
+    public event Action<string>? SendDiag;
 
     private async Task SendFrameAsync()
     {
-        if (!_ble.HasBitmapChar)
+        try
         {
-            SendFailed?.Invoke("0x1525 characteristic not found — GATT cache may be stale; re-pair the keyboard");
-            return;
+            if (!_ble.HasBitmapChar)
+            {
+                SendFailed?.Invoke("0x1525 not found — re-pair keyboard");
+                return;
+            }
+            using var bmp = RenderClock();
+            byte[] frame = BitmapFrame.Pack(bmp);
+            bool ok = await _ble.SendBitmapAsync(frame);
+            if (!ok)
+                SendFailed?.Invoke(_ble.LastBitmapError ?? "unknown");
+            else
+                SendDiag?.Invoke($"OK — {frame.Length}B in {_ble.LastChunkCount} chunks, mtu={_ble.LastMtu}");
         }
-        using var bmp = RenderClock();
-        bool ok = await _ble.SendBitmapAsync(BitmapFrame.Pack(bmp));
-        if (!ok) SendFailed?.Invoke(_ble.LastBitmapError ?? "unknown");
+        catch (Exception ex)
+        {
+            SendFailed?.Invoke($"render/send ex: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     private static Bitmap RenderClock()

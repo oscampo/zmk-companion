@@ -136,8 +136,10 @@ sealed class BleService : IDisposable
         catch { return false; }
     }
 
-    // Diagnostic string set on every SendBitmapAsync call; null on success.
+    // Diagnostics set on every SendBitmapAsync call.
     public string? LastBitmapError { get; private set; }
+    public int     LastChunkCount  { get; private set; }
+    public int     LastMtu         { get; private set; }
 
     // Sends a 1,440-byte bitmap frame via characteristic 0x1525 in 240-byte chunks.
     // Header per chunk: [2B offset LE][2B total LE][data].
@@ -166,6 +168,8 @@ sealed class BleService : IDisposable
         int mtu       = _session?.MaxPduSize ?? 23;
         int chunkData = Math.Max(1, mtu - 3 - 4);
         ushort total  = (ushort)frame.Length;
+        LastMtu        = mtu;
+        LastChunkCount = (int)Math.Ceiling((double)frame.Length / chunkData);
 
         for (int offset = 0; offset < frame.Length; offset += chunkData)
         {

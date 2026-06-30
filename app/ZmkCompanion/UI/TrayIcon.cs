@@ -52,6 +52,9 @@ sealed class TrayIcon : IDisposable
     public void ShowError(string title, string message) =>
         _notify.ShowBalloonTip(5000, title, message, ToolTipIcon.Error);
 
+    public void ShowInfo(string title, string message) =>
+        _notify.ShowBalloonTip(5000, title, message, ToolTipIcon.Info);
+
     public void SetConnected(string deviceName)
     {
         _notify.Icon = MakeIcon(Color.LimeGreen);
