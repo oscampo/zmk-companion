@@ -16,9 +16,17 @@ sealed class ClockWidget : IWidget
     {
         Stop();
         Invalidated?.Invoke();
-        _timer = new System.Windows.Forms.Timer { Interval = 30_000 };
-        _timer.Tick += (_, _) => Invalidated?.Invoke();
+        // First tick fires at the next minute boundary; subsequent ticks every 60s.
+        int msUntilNextMinute = (60 - DateTime.Now.Second) * 1000 - DateTime.Now.Millisecond;
+        _timer = new System.Windows.Forms.Timer { Interval = Math.Max(1, msUntilNextMinute) };
+        _timer.Tick += OnTick;
         _timer.Start();
+    }
+
+    private void OnTick(object? sender, EventArgs e)
+    {
+        _timer!.Interval = 60_000;
+        Invalidated?.Invoke();
     }
 
     public void Stop()
