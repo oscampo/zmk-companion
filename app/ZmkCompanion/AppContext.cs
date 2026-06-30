@@ -85,10 +85,16 @@ sealed class ZmkAppContext : ApplicationContext
         if (_ble.IsConnected) _compositor.StartAll();
     }
 
-    private static IWidget CreateWidget(WidgetPlacement p) => p.Type switch
+    private static IWidget CreateWidget(WidgetPlacement p)
     {
-        _ => new ClockWidget { Bounds = p.ToRectangle() },
-    };
+        var bounds = p.ToRectangle();
+        return p.Type switch
+        {
+            "battery"    => new BatteryWidget    { Bounds = bounds },
+            "connection" => new ConnectionWidget { Bounds = bounds },
+            _            => new ClockWidget      { Bounds = bounds },
+        };
+    }
 
     // ── Connection lifecycle ──────────────────────────────────────────────────
 

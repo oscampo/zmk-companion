@@ -8,30 +8,28 @@ using ZmkCompanion.Features.Widgets;
 namespace ZmkCompanion.UI;
 
 // Visual canvas editor: shows the 68×160 display at 3× scale.
-// The user can add/remove/drag/resize widgets and hit "Apply & Send"
-// to push the layout to the live compositor and keyboard.
+// X/Y in the bounds panel represent the CENTER of the widget region,
+// so a full-canvas Clock shows CX=34, CY=80 rather than X=0, Y=0.
 sealed class CanvasEditorForm : Form
 {
-    private const int Zoom     = 3;
-    private const int CanvasW  = BitmapFrame.Width  * Zoom;  // 204
-    private const int CanvasH  = BitmapFrame.Height * Zoom;  // 480
+    private const int Zoom    = 3;
+    private const int CanvasW = BitmapFrame.Width  * Zoom;  // 204
+    private const int CanvasH = BitmapFrame.Height * Zoom;  // 480
 
     private readonly AppSettings                   _settings;
     private readonly Action<List<WidgetPlacement>> _onApply;
 
-    // Working copies of the canvas layout; index-aligned with _previews.
     private readonly List<WidgetPlacement> _placements = [];
     private readonly List<IWidget>         _previews   = [];
 
-    private int   _sel          = -1;
+    private int   _sel        = -1;
     private bool  _dragging;
-    private Point _dragOriginPx;   // unscaled canvas point where drag started
-    private Point _dragInitPos;    // placement (X,Y) at drag start
+    private Point _dragOrigin;   // unscaled point where drag started
+    private int   _dragInitCX, _dragInitCY;
 
-    // Controls
     private readonly Panel         _canvas;
     private readonly ListBox       _listWidgets;
-    private readonly NumericUpDown _nudX, _nudY, _nudW, _nudH;
+    private readonly NumericUpDown _nudCX, _nudCY, _nudW, _nudH;
     private readonly CheckBox      _chkFull;
     private          bool          _suppressNud;
 
@@ -62,10 +60,10 @@ sealed class CanvasEditorForm : Form
         _canvas.MouseUp   += (_, _) => _dragging = false;
         Controls.Add(_canvas);
 
-        int rx = CanvasW + 20;   // right column x
+        int rx = CanvasW + 20;
 
         // ── Widgets group ────────────────────────────────────────────────────
-        var grpWidgets = new GroupBox { Text = "Widgets", Location = new Point(rx, 8),   Size = new Size(258, 218) };
+        var grpWidgets = new GroupBox { Text = "Widgets", Location = new Point(rx, 8), Size = new Size(258, 218) };
 
         _listWidgets = new ListBox { Location = new Point(8, 20), Size = new Size(242, 138) };
         _listWidgets.SelectedIndexChanged += OnListSelectionChanged;
@@ -81,20 +79,21 @@ sealed class CanvasEditorForm : Form
 
         Controls.Add(grpWidgets);
 
-        // ── Position & size group ────────────────────────────────────────────
-        var grpBounds = new GroupBox { Text = "Position && Size", Location = new Point(rx, 234), Size = new Size(258, 152) };
+        // ── Position & size group ─────────────────────────────────────────────
+        // CX/CY = center of the widget on the 68×160 canvas.
+        var grpBounds = new GroupBox { Text = "Position && Size  (CX / CY = center)", Location = new Point(rx, 234), Size = new Size(258, 152) };
 
-        grpBounds.Controls.Add(MakeLbl("X:", 8,  24)); _nudX = MakeNud(28,  20, 0, BitmapFrame.Width  - 1);
-        grpBounds.Controls.Add(MakeLbl("Y:", 98, 24)); _nudY = MakeNud(118, 20, 0, BitmapFrame.Height - 1);
-        grpBounds.Controls.Add(MakeLbl("W:", 8,  58)); _nudW = MakeNud(28,  54, 1, BitmapFrame.Width);
-        grpBounds.Controls.Add(MakeLbl("H:", 98, 58)); _nudH = MakeNud(118, 54, 1, BitmapFrame.Height);
+        grpBounds.Controls.Add(MakeLbl("CX:", 4,  24)); _nudCX = MakeNud(30,  20, 0, BitmapFrame.Width);
+        grpBounds.Controls.Add(MakeLbl("CY:", 98, 24)); _nudCY = MakeNud(124, 20, 0, BitmapFrame.Height);
+        grpBounds.Controls.Add(MakeLbl("W:",  4,  58)); _nudW  = MakeNud(30,  54, 1, BitmapFrame.Width);
+        grpBounds.Controls.Add(MakeLbl("H:",  98, 58)); _nudH  = MakeNud(124, 54, 1, BitmapFrame.Height);
 
-        _nudX.ValueChanged += (_, _) => ApplyNudToSelected();
-        _nudY.ValueChanged += (_, _) => ApplyNudToSelected();
-        _nudW.ValueChanged += (_, _) => ApplyNudToSelected();
-        _nudH.ValueChanged += (_, _) => ApplyNudToSelected();
+        _nudCX.ValueChanged += (_, _) => ApplyNudToSelected();
+        _nudCY.ValueChanged += (_, _) => ApplyNudToSelected();
+        _nudW .ValueChanged += (_, _) => ApplyNudToSelected();
+        _nudH .ValueChanged += (_, _) => ApplyNudToSelected();
 
-        grpBounds.Controls.AddRange([_nudX, _nudY, _nudW, _nudH]);
+        grpBounds.Controls.AddRange([_nudCX, _nudCY, _nudW, _nudH]);
 
         _chkFull = new CheckBox { Text = "Full canvas (68×160)", Location = new Point(8, 94), Size = new Size(200, 23) };
         _chkFull.CheckedChanged += OnFullCanvasChecked;
@@ -102,7 +101,7 @@ sealed class CanvasEditorForm : Form
 
         Controls.Add(grpBounds);
 
-        // ── Bottom buttons ───────────────────────────────────────────────────
+        // ── Bottom buttons ────────────────────────────────────────────────────
         var btnApply = new Button { Text = "Apply && Send", Location = new Point(rx, 496), Size = new Size(120, 32) };
         btnApply.Click += (_, _) => Apply();
         Controls.Add(btnApply);
@@ -111,8 +110,9 @@ sealed class CanvasEditorForm : Form
         btnClose.Click += (_, _) => Close();
         Controls.Add(btnClose);
 
-        // ── Load & start refresh ─────────────────────────────────────────────
+        // ── Load + initial selection ──────────────────────────────────────────
         LoadFromSettings();
+        if (_placements.Count > 0) _sel = 0;
         RefreshWidgetList();
         RefreshBoundsPanel();
 
@@ -134,10 +134,16 @@ sealed class CanvasEditorForm : Form
         }
     }
 
-    private static IWidget MakePreview(WidgetPlacement p) => p.Type switch
+    internal static IWidget MakePreview(WidgetPlacement p)
     {
-        _ => new ClockWidget { Bounds = p.ToRectangle() },
-    };
+        var bounds = p.ToRectangle();
+        return p.Type switch
+        {
+            "battery"    => new BatteryWidget    { Bounds = bounds },
+            "connection" => new ConnectionWidget { Bounds = bounds },
+            _            => new ClockWidget      { Bounds = bounds },
+        };
+    }
 
     private void Apply() => _onApply(_placements.Select(p => p.Clone()).ToList());
 
@@ -155,7 +161,6 @@ sealed class CanvasEditorForm : Form
     {
         var g = e.Graphics;
 
-        // Render widgets into 68×160 bitmap
         using var bmp = BitmapFrame.CreateCanvas();
         using var bg  = Graphics.FromImage(bmp);
         bg.Clear(Color.Black);
@@ -169,16 +174,14 @@ sealed class CanvasEditorForm : Form
             bg.Clip = saved;
         }
 
-        // Scale up (nearest-neighbor = pixel-perfect)
         g.InterpolationMode = InterpolationMode.NearestNeighbor;
         g.PixelOffsetMode   = PixelOffsetMode.Half;
         g.DrawImage(bmp, 0, 0, CanvasW, CanvasH);
 
-        // Widget overlays
         for (int i = 0; i < _placements.Count; i++)
         {
             bool sel = i == _sel;
-            var  b   = ZoomRect(_placements[i].ToRectangle());
+            var  b   = ZoomRect(_previews[i].Bounds);
             using var brush = new SolidBrush(sel ? Color.FromArgb(50, 255, 255, 255) : _overlays[i % _overlays.Length]);
             g.FillRectangle(brush, b);
             using var pen = new Pen(sel ? Color.White : Color.FromArgb(200, 100, 160, 255), sel ? 2f : 1f);
@@ -195,18 +198,17 @@ sealed class CanvasEditorForm : Form
     {
         var pos = new Point(e.X / Zoom, e.Y / Zoom);
         _sel = -1;
-        for (int i = _placements.Count - 1; i >= 0; i--)
+        for (int i = _previews.Count - 1; i >= 0; i--)
         {
-            if (!_placements[i].ToRectangle().Contains(pos)) continue;
-            _sel          = i;
-            _dragging     = true;
-            _dragOriginPx = pos;
-            _dragInitPos  = new Point(_placements[i].X, _placements[i].Y);
+            if (!_previews[i].Bounds.Contains(pos)) continue;
+            _sel        = i;
+            _dragging   = true;
+            _dragOrigin = pos;
+            _dragInitCX = _placements[i].CX;
+            _dragInitCY = _placements[i].CY;
             break;
         }
-        _listWidgets.SelectedIndexChanged -= OnListSelectionChanged;
-        if (_sel >= 0 && _sel < _listWidgets.Items.Count) _listWidgets.SelectedIndex = _sel;
-        _listWidgets.SelectedIndexChanged += OnListSelectionChanged;
+        SyncListSelection();
         RefreshBoundsPanel();
         _canvas.Invalidate();
     }
@@ -214,11 +216,10 @@ sealed class CanvasEditorForm : Form
     private void OnCanvasMouseMove(object? sender, MouseEventArgs e)
     {
         if (!_dragging || _sel < 0) return;
-        var pos   = new Point(e.X / Zoom, e.Y / Zoom);
-        var delta = new Point(pos.X - _dragOriginPx.X, pos.Y - _dragOriginPx.Y);
-        var p     = _placements[_sel];
-        p.X = Math.Clamp(_dragInitPos.X + delta.X, 0, BitmapFrame.Width  - p.W);
-        p.Y = Math.Clamp(_dragInitPos.Y + delta.Y, 0, BitmapFrame.Height - p.H);
+        var pos = new Point(e.X / Zoom, e.Y / Zoom);
+        var p   = _placements[_sel];
+        p.CX = Math.Clamp(_dragInitCX + (pos.X - _dragOrigin.X), p.W / 2, BitmapFrame.Width  - p.W / 2);
+        p.CY = Math.Clamp(_dragInitCY + (pos.Y - _dragOrigin.Y), p.H / 2, BitmapFrame.Height - p.H / 2);
         _previews[_sel].Bounds = p.ToRectangle();
         RefreshBoundsPanel();
         _canvas.Invalidate();
@@ -231,11 +232,16 @@ sealed class CanvasEditorForm : Form
         _listWidgets.SelectedIndexChanged -= OnListSelectionChanged;
         _listWidgets.BeginUpdate();
         _listWidgets.Items.Clear();
-        foreach (var p in _placements)
-            _listWidgets.Items.Add(WidgetLabel(p.Type));
-        if (_sel >= 0 && _sel < _listWidgets.Items.Count)
-            _listWidgets.SelectedIndex = _sel;
+        foreach (var p in _placements) _listWidgets.Items.Add(WidgetLabel(p.Type));
+        if (_sel >= 0 && _sel < _listWidgets.Items.Count) _listWidgets.SelectedIndex = _sel;
         _listWidgets.EndUpdate();
+        _listWidgets.SelectedIndexChanged += OnListSelectionChanged;
+    }
+
+    private void SyncListSelection()
+    {
+        _listWidgets.SelectedIndexChanged -= OnListSelectionChanged;
+        if (_sel >= 0 && _sel < _listWidgets.Items.Count) _listWidgets.SelectedIndex = _sel;
         _listWidgets.SelectedIndexChanged += OnListSelectionChanged;
     }
 
@@ -249,11 +255,14 @@ sealed class CanvasEditorForm : Form
     private void OnAddClick(object? sender, EventArgs e)
     {
         var menu = new ContextMenuStrip();
-        menu.Items.Add(new ToolStripMenuItem("Clock",    null, (_, _) => AddWidget("clock")));
-        menu.Items.Add(new ToolStripMenuItem("Weather",  null, (_, _) => AddWidget("weather"))  { Enabled = false });
-        menu.Items.Add(new ToolStripMenuItem("Pomodoro", null, (_, _) => AddWidget("pomodoro")) { Enabled = false });
-        menu.Items.Add(new ToolStripMenuItem("Text",     null, (_, _) => AddWidget("text"))     { Enabled = false });
-        menu.Show((Button)sender!, new Point(0, ((Button)sender!).Height));
+        menu.Items.Add(new ToolStripMenuItem("Clock",      null, (_, _) => AddWidget("clock")));
+        menu.Items.Add(new ToolStripMenuItem("Battery",    null, (_, _) => AddWidget("battery")));
+        menu.Items.Add(new ToolStripMenuItem("Connection", null, (_, _) => AddWidget("connection")));
+        menu.Items.Add(new ToolStripMenuItem("Weather",    null, (_, _) => AddWidget("weather"))  { Enabled = false });
+        menu.Items.Add(new ToolStripMenuItem("Pomodoro",   null, (_, _) => AddWidget("pomodoro")) { Enabled = false });
+        menu.Items.Add(new ToolStripMenuItem("Text",       null, (_, _) => AddWidget("text"))     { Enabled = false });
+        var btn = (Button)sender!;
+        menu.Show(btn, new Point(0, btn.Height));
     }
 
     private void AddWidget(string type)
@@ -281,11 +290,13 @@ sealed class CanvasEditorForm : Form
 
     private static string WidgetLabel(string type) => type switch
     {
-        "clock"    => "Clock",
-        "weather"  => "Weather",
-        "pomodoro" => "Pomodoro",
-        "text"     => "Text",
-        _          => type,
+        "clock"      => "Clock",
+        "battery"    => "Battery",
+        "connection" => "Connection",
+        "weather"    => "Weather",
+        "pomodoro"   => "Pomodoro",
+        "text"       => "Text",
+        _            => type,
     };
 
     // ── Bounds panel ──────────────────────────────────────────────────────────
@@ -293,16 +304,17 @@ sealed class CanvasEditorForm : Form
     private void RefreshBoundsPanel()
     {
         bool active = _sel >= 0 && _sel < _placements.Count;
-        _nudX.Enabled = _nudY.Enabled = _nudW.Enabled = _nudH.Enabled = _chkFull.Enabled = active;
+        _nudCX.Enabled = _nudCY.Enabled = _nudW.Enabled = _nudH.Enabled = _chkFull.Enabled = active;
         if (!active) return;
 
         var p = _placements[_sel];
-        _suppressNud = true;
-        _nudX.Value  = p.X;
-        _nudY.Value  = p.Y;
-        _nudW.Value  = p.W;
-        _nudH.Value  = p.H;
-        _chkFull.Checked = p.X == 0 && p.Y == 0 && p.W == BitmapFrame.Width && p.H == BitmapFrame.Height;
+        _suppressNud     = true;
+        _nudCX.Value     = p.CX;
+        _nudCY.Value     = p.CY;
+        _nudW .Value     = p.W;
+        _nudH .Value     = p.H;
+        _chkFull.Checked = p.CX == BitmapFrame.Width / 2 && p.CY == BitmapFrame.Height / 2
+                        && p.W  == BitmapFrame.Width      && p.H  == BitmapFrame.Height;
         _suppressNud = false;
     }
 
@@ -310,12 +322,13 @@ sealed class CanvasEditorForm : Form
     {
         if (_suppressNud || _sel < 0 || _sel >= _placements.Count) return;
         var p = _placements[_sel];
-        p.X = (int)_nudX.Value;
-        p.Y = (int)_nudY.Value;
-        p.W = (int)_nudW.Value;
-        p.H = (int)_nudH.Value;
+        p.CX = (int)_nudCX.Value;
+        p.CY = (int)_nudCY.Value;
+        p.W  = (int)_nudW .Value;
+        p.H  = (int)_nudH .Value;
         _previews[_sel].Bounds = p.ToRectangle();
-        _chkFull.Checked = p.X == 0 && p.Y == 0 && p.W == BitmapFrame.Width && p.H == BitmapFrame.Height;
+        _chkFull.Checked = p.CX == BitmapFrame.Width / 2 && p.CY == BitmapFrame.Height / 2
+                        && p.W  == BitmapFrame.Width      && p.H  == BitmapFrame.Height;
         _canvas.Invalidate();
     }
 
@@ -324,11 +337,12 @@ sealed class CanvasEditorForm : Form
         if (_suppressNud || _sel < 0 || !_chkFull.Checked) return;
         _suppressNud = true;
         var p = _placements[_sel];
-        p.X = p.Y = 0;
-        p.W = BitmapFrame.Width;
-        p.H = BitmapFrame.Height;
-        _nudX.Value = 0; _nudY.Value = 0;
-        _nudW.Value = BitmapFrame.Width; _nudH.Value = BitmapFrame.Height;
+        p.CX = BitmapFrame.Width  / 2;
+        p.CY = BitmapFrame.Height / 2;
+        p.W  = BitmapFrame.Width;
+        p.H  = BitmapFrame.Height;
+        _nudCX.Value = p.CX; _nudCY.Value = p.CY;
+        _nudW .Value = p.W;  _nudH .Value = p.H;
         _previews[_sel].Bounds = p.ToRectangle();
         _suppressNud = false;
         _canvas.Invalidate();
@@ -338,15 +352,14 @@ sealed class CanvasEditorForm : Form
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
-            foreach (var w in _previews) w.Dispose();
+        if (disposing) foreach (var w in _previews) w.Dispose();
         base.Dispose(disposing);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static Label MakeLbl(string text, int x, int y) =>
-        new() { Text = text, Location = new Point(x, y), Size = new Size(20, 20), AutoSize = false };
+        new() { Text = text, Location = new Point(x, y), Size = new Size(26, 20), AutoSize = false };
 
     private static NumericUpDown MakeNud(int x, int y, int min, int max) =>
         new() { Location = new Point(x, y), Size = new Size(58, 23), Minimum = min, Maximum = max };
