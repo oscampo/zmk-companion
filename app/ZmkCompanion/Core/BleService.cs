@@ -1,6 +1,7 @@
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Devices.Enumeration;
+using Windows.Foundation;
 using Windows.Storage.Streams;
 
 namespace ZmkCompanion.Core;
