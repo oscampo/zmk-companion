@@ -24,6 +24,7 @@ sealed class BleService : IDisposable
     public string? DeviceName { get; private set; }
 
     private BluetoothLEDevice? _device;
+    private GattSession?        _session;
     private GattCharacteristic? _characteristic;
     private GattCharacteristic? _bitmapCharacteristic;
     private SynchronizationContext _uiContext = SynchronizationContext.Current
@@ -72,6 +73,13 @@ sealed class BleService : IDisposable
             return false;
 
         _device.ConnectionStatusChanged += OnConnectionStatusChanged;
+
+        // Request a higher ATT MTU so bitmap chunks (244 bytes) fit.
+        // Default MTU is 23 bytes (HID profile does not negotiate it up).
+        // GattSession.PreferredMtu triggers the BLE MTU Exchange procedure.
+        _session = await GattSession.FromDeviceIdAsync(_device.BluetoothDeviceId).AsTask(ct);
+        _session.MaintainConnection = true;
+        _session.PreferredMtu = 247;
 
         // Discover the custom GATT service — bypass Windows GATT cache so firmware
         // updates (new/removed characteristics) are picked up without re-pairing.
@@ -201,6 +209,8 @@ sealed class BleService : IDisposable
             _device.Dispose();
             _device = null;
         }
+        _session?.Dispose();
+        _session              = null;
         _characteristic       = null;
         _bitmapCharacteristic = null;
         DeviceName            = null;
