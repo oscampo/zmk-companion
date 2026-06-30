@@ -9,8 +9,9 @@ namespace ZmkCompanion.Core;
 // Works with already-paired devices (HID profile) — no re-pairing needed.
 sealed class BleService : IDisposable
 {
-    public static readonly Guid ServiceUuid  = new("00001523-1212-efde-1523-785feabcd123");
-    public static readonly Guid CharUuid     = new("00001524-1212-efde-1523-785feabcd123");
+    public static readonly Guid ServiceUuid     = new("00001523-1212-efde-1523-785feabcd123");
+    public static readonly Guid CharUuid        = new("00001524-1212-efde-1523-785feabcd123");
+    public static readonly Guid BitmapCharUuid  = new("00001525-1212-efde-1523-785feabcd123");
 
     private static readonly string[] KeyboardNames = ["zmk", "corne", "eyelash"];
 
@@ -23,6 +24,7 @@ sealed class BleService : IDisposable
 
     private BluetoothLEDevice? _device;
     private GattCharacteristic? _characteristic;
+    private GattCharacteristic? _bitmapCharacteristic;
     private SynchronizationContext _uiContext = SynchronizationContext.Current
         ?? new SynchronizationContext();
     private bool _disposed;
@@ -87,6 +89,12 @@ sealed class BleService : IDisposable
         }
 
         _characteristic = charResult.Characteristics[0];
+
+        // Bitmap display characteristic (optional — absent on older firmware).
+        var bmpResult = await service.GetCharacteristicsForUuidAsync(BitmapCharUuid).AsTask(ct);
+        if (bmpResult.Status == GattCommunicationStatus.Success && bmpResult.Characteristics.Count > 0)
+            _bitmapCharacteristic = bmpResult.Characteristics[0];
+
         DeviceName = deviceInfo.Name;
 
         _uiContext.Post(_ => Connected?.Invoke(DeviceName!), null);
@@ -95,9 +103,8 @@ sealed class BleService : IDisposable
 
     // ── Send ──────────────────────────────────────────────────────────────────
 
-    // Returns true if the write succeeded.
-    // Must be called from the UI (STA) thread — GattCharacteristic is STA-affine.
-    // Thread pool callers (e.g. pipe server) must dispatch to UI thread before calling.
+    // Sends a legacy text message via characteristic 0x1524 (older firmware only).
+    // Must be called from the UI (STA) thread.
     public async Task<bool> SendAsync(string message)
     {
         var ch = _characteristic;
@@ -106,14 +113,41 @@ sealed class BleService : IDisposable
         byte[] data = TextConverter.ToBytes(message);
         var dw = new DataWriter();
         dw.WriteBytes(data);
-        IBuffer buffer = dw.DetachBuffer();
-
         try
         {
-            var result = await ch.WriteValueWithResultAsync(buffer);
+            var result = await ch.WriteValueWithResultAsync(dw.DetachBuffer());
             return result.Status == GattCommunicationStatus.Success;
         }
         catch { return false; }
+    }
+
+    // Sends a 1,440-byte bitmap frame via characteristic 0x1525 in 240-byte chunks.
+    // Header per chunk: [2B offset LE][2B total LE][data].
+    // Must be called from the UI (STA) thread.
+    public async Task<bool> SendBitmapAsync(byte[] frame)
+    {
+        var ch = _bitmapCharacteristic;
+        if (ch is null) return false;
+
+        const int chunkData = 240;
+        ushort total = (ushort)frame.Length;
+
+        for (int offset = 0; offset < frame.Length; offset += chunkData)
+        {
+            int len = Math.Min(chunkData, frame.Length - offset);
+            var dw = new DataWriter { ByteOrder = ByteOrder.LittleEndian };
+            dw.WriteUInt16((ushort)offset);
+            dw.WriteUInt16(total);
+            dw.WriteBytes(frame[offset..(offset + len)]);
+            try
+            {
+                var result = await ch.WriteValueWithResultAsync(
+                    dw.DetachBuffer(), GattWriteOption.WriteWithoutResponse);
+                if (result.Status != GattCommunicationStatus.Success) return false;
+            }
+            catch { return false; }
+        }
+        return true;
     }
 
     // ── Connection events ─────────────────────────────────────────────────────
@@ -138,8 +172,9 @@ sealed class BleService : IDisposable
             _device.Dispose();
             _device = null;
         }
-        _characteristic = null;
-        DeviceName = null;
+        _characteristic       = null;
+        _bitmapCharacteristic = null;
+        DeviceName            = null;
     }
 
     public void Dispose()

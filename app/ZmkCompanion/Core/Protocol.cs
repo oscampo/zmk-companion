@@ -44,7 +44,7 @@ static class Protocol
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static bool Detect12h()
+    internal static bool Detect12h()
     {
         try
         {
