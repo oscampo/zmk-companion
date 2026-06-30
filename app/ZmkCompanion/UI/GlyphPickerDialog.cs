@@ -166,7 +166,7 @@ sealed class GlyphGrid : Panel
 
     public GlyphGrid()
     {
-        SetStyle(ControlStyles.AllPaintingInWmErase |
+        SetStyle(ControlStyles.AllPaintingInWmPaint |
                  ControlStyles.UserPaint            |
                  ControlStyles.OptimizedDoubleBuffer, true);
         AutoScroll = true;

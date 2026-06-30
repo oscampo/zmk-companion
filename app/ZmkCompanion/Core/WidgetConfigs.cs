@@ -50,6 +50,9 @@ sealed class LabelConfig
     // Default: FA bluetooth and FA USB (both BMP, U+F293 / U+F287)
     public string ConnBleGlyph { get; set; } = "";
     public string ConnUsbGlyph { get; set; } = "";
+
+    // Extra pixels inserted between each character element (negative = tighten).
+    public float LetterSpacing { get; set; } = 0f;
 }
 
 // Profile bar widget: 5 numbered boxes, active BLE profile inverted.
