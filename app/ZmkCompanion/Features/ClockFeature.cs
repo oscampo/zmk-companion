@@ -44,10 +44,13 @@ sealed class ClockFeature : IDisposable
         _pauseTimer?.Stop(); _pauseTimer?.Dispose(); _pauseTimer = null;
     }
 
+    public event Action<string>? SendFailed;
+
     private async Task SendFrameAsync()
     {
         using var bmp = RenderClock();
-        await _ble.SendBitmapAsync(BitmapFrame.Pack(bmp));
+        bool ok = await _ble.SendBitmapAsync(BitmapFrame.Pack(bmp));
+        if (!ok) SendFailed?.Invoke("Bitmap write failed — check characteristic write type");
     }
 
     private static Bitmap RenderClock()

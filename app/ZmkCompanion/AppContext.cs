@@ -31,6 +31,7 @@ sealed class ZmkAppContext : ApplicationContext
         _ble.Connected      += OnConnected;
         _ble.Disconnected   += OnDisconnected;
         _tray.ExitRequested += OnExit;
+        _clock.SendFailed   += msg => _tray.ShowError("Display", msg);
 
         // Defer startup until Application.Run() installs WindowsFormsSynchronizationContext.
         Application.Idle += OnFirstIdle;
