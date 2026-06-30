@@ -31,9 +31,11 @@ sealed class ZmkAppContext : ApplicationContext
 
         _pipe = new PipeServer();
 
-        _ble.Connected             += OnConnected;
-        _ble.Disconnected          += OnDisconnected;
-        _tray.ExitRequested        += OnExit;
+        _ble.Connected              += OnConnected;
+        _ble.Disconnected           += OnDisconnected;
+        _ble.BatteryLevelChanged    += OnBatteryLevelChanged;
+        _ble.StatusChanged          += OnStatusChanged;
+        _tray.ExitRequested         += OnExit;
         _tray.CanvasEditorRequested += OnCanvasEditor;
 
         Application.Idle += OnFirstIdle;
@@ -67,6 +69,24 @@ sealed class ZmkAppContext : ApplicationContext
         });
 
         _ = ConnectLoopAsync(_cts.Token);
+    }
+
+    // ── BLE status events ─────────────────────────────────────────────────────
+
+    // Both handlers are raised on the UI thread by BleService via _uiContext.Post.
+
+    private void OnBatteryLevelChanged(byte level)
+    {
+        foreach (var w in _compositor.Widgets.OfType<BatteryWidget>())
+            w.Update(level, false);
+    }
+
+    private void OnStatusChanged(byte status)
+    {
+        bool usb     = (status & 0x01) != 0;
+        int  profile = (status >> 1) & 0x07;
+        foreach (var w in _compositor.Widgets.OfType<ConnectionWidget>())
+            w.Update(usb, profile);
     }
 
     // ── Canvas editor ─────────────────────────────────────────────────────────

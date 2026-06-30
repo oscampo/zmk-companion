@@ -16,6 +16,8 @@ sealed class DisplayCompositor : IDisposable
 
     public DisplayCompositor(BleService ble) => _ble = ble;
 
+    public IReadOnlyList<IWidget> Widgets => _widgets;
+
     // ── Widget management ─────────────────────────────────────────────────────
 
     public void Add(IWidget widget)

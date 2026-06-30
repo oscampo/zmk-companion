@@ -12,12 +12,17 @@ sealed class BleService : IDisposable
     public static readonly Guid ServiceUuid     = new("00001523-1212-efde-1523-785feabcd123");
     public static readonly Guid CharUuid        = new("00001524-1212-efde-1523-785feabcd123");
     public static readonly Guid BitmapCharUuid  = new("00001525-1212-efde-1523-785feabcd123");
+    public static readonly Guid StatusCharUuid  = new("00001526-1212-efde-1523-785feabcd123");
 
     private static readonly string[] KeyboardNames = ["zmk", "corne", "eyelash"];
 
     // Raised on the UI thread via SynchronizationContext.
     public event Action<string>? Connected;
-    public event Action? Disconnected;
+    public event Action?         Disconnected;
+    // Battery level 0-100 from BAS 0x180F/0x2A19.
+    public event Action<byte>?   BatteryLevelChanged;
+    // Raw status byte from 0x1526: bit0=USB-HID, bits[3:1]=BLE profile (0-4).
+    public event Action<byte>?   StatusChanged;
 
     public bool IsConnected   => _device?.ConnectionStatus == BluetoothConnectionStatus.Connected;
     public bool HasBitmapChar => _bitmapCharacteristic is not null;
@@ -27,6 +32,8 @@ sealed class BleService : IDisposable
     private GattSession?        _session;
     private GattCharacteristic? _characteristic;
     private GattCharacteristic? _bitmapCharacteristic;
+    private GattCharacteristic? _batteryCharacteristic;
+    private GattCharacteristic? _statusCharacteristic;
     private SynchronizationContext _uiContext = SynchronizationContext.Current
         ?? new SynchronizationContext();
     private bool _disposed;
@@ -110,10 +117,77 @@ sealed class BleService : IDisposable
             return false;
         }
 
+        // 0x1526 — status byte (USB-HID active + BLE profile index); optional.
+        var statusResult = await service
+            .GetCharacteristicsForUuidAsync(StatusCharUuid, BluetoothCacheMode.Uncached).AsTask(ct);
+        if (statusResult.Status == GattCommunicationStatus.Success && statusResult.Characteristics.Count > 0)
+        {
+            _statusCharacteristic = statusResult.Characteristics[0];
+            await SubscribeAndReadByteAsync(_statusCharacteristic,
+                OnStatusValueChanged,
+                b => _uiContext.Post(_ => StatusChanged?.Invoke(b), null));
+        }
+
+        // BAS 0x180F / 0x2A19 — standard battery level with notify.
+        var basSvcResult = await _device
+            .GetGattServicesForUuidAsync(GattServiceUuids.Battery, BluetoothCacheMode.Uncached).AsTask(ct);
+        if (basSvcResult.Status == GattCommunicationStatus.Success && basSvcResult.Services.Count > 0)
+        {
+            var basCharResult = await basSvcResult.Services[0]
+                .GetCharacteristicsForUuidAsync(GattCharacteristicUuids.BatteryLevel, BluetoothCacheMode.Uncached)
+                .AsTask(ct);
+            if (basCharResult.Status == GattCommunicationStatus.Success && basCharResult.Characteristics.Count > 0)
+            {
+                _batteryCharacteristic = basCharResult.Characteristics[0];
+                await SubscribeAndReadByteAsync(_batteryCharacteristic,
+                    OnBatteryValueChanged,
+                    b => _uiContext.Post(_ => BatteryLevelChanged?.Invoke(b), null));
+            }
+        }
+
         DeviceName = deviceInfo.Name;
 
         _uiContext.Post(_ => Connected?.Invoke(DeviceName!), null);
         return true;
+    }
+
+    // Reads the initial byte value and subscribes to notifications.
+    // onInitial fires once with the current value; handler fires on each notification.
+    private static async Task SubscribeAndReadByteAsync(
+        GattCharacteristic ch,
+        TypedEventHandler<GattCharacteristic, GattValueChangedEventArgs> handler,
+        Action<byte> onInitial)
+    {
+        try
+        {
+            var read = await ch.ReadValueAsync(BluetoothCacheMode.Uncached);
+            if (read.Status == GattCommunicationStatus.Success && read.Value.Length > 0)
+                onInitial(DataReader.FromBuffer(read.Value).ReadByte());
+        }
+        catch { }
+
+        try
+        {
+            var notify = await ch.WriteClientCharacteristicConfigurationDescriptorAsync(
+                GattClientCharacteristicConfigurationDescriptorValue.Notify);
+            if (notify == GattCommunicationStatus.Success)
+                ch.ValueChanged += handler;
+        }
+        catch { }
+    }
+
+    private void OnBatteryValueChanged(GattCharacteristic sender, GattValueChangedEventArgs args)
+    {
+        if (args.CharacteristicValue.Length < 1) return;
+        byte level = DataReader.FromBuffer(args.CharacteristicValue).ReadByte();
+        _uiContext.Post(_ => BatteryLevelChanged?.Invoke(level), null);
+    }
+
+    private void OnStatusValueChanged(GattCharacteristic sender, GattValueChangedEventArgs args)
+    {
+        if (args.CharacteristicValue.Length < 1) return;
+        byte status = DataReader.FromBuffer(args.CharacteristicValue).ReadByte();
+        _uiContext.Post(_ => StatusChanged?.Invoke(status), null);
     }
 
     // ── Send ──────────────────────────────────────────────────────────────────
@@ -219,7 +293,19 @@ sealed class BleService : IDisposable
         _session              = null;
         _characteristic       = null;
         _bitmapCharacteristic = null;
-        DeviceName            = null;
+
+        if (_batteryCharacteristic is not null)
+        {
+            _batteryCharacteristic.ValueChanged -= OnBatteryValueChanged;
+            _batteryCharacteristic = null;
+        }
+        if (_statusCharacteristic is not null)
+        {
+            _statusCharacteristic.ValueChanged -= OnStatusValueChanged;
+            _statusCharacteristic = null;
+        }
+
+        DeviceName = null;
     }
 
     public void Dispose()
