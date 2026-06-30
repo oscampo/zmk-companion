@@ -48,9 +48,14 @@ sealed class ClockFeature : IDisposable
 
     private async Task SendFrameAsync()
     {
+        if (!_ble.HasBitmapChar)
+        {
+            SendFailed?.Invoke("0x1525 characteristic not found — GATT cache may be stale; re-pair the keyboard");
+            return;
+        }
         using var bmp = RenderClock();
         bool ok = await _ble.SendBitmapAsync(BitmapFrame.Pack(bmp));
-        if (!ok) SendFailed?.Invoke("Bitmap write failed — check characteristic write type");
+        if (!ok) SendFailed?.Invoke("0x1525 write failed — check firmware characteristic permissions");
     }
 
     private static Bitmap RenderClock()

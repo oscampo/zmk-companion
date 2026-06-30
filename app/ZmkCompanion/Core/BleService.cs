@@ -19,7 +19,8 @@ sealed class BleService : IDisposable
     public event Action<string>? Connected;
     public event Action? Disconnected;
 
-    public bool IsConnected => _device?.ConnectionStatus == BluetoothConnectionStatus.Connected;
+    public bool IsConnected   => _device?.ConnectionStatus == BluetoothConnectionStatus.Connected;
+    public bool HasBitmapChar => _bitmapCharacteristic is not null;
     public string? DeviceName { get; private set; }
 
     private BluetoothLEDevice? _device;
@@ -72,8 +73,10 @@ sealed class BleService : IDisposable
 
         _device.ConnectionStatusChanged += OnConnectionStatusChanged;
 
-        // Discover the custom GATT service.
-        var svcResult = await _device.GetGattServicesForUuidAsync(ServiceUuid).AsTask(ct);
+        // Discover the custom GATT service — bypass Windows GATT cache so firmware
+        // updates (new/removed characteristics) are picked up without re-pairing.
+        var svcResult = await _device
+            .GetGattServicesForUuidAsync(ServiceUuid, BluetoothCacheMode.Uncached).AsTask(ct);
         if (svcResult.Status != GattCommunicationStatus.Success || svcResult.Services.Count == 0)
         {
             DisposeDevice();
@@ -83,12 +86,14 @@ sealed class BleService : IDisposable
         var service = svcResult.Services[0];
 
         // 0x1524 — legacy text characteristic (older firmware); optional.
-        var charResult = await service.GetCharacteristicsForUuidAsync(CharUuid).AsTask(ct);
+        var charResult = await service
+            .GetCharacteristicsForUuidAsync(CharUuid, BluetoothCacheMode.Uncached).AsTask(ct);
         if (charResult.Status == GattCommunicationStatus.Success && charResult.Characteristics.Count > 0)
             _characteristic = charResult.Characteristics[0];
 
         // 0x1525 — bitmap display characteristic (current firmware); optional.
-        var bmpResult = await service.GetCharacteristicsForUuidAsync(BitmapCharUuid).AsTask(ct);
+        var bmpResult = await service
+            .GetCharacteristicsForUuidAsync(BitmapCharUuid, BluetoothCacheMode.Uncached).AsTask(ct);
         if (bmpResult.Status == GattCommunicationStatus.Success && bmpResult.Characteristics.Count > 0)
             _bitmapCharacteristic = bmpResult.Characteristics[0];
 
