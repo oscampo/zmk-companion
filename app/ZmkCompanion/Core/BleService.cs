@@ -81,19 +81,23 @@ sealed class BleService : IDisposable
         }
 
         var service = svcResult.Services[0];
+
+        // 0x1524 — legacy text characteristic (older firmware); optional.
         var charResult = await service.GetCharacteristicsForUuidAsync(CharUuid).AsTask(ct);
-        if (charResult.Status != GattCommunicationStatus.Success || charResult.Characteristics.Count == 0)
+        if (charResult.Status == GattCommunicationStatus.Success && charResult.Characteristics.Count > 0)
+            _characteristic = charResult.Characteristics[0];
+
+        // 0x1525 — bitmap display characteristic (current firmware); optional.
+        var bmpResult = await service.GetCharacteristicsForUuidAsync(BitmapCharUuid).AsTask(ct);
+        if (bmpResult.Status == GattCommunicationStatus.Success && bmpResult.Characteristics.Count > 0)
+            _bitmapCharacteristic = bmpResult.Characteristics[0];
+
+        // Need at least one usable characteristic; otherwise it's the wrong device.
+        if (_characteristic is null && _bitmapCharacteristic is null)
         {
             DisposeDevice();
             return false;
         }
-
-        _characteristic = charResult.Characteristics[0];
-
-        // Bitmap display characteristic (optional — absent on older firmware).
-        var bmpResult = await service.GetCharacteristicsForUuidAsync(BitmapCharUuid).AsTask(ct);
-        if (bmpResult.Status == GattCommunicationStatus.Success && bmpResult.Characteristics.Count > 0)
-            _bitmapCharacteristic = bmpResult.Characteristics[0];
 
         DeviceName = deviceInfo.Name;
 
