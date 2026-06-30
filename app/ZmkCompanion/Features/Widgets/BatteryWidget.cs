@@ -10,12 +10,13 @@ sealed class BatteryWidget : IWidget
 
     public event Action? Invalidated;
 
-    private int  _level    = -1;   // -1 = unknown
+    public BatteryConfig Config { get; set; } = new();
+
+    private int  _level    = -1;
     private bool _charging = false;
 
     private System.Windows.Forms.Timer? _timer;
 
-    // Called by AppContext when BleService fires BatteryLevelChanged.
     internal void Update(int level, bool charging)
     {
         _level    = level;
@@ -36,26 +37,46 @@ sealed class BatteryWidget : IWidget
 
     public void Render(Graphics g)
     {
+        var  cfg      = Config;
+        bool showIcon = cfg.ShowIcon;
+        bool showPct  = cfg.ShowPercent;
+        if (!showIcon && !showPct) return;
+
         g.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
-
-        string icon  = NerdFont.BatteryGlyph(_level, _charging);
-        string label = _level < 0 ? "--" : $"{_level}%";
-
-        using var iconFont  = NerdFont.CreateFont(28f);
-        using var labelFont = new Font("Consolas", 11f, FontStyle.Regular, GraphicsUnit.Pixel);
-
-        SizeF iconSz  = g.MeasureString(icon,  iconFont);
-        SizeF labelSz = g.MeasureString(label, labelFont);
 
         float cx = Bounds.X + Bounds.Width  / 2f;
         float cy = Bounds.Y + Bounds.Height / 2f;
-        float totalH = iconSz.Height + 2f + labelSz.Height;
 
-        float iconY  = cy - totalH / 2f;
-        float labelY = iconY + iconSz.Height + 2f;
+        if (showIcon && showPct)
+        {
+            string icon  = NerdFont.BatteryGlyph(_level, _charging);
+            string label = _level < 0 ? "--" : $"{_level}%";
 
-        g.DrawString(icon,  iconFont,  Brushes.White, cx - iconSz.Width  / 2f, iconY);
-        g.DrawString(label, labelFont, Brushes.White, cx - labelSz.Width / 2f, labelY);
+            using var iconFont  = NerdFont.CreateFont(28f);
+            using var labelFont = new Font("Consolas", 11f, FontStyle.Regular, GraphicsUnit.Pixel);
+
+            SizeF iconSz  = g.MeasureString(icon,  iconFont);
+            SizeF labelSz = g.MeasureString(label, labelFont);
+            float totalH  = iconSz.Height + 2f + labelSz.Height;
+            float iconY   = cy - totalH / 2f;
+
+            g.DrawString(icon,  iconFont,  Brushes.White, cx - iconSz.Width  / 2f, iconY);
+            g.DrawString(label, labelFont, Brushes.White, cx - labelSz.Width / 2f, iconY + iconSz.Height + 2f);
+        }
+        else if (showIcon)
+        {
+            string icon = NerdFont.BatteryGlyph(_level, _charging);
+            using var iconFont = NerdFont.CreateFont(28f);
+            SizeF iconSz = g.MeasureString(icon, iconFont);
+            g.DrawString(icon, iconFont, Brushes.White, cx - iconSz.Width / 2f, cy - iconSz.Height / 2f);
+        }
+        else
+        {
+            string label = _level < 0 ? "--" : $"{_level}%";
+            using var labelFont = new Font("Consolas", 14f, FontStyle.Bold, GraphicsUnit.Pixel);
+            SizeF labelSz = g.MeasureString(label, labelFont);
+            g.DrawString(label, labelFont, Brushes.White, cx - labelSz.Width / 2f, cy - labelSz.Height / 2f);
+        }
     }
 
     public void Dispose() => Stop();

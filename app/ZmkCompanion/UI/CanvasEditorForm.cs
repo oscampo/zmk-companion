@@ -24,14 +24,16 @@ sealed class CanvasEditorForm : Form
 
     private int   _sel        = -1;
     private bool  _dragging;
-    private Point _dragOrigin;   // unscaled point where drag started
+    private Point _dragOrigin;
     private int   _dragInitCX, _dragInitCY;
 
     private readonly Panel         _canvas;
     private readonly ListBox       _listWidgets;
     private readonly NumericUpDown _nudCX, _nudCY, _nudW, _nudH;
     private readonly CheckBox      _chkFull;
+    private readonly Panel         _propsPanel;
     private          bool          _suppressNud;
+    private          int           _propsY;
 
     // ── Construction ─────────────────────────────────────────────────────────
 
@@ -44,7 +46,7 @@ sealed class CanvasEditorForm : Form
         FormBorderStyle = FormBorderStyle.FixedSingle;
         StartPosition   = FormStartPosition.CenterScreen;
         MaximizeBox     = false;
-        ClientSize      = new Size(492, 540);
+        ClientSize      = new Size(492, 572);
 
         // ── Left: canvas preview ─────────────────────────────────────────────
         _canvas = new Panel
@@ -60,7 +62,7 @@ sealed class CanvasEditorForm : Form
         _canvas.MouseUp   += (_, _) => _dragging = false;
         Controls.Add(_canvas);
 
-        int rx = CanvasW + 20;
+        int rx = CanvasW + 20;  // 224
 
         // ── Widgets group ────────────────────────────────────────────────────
         var grpWidgets = new GroupBox { Text = "Widgets", Location = new Point(rx, 8), Size = new Size(258, 218) };
@@ -80,8 +82,7 @@ sealed class CanvasEditorForm : Form
         Controls.Add(grpWidgets);
 
         // ── Position & size group ─────────────────────────────────────────────
-        // CX/CY = center of the widget on the 68×160 canvas.
-        var grpBounds = new GroupBox { Text = "Position && Size  (CX / CY = center)", Location = new Point(rx, 234), Size = new Size(258, 152) };
+        var grpBounds = new GroupBox { Text = "Position && Size  (CX / CY = center)", Location = new Point(rx, 234), Size = new Size(258, 130) };
 
         grpBounds.Controls.Add(MakeLbl("CX:", 4,  24)); _nudCX = MakeNud(30,  20, 0, BitmapFrame.Width);
         grpBounds.Controls.Add(MakeLbl("CY:", 98, 24)); _nudCY = MakeNud(124, 20, 0, BitmapFrame.Height);
@@ -101,12 +102,18 @@ sealed class CanvasEditorForm : Form
 
         Controls.Add(grpBounds);
 
+        // ── Properties group ─────────────────────────────────────────────────
+        var grpProps = new GroupBox { Text = "Properties", Location = new Point(rx, 372), Size = new Size(258, 140) };
+        _propsPanel = new Panel { Location = new Point(4, 16), Size = new Size(250, 118) };
+        grpProps.Controls.Add(_propsPanel);
+        Controls.Add(grpProps);
+
         // ── Bottom buttons ────────────────────────────────────────────────────
-        var btnApply = new Button { Text = "Apply && Send", Location = new Point(rx, 496), Size = new Size(120, 32) };
+        var btnApply = new Button { Text = "Apply && Send", Location = new Point(rx, 524), Size = new Size(120, 32) };
         btnApply.Click += (_, _) => Apply();
         Controls.Add(btnApply);
 
-        var btnClose = new Button { Text = "Close", Location = new Point(rx + 128, 496), Size = new Size(110, 32) };
+        var btnClose = new Button { Text = "Close", Location = new Point(rx + 128, 524), Size = new Size(110, 32) };
         btnClose.Click += (_, _) => Close();
         Controls.Add(btnClose);
 
@@ -115,6 +122,7 @@ sealed class CanvasEditorForm : Form
         if (_placements.Count > 0) _sel = 0;
         RefreshWidgetList();
         RefreshBoundsPanel();
+        RefreshPropsPanel();
 
         var refreshTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         refreshTimer.Tick    += (_, _) => _canvas.Invalidate();
@@ -139,9 +147,9 @@ sealed class CanvasEditorForm : Form
         var bounds = p.ToRectangle();
         return p.Type switch
         {
-            "battery"    => new BatteryWidget    { Bounds = bounds },
-            "connection" => new ConnectionWidget { Bounds = bounds },
-            _            => new ClockWidget      { Bounds = bounds },
+            "battery"    => new BatteryWidget    { Bounds = bounds, Config = p.GetConfig<BatteryConfig>() },
+            "connection" => new ConnectionWidget { Bounds = bounds, Config = p.GetConfig<ConnectionConfig>() },
+            _            => new ClockWidget      { Bounds = bounds, Config = p.GetConfig<ClockConfig>() },
         };
     }
 
@@ -210,6 +218,7 @@ sealed class CanvasEditorForm : Form
         }
         SyncListSelection();
         RefreshBoundsPanel();
+        RefreshPropsPanel();
         _canvas.Invalidate();
     }
 
@@ -249,6 +258,7 @@ sealed class CanvasEditorForm : Form
     {
         _sel = _listWidgets.SelectedIndex;
         RefreshBoundsPanel();
+        RefreshPropsPanel();
         _canvas.Invalidate();
     }
 
@@ -273,6 +283,7 @@ sealed class CanvasEditorForm : Form
         _sel = _placements.Count - 1;
         RefreshWidgetList();
         RefreshBoundsPanel();
+        RefreshPropsPanel();
         _canvas.Invalidate();
     }
 
@@ -285,6 +296,7 @@ sealed class CanvasEditorForm : Form
         _sel = Math.Min(_sel, _placements.Count - 1);
         RefreshWidgetList();
         RefreshBoundsPanel();
+        RefreshPropsPanel();
         _canvas.Invalidate();
     }
 
@@ -346,6 +358,118 @@ sealed class CanvasEditorForm : Form
         _previews[_sel].Bounds = p.ToRectangle();
         _suppressNud = false;
         _canvas.Invalidate();
+    }
+
+    // ── Properties panel ─────────────────────────────────────────────────────
+
+    private void RefreshPropsPanel()
+    {
+        foreach (Control c in _propsPanel.Controls) c.Dispose();
+        _propsPanel.Controls.Clear();
+        _propsY = 0;
+
+        if (_sel < 0 || _sel >= _placements.Count) return;
+        var p = _placements[_sel];
+
+        switch (p.Type)
+        {
+            case "clock":
+                BuildClockProps(p);
+                break;
+            case "battery":
+                BuildBatteryProps(p);
+                break;
+            case "connection":
+                BuildConnectionProps(p);
+                break;
+        }
+    }
+
+    private void BuildClockProps(WidgetPlacement p)
+    {
+        var cfg = p.GetConfig<ClockConfig>();
+
+        AddPropBool("24-hour format", cfg.Use24h, v =>
+        {
+            var c = p.GetConfig<ClockConfig>(); c.Use24h = v; p.SetConfig(c);
+            if (_previews[_sel] is ClockWidget w) w.Config = c;
+            _canvas.Invalidate();
+        });
+        AddPropBool("Show AM/PM", cfg.ShowAmPm, v =>
+        {
+            var c = p.GetConfig<ClockConfig>(); c.ShowAmPm = v; p.SetConfig(c);
+            if (_previews[_sel] is ClockWidget w) w.Config = c;
+            _canvas.Invalidate();
+        });
+        AddPropBool("Show date", cfg.ShowDate, v =>
+        {
+            var c = p.GetConfig<ClockConfig>(); c.ShowDate = v; p.SetConfig(c);
+            if (_previews[_sel] is ClockWidget w) w.Config = c;
+            _canvas.Invalidate();
+        });
+        AddPropBool("Show seconds", cfg.ShowSeconds, v =>
+        {
+            var c = p.GetConfig<ClockConfig>(); c.ShowSeconds = v; p.SetConfig(c);
+            if (_previews[_sel] is ClockWidget w) w.Config = c;
+            _canvas.Invalidate();
+        });
+    }
+
+    private void BuildBatteryProps(WidgetPlacement p)
+    {
+        var cfg = p.GetConfig<BatteryConfig>();
+
+        AddPropBool("Show icon", cfg.ShowIcon, v =>
+        {
+            var c = p.GetConfig<BatteryConfig>(); c.ShowIcon = v; p.SetConfig(c);
+            if (_previews[_sel] is BatteryWidget w) w.Config = c;
+            _canvas.Invalidate();
+        });
+        AddPropBool("Show percentage", cfg.ShowPercent, v =>
+        {
+            var c = p.GetConfig<BatteryConfig>(); c.ShowPercent = v; p.SetConfig(c);
+            if (_previews[_sel] is BatteryWidget w) w.Config = c;
+            _canvas.Invalidate();
+        });
+    }
+
+    private void BuildConnectionProps(WidgetPlacement p)
+    {
+        var cfg = p.GetConfig<ConnectionConfig>();
+
+        AddPropBool("Show icon", cfg.ShowIcon, v =>
+        {
+            var c = p.GetConfig<ConnectionConfig>(); c.ShowIcon = v; p.SetConfig(c);
+            if (_previews[_sel] is ConnectionWidget w) w.Config = c;
+            _canvas.Invalidate();
+        });
+        AddPropBool("Show type (USB / BLE)", cfg.ShowType, v =>
+        {
+            var c = p.GetConfig<ConnectionConfig>(); c.ShowType = v; p.SetConfig(c);
+            if (_previews[_sel] is ConnectionWidget w) w.Config = c;
+            _canvas.Invalidate();
+        });
+        AddPropBool("Show BLE profile number", cfg.ShowProfile, v =>
+        {
+            var c = p.GetConfig<ConnectionConfig>(); c.ShowProfile = v; p.SetConfig(c);
+            if (_previews[_sel] is ConnectionWidget w) w.Config = c;
+            _canvas.Invalidate();
+        });
+    }
+
+    private void AddPropBool(string label, bool value, Action<bool> onChange)
+    {
+        var chk = new CheckBox
+        {
+            Text      = label,
+            Checked   = value,
+            Location  = new Point(0, _propsY),
+            Size      = new Size(246, 22),
+            AutoSize  = false,
+        };
+        chk.CheckedChanged += (_, _) => onChange(chk.Checked);
+        _propsPanel.Controls.Add(chk);
+        _propsY += 26;
     }
 
     // ── Dispose ───────────────────────────────────────────────────────────────

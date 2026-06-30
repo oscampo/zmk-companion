@@ -110,9 +110,9 @@ sealed class ZmkAppContext : ApplicationContext
         var bounds = p.ToRectangle();
         return p.Type switch
         {
-            "battery"    => new BatteryWidget    { Bounds = bounds },
-            "connection" => new ConnectionWidget { Bounds = bounds },
-            _            => new ClockWidget      { Bounds = bounds },
+            "battery"    => new BatteryWidget    { Bounds = bounds, Config = p.GetConfig<BatteryConfig>() },
+            "connection" => new ConnectionWidget { Bounds = bounds, Config = p.GetConfig<ConnectionConfig>() },
+            _            => new ClockWidget      { Bounds = bounds, Config = p.GetConfig<ClockConfig>() },
         };
     }
 

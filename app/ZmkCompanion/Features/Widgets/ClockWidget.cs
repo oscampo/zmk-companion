@@ -10,6 +10,8 @@ sealed class ClockWidget : IWidget
 
     public event Action? Invalidated;
 
+    public ClockConfig Config { get; set; } = new();
+
     private System.Windows.Forms.Timer? _timer;
 
     public void Start()
@@ -36,39 +38,51 @@ sealed class ClockWidget : IWidget
 
     public void Render(Graphics g)
     {
-        bool is12h = Protocol.Detect12h();
-        var now = DateTime.Now;
+        var cfg    = Config;
+        bool is12h = !cfg.Use24h && Protocol.Detect12h();
+        var  now   = DateTime.Now;
 
-        string timeStr = is12h ? now.ToString("h:mm")  : now.ToString("HH:mm");
-        string ampm    = is12h ? now.ToString("tt")     : "";
-        string dateStr = now.ToString("ddd dd").ToUpper();
+        string timeStr = cfg.ShowSeconds
+            ? (is12h ? now.ToString("h:mm:ss") : now.ToString("HH:mm:ss"))
+            : (is12h ? now.ToString("h:mm")    : now.ToString("HH:mm"));
+        string ampm    = is12h && cfg.ShowAmPm ? now.ToString("tt") : "";
+        string dateStr = cfg.ShowDate ? now.ToString("ddd dd").ToUpper() : "";
 
         g.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
 
-        using var timeFont  = new Font("Consolas", 20f, FontStyle.Bold,    GraphicsUnit.Pixel);
-        using var smallFont = new Font("Consolas", 10f, FontStyle.Regular,  GraphicsUnit.Pixel);
+        using var timeFont = new Font("Consolas", 20f, FontStyle.Bold,    GraphicsUnit.Pixel);
+        using var ampmFont = new Font("Consolas", 13f, FontStyle.Regular,  GraphicsUnit.Pixel);
+        using var dateFont = new Font("Consolas", 10f, FontStyle.Regular,  GraphicsUnit.Pixel);
 
         SizeF timeSz = g.MeasureString(timeStr, timeFont);
-        SizeF dateSz = g.MeasureString(dateStr, smallFont);
+        SizeF ampmSz = ampm.Length > 0 ? g.MeasureString(ampm, ampmFont) : SizeF.Empty;
+        SizeF dateSz = dateStr.Length > 0 ? g.MeasureString(dateStr, dateFont) : SizeF.Empty;
 
         float cx = Bounds.X + Bounds.Width  / 2f;
         float cy = Bounds.Y + Bounds.Height / 2f;
 
-        float timeY = cy - timeSz.Height / 2f - dateSz.Height / 2f - 2f;
-        float timeX = cx - timeSz.Width  / 2f;
+        // Total block height: time row + optional date row.
+        float blockH = timeSz.Height + (dateSz.Height > 0 ? 3f + dateSz.Height : 0f);
+        float timeY  = cy - blockH / 2f;
+
+        // Time + inline AM/PM: center the combined width.
+        float rowW  = timeSz.Width + (ampmSz.Width > 0 ? 2f + ampmSz.Width : 0f);
+        float timeX = cx - rowW / 2f;
         g.DrawString(timeStr, timeFont, Brushes.White, timeX, timeY);
 
-        if (is12h && ampm.Length > 0)
+        if (ampm.Length > 0)
         {
-            SizeF ampmSz = g.MeasureString(ampm, smallFont);
-            g.DrawString(ampm, smallFont, Brushes.White,
-                timeX + timeSz.Width + 1f,
-                timeY + timeSz.Height - ampmSz.Height - 1f);
+            // Baseline-align AM/PM with the time string.
+            float ampmY = timeY + timeSz.Height - ampmSz.Height;
+            g.DrawString(ampm, ampmFont, Brushes.White, timeX + timeSz.Width + 2f, ampmY);
         }
 
-        g.DrawString(dateStr, smallFont, Brushes.White,
-            cx - dateSz.Width / 2f,
-            timeY + timeSz.Height + 3f);
+        if (dateStr.Length > 0)
+        {
+            g.DrawString(dateStr, dateFont, Brushes.White,
+                cx - dateSz.Width / 2f,
+                timeY + timeSz.Height + 3f);
+        }
     }
 
     public void Dispose() => Stop();

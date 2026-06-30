@@ -26,4 +26,14 @@ sealed class WidgetPlacement
         W      = W,  H  = H,
         Config = Config,
     };
+
+    public T GetConfig<T>() where T : new()
+    {
+        if (Config is null) return new T();
+        try { return JsonSerializer.Deserialize<T>(Config.Value.GetRawText()) ?? new T(); }
+        catch { return new T(); }
+    }
+
+    public void SetConfig<T>(T value) =>
+        Config = JsonSerializer.SerializeToElement(value);
 }
