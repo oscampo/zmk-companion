@@ -51,7 +51,7 @@ sealed class ZmkAppContext : ApplicationContext
                 try
                 {
                     _clock.PauseFor(TimeSpan.FromSeconds(30));
-                    using var bmp = TextRenderer.Render(text!);
+                    using var bmp = BitmapTextRenderer.Render(text!);
                     await _ble.SendBitmapAsync(BitmapFrame.Pack(bmp));
                 }
                 catch { }

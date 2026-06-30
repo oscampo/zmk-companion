@@ -5,7 +5,7 @@ namespace ZmkCompanion.Core;
 
 // Renders a plain-text string (with \n line breaks) onto a display-sized Bitmap.
 // Used to convert CLI pipe text (zkc "line1\nline2") to the bitmap wire format.
-static class TextRenderer
+static class BitmapTextRenderer
 {
     private const float FontSizePx = 12f;
 
