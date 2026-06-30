@@ -407,9 +407,9 @@ sealed class CanvasEditorForm : Form
             if (_previews[_sel] is ClockWidget w) w.Config = c;
             _canvas.Invalidate();
         });
-        AddPropBool("Show seconds", cfg.ShowSeconds, v =>
+        AddPropScale(cfg.Scale, v =>
         {
-            var c = p.GetConfig<ClockConfig>(); c.ShowSeconds = v; p.SetConfig(c);
+            var c = p.GetConfig<ClockConfig>(); c.Scale = v; p.SetConfig(c);
             if (_previews[_sel] is ClockWidget w) w.Config = c;
             _canvas.Invalidate();
         });
@@ -428,6 +428,12 @@ sealed class CanvasEditorForm : Form
         AddPropBool("Show percentage", cfg.ShowPercent, v =>
         {
             var c = p.GetConfig<BatteryConfig>(); c.ShowPercent = v; p.SetConfig(c);
+            if (_previews[_sel] is BatteryWidget w) w.Config = c;
+            _canvas.Invalidate();
+        });
+        AddPropScale(cfg.Scale, v =>
+        {
+            var c = p.GetConfig<BatteryConfig>(); c.Scale = v; p.SetConfig(c);
             if (_previews[_sel] is BatteryWidget w) w.Config = c;
             _canvas.Invalidate();
         });
@@ -455,6 +461,12 @@ sealed class CanvasEditorForm : Form
             if (_previews[_sel] is ConnectionWidget w) w.Config = c;
             _canvas.Invalidate();
         });
+        AddPropScale(cfg.Scale, v =>
+        {
+            var c = p.GetConfig<ConnectionConfig>(); c.Scale = v; p.SetConfig(c);
+            if (_previews[_sel] is ConnectionWidget w) w.Config = c;
+            _canvas.Invalidate();
+        });
     }
 
     private void AddPropBool(string label, bool value, Action<bool> onChange)
@@ -470,6 +482,40 @@ sealed class CanvasEditorForm : Form
         chk.CheckedChanged += (_, _) => onChange(chk.Checked);
         _propsPanel.Controls.Add(chk);
         _propsY += 26;
+    }
+
+    // Size knob: 40%-200% scale applied to a widget's icon/font sizes.
+    private void AddPropScale(float value, Action<float> onChange)
+    {
+        var lbl = new Label
+        {
+            Text     = "Size:",
+            Location = new Point(0, _propsY + 2),
+            Size     = new Size(38, 20),
+            AutoSize = false,
+        };
+        _propsPanel.Controls.Add(lbl);
+
+        var nud = new NumericUpDown
+        {
+            Location      = new Point(40, _propsY),
+            Size          = new Size(60, 23),
+            Minimum       = 40,
+            Maximum       = 200,
+            Increment     = 10,
+            Value         = (decimal)Math.Clamp(value * 100, 40, 200),
+        };
+        var pct = new Label
+        {
+            Text     = "%",
+            Location = new Point(104, _propsY + 2),
+            Size     = new Size(20, 20),
+            AutoSize = false,
+        };
+        nud.ValueChanged += (_, _) => onChange((float)nud.Value / 100f);
+        _propsPanel.Controls.Add(nud);
+        _propsPanel.Controls.Add(pct);
+        _propsY += 28;
     }
 
     // ── Dispose ───────────────────────────────────────────────────────────────

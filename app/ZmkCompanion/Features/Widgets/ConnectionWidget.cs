@@ -46,16 +46,17 @@ sealed class ConnectionWidget : IWidget
 
         g.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
 
-        float cx = Bounds.X + Bounds.Width  / 2f;
-        float cy = Bounds.Y + Bounds.Height / 2f;
+        float cx    = Bounds.X + Bounds.Width  / 2f;
+        float cy    = Bounds.Y + Bounds.Height / 2f;
+        float scale = Math.Clamp(cfg.Scale, 0.4f, 2.0f);
 
         string icon = _usbActive ? NerdFont.Usb : NerdFont.Bluetooth;
 
         // Build the text label from enabled parts.
         string label = BuildLabel(showType, showProfile);
 
-        using var iconFont  = NerdFont.CreateFont(28f);
-        using var labelFont = new Font("Consolas", 11f, FontStyle.Regular, GraphicsUnit.Pixel);
+        using var iconFont  = NerdFont.CreateFont(28f * scale);
+        using var labelFont = new Font("Consolas", 11f * scale, FontStyle.Regular, GraphicsUnit.Pixel);
 
         if (showIcon && label.Length > 0)
         {

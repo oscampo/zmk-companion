@@ -42,17 +42,16 @@ sealed class ClockWidget : IWidget
         bool is12h = !cfg.Use24h && Protocol.Detect12h();
         var  now   = DateTime.Now;
 
-        string timeStr = cfg.ShowSeconds
-            ? (is12h ? now.ToString("h:mm:ss") : now.ToString("HH:mm:ss"))
-            : (is12h ? now.ToString("h:mm")    : now.ToString("HH:mm"));
+        string timeStr = is12h ? now.ToString("h:mm") : now.ToString("HH:mm");
         string ampm    = is12h && cfg.ShowAmPm ? now.ToString("tt") : "";
         string dateStr = cfg.ShowDate ? now.ToString("ddd dd").ToUpper() : "";
 
         g.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
 
-        using var timeFont = new Font("Consolas", 20f, FontStyle.Bold,    GraphicsUnit.Pixel);
-        using var ampmFont = new Font("Consolas", 13f, FontStyle.Regular,  GraphicsUnit.Pixel);
-        using var dateFont = new Font("Consolas", 10f, FontStyle.Regular,  GraphicsUnit.Pixel);
+        float scale = Math.Clamp(cfg.Scale, 0.4f, 2.0f);
+        using var timeFont = new Font("Consolas", 20f * scale, FontStyle.Bold,    GraphicsUnit.Pixel);
+        using var ampmFont = new Font("Consolas", 13f * scale, FontStyle.Regular,  GraphicsUnit.Pixel);
+        using var dateFont = new Font("Consolas", 10f * scale, FontStyle.Regular,  GraphicsUnit.Pixel);
 
         SizeF timeSz = g.MeasureString(timeStr, timeFont);
         SizeF ampmSz = ampm.Length > 0 ? g.MeasureString(ampm, ampmFont) : SizeF.Empty;

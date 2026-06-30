@@ -14,6 +14,11 @@ sealed class DisplayCompositor : IDisposable
     // Single-shot timer used to resume widgets after ShowTemporaryAsync.
     private System.Windows.Forms.Timer? _resumeTimer;
 
+    // Guards every SendBitmapAsync call site (render pump + ShowTemporaryAsync).
+    // Concurrent chunked BLE writes on the same characteristic interleave and
+    // produce torn frames on the display, so only one send may be in flight.
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
+
     public DisplayCompositor(BleService ble) => _ble = ble;
 
     public IReadOnlyList<IWidget> Widgets => _widgets;
@@ -59,7 +64,9 @@ sealed class DisplayCompositor : IDisposable
         foreach (var w in _widgets) w.Stop();
         _resumeTimer?.Stop(); _resumeTimer?.Dispose(); _resumeTimer = null;
 
-        await _ble.SendBitmapAsync(frame);
+        await _sendLock.WaitAsync();
+        try   { await _ble.SendBitmapAsync(frame); }
+        finally { _sendLock.Release(); }
 
         _resumeTimer = new System.Windows.Forms.Timer { Interval = (int)duration.TotalMilliseconds };
         _resumeTimer.Tick += (_, _) =>
@@ -72,10 +79,21 @@ sealed class DisplayCompositor : IDisposable
 
     // ── Render ────────────────────────────────────────────────────────────────
 
-    private void OnInvalidated() => _ = RenderAndSendAsync();
+    // Coalesces bursts of Invalidated (e.g. StartAll firing one per widget)
+    // into a single re-render+send instead of queuing one per event.
+    private bool _renderPending;
+
+    private void OnInvalidated()
+    {
+        if (_renderPending) return;
+        _renderPending = true;
+        _ = RenderAndSendAsync();
+    }
 
     public async Task RenderAndSendAsync()
     {
+        _renderPending = false;
+
         using var bmp = BitmapFrame.CreateCanvas();
         using var g   = Graphics.FromImage(bmp);
         g.Clear(Color.Black);
@@ -89,7 +107,10 @@ sealed class DisplayCompositor : IDisposable
             g.Clip = clip;
         }
 
-        await _ble.SendBitmapAsync(BitmapFrame.Pack(bmp));
+        byte[] frame = BitmapFrame.Pack(bmp);
+        await _sendLock.WaitAsync();
+        try   { await _ble.SendBitmapAsync(frame); }
+        finally { _sendLock.Release(); }
     }
 
     // ── Cleanup ───────────────────────────────────────────────────────────────
