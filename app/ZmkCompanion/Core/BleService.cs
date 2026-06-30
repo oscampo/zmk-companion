@@ -74,12 +74,10 @@ sealed class BleService : IDisposable
 
         _device.ConnectionStatusChanged += OnConnectionStatusChanged;
 
-        // Request a higher ATT MTU so bitmap chunks (244 bytes) fit.
-        // Default MTU is 23 bytes (HID profile does not negotiate it up).
-        // GattSession.PreferredMtu triggers the BLE MTU Exchange procedure.
+        // Open a GattSession so we can read MaxPduSize (the negotiated ATT MTU).
+        // MaintainConnection keeps the link alive between writes.
         _session = await GattSession.FromDeviceIdAsync(_device.BluetoothDeviceId).AsTask(ct);
         _session.MaintainConnection = true;
-        _session.PreferredMtu = 247;
 
         // Discover the custom GATT service — bypass Windows GATT cache so firmware
         // updates (new/removed characteristics) are picked up without re-pairing.
@@ -162,8 +160,12 @@ sealed class BleService : IDisposable
             return false;
         }
 
-        const int chunkData = 240;
-        ushort total = (ushort)frame.Length;
+        // MaxPduSize = negotiated ATT MTU. Max write payload = MTU - 3 (ATT header).
+        // Minus our 4-byte chunk header leaves the usable data bytes per packet.
+        // Falls back to 16 bytes (fits in the 23-byte default MTU) if session is null.
+        int mtu       = _session?.MaxPduSize ?? 23;
+        int chunkData = Math.Max(1, mtu - 3 - 4);
+        ushort total  = (ushort)frame.Length;
 
         for (int offset = 0; offset < frame.Length; offset += chunkData)
         {
@@ -177,7 +179,7 @@ sealed class BleService : IDisposable
                 var result = await ch.WriteValueWithResultAsync(dw.DetachBuffer(), writeOpt);
                 if (result.Status != GattCommunicationStatus.Success)
                 {
-                    LastBitmapError = $"chunk@{offset} status={result.Status} proto={result.ProtocolError} opt={writeOpt} props={props}";
+                    LastBitmapError = $"chunk@{offset}/{chunkData}B mtu={mtu} status={result.Status} proto={result.ProtocolError} opt={writeOpt} props={props}";
                     return false;
                 }
             }
