@@ -150,7 +150,8 @@ sealed class BleService : IDisposable
             dw.WriteBytes(frame[offset..(offset + len)]);
             try
             {
-                var result = await ch.WriteValueWithResultAsync(dw.DetachBuffer());
+                var result = await ch.WriteValueWithResultAsync(
+                    dw.DetachBuffer(), GattWriteOption.WriteWithoutResponse);
                 if (result.Status != GattCommunicationStatus.Success) return false;
             }
             catch { return false; }
