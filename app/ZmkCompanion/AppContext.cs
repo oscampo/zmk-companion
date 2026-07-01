@@ -36,6 +36,14 @@ sealed class ZmkAppContext : ApplicationContext
     // stuck on stale content indefinitely.
     private System.Windows.Forms.Timer? _heartbeatTimer;
 
+    // Clock sync sent over the legacy 0x1524 text characteristic — a ~15-byte
+    // write, effectively instant regardless of MTU/page-cycle load. Decoupled
+    // from the bitmap/canvas pipeline entirely: firmware that understands this
+    // message ("T:<unix>:A|H", see firmware/custom_status_screen.c for the
+    // reference free-running-clock implementation) can keep its own clock
+    // accurate independent of how backed-up the bitmap send pipeline gets.
+    private System.Windows.Forms.Timer? _clockSyncTimer;
+
     public ZmkAppContext()
     {
         _settings = AppSettings.Load();
@@ -108,6 +116,10 @@ sealed class ZmkAppContext : ApplicationContext
         _heartbeatTimer = new System.Windows.Forms.Timer { Interval = 5 * 60_000 };
         _heartbeatTimer.Tick += (_, _) => { if (_ble.IsConnected) _compositor.ForceRedraw(); };
         _heartbeatTimer.Start();
+
+        _clockSyncTimer = new System.Windows.Forms.Timer { Interval = 60_000 };
+        _clockSyncTimer.Tick += (_, _) => { if (_ble.IsConnected) _ = _ble.SendAsync(Protocol.BuildClock()); };
+        _clockSyncTimer.Start();
 
         _ = ConnectLoopAsync(_cts.Token);
     }
@@ -295,6 +307,7 @@ sealed class ZmkAppContext : ApplicationContext
     {
         _tray.SetConnected(deviceName);
         _compositor.StartAll();
+        _ = _ble.SendAsync(Protocol.BuildClock());
     }
 
     private void OnDisconnected()
@@ -330,6 +343,8 @@ sealed class ZmkAppContext : ApplicationContext
             _sportsTimer?.Dispose();
             _heartbeatTimer?.Stop();
             _heartbeatTimer?.Dispose();
+            _clockSyncTimer?.Stop();
+            _clockSyncTimer?.Dispose();
             _pipe.Dispose();
             _compositor.Dispose();
             _tray.Dispose();
