@@ -15,6 +15,19 @@ sealed class LiveState
     public int  BleProfile      { get; private set; } = -1;  // 0-4
     public int  BleProfileMask  { get; private set; } = 0b11111;  // bits 0-4: profiles 1-5 bonded
 
+    // Weather snapshot, refreshed periodically by AppContext from WeatherFeature.
+    public string WeatherIcon { get; private set; } = "";
+    public string WeatherTemp { get; private set; } = "--°";
+    public string WeatherCity { get; private set; } = "";
+
+    // Last text pushed by an external process via the named pipe (zkc CLI).
+    public string ExternalText { get; private set; } = "";
+
+    // Formatted game text per league (keyed by SportsLeague.ShortName, upper-case),
+    // refreshed periodically by AppContext from SportsFeature. "default" is the
+    // first configured league, used by the bare {sports} binding.
+    private readonly Dictionary<string, string> _sportsText = new(StringComparer.OrdinalIgnoreCase);
+
     public void UpdateBattery(int level, bool charging)
     {
         BatteryLevel    = level;
@@ -29,6 +42,29 @@ sealed class LiveState
         BleProfileMask = profileMask;
         Changed?.Invoke();
     }
+
+    public void UpdateWeather(string icon, string temp, string city)
+    {
+        WeatherIcon = icon;
+        WeatherTemp = temp;
+        WeatherCity = city;
+        Changed?.Invoke();
+    }
+
+    public void UpdateExternalText(string text)
+    {
+        ExternalText = text;
+        Changed?.Invoke();
+    }
+
+    public void UpdateSports(string leagueKey, string text)
+    {
+        _sportsText[leagueKey] = text;
+        Changed?.Invoke();
+    }
+
+    private string SportsText(string leagueKey) =>
+        _sportsText.TryGetValue(leagueKey, out var v) ? v : "···";
 
     // Resolves a single binding key to its current display value (no glyph styling).
     public string Resolve(string key, bool use24h = false) => Resolve(key, use24h, null);
@@ -58,6 +94,13 @@ sealed class LiveState
             return UsbActive ? usbG : bleG;
         }
 
+        // Sports — {sports} uses the first configured league; {sports:NFL} picks one by ShortName.
+        if (key.StartsWith("sports", StringComparison.OrdinalIgnoreCase))
+        {
+            int colon = key.IndexOf(':');
+            return SportsText(colon >= 0 ? key[(colon + 1)..] : "default");
+        }
+
         string raw = key switch
         {
             "battery.level"   => BatteryLevel < 0 ? "--"  : $"{BatteryLevel}",
@@ -71,6 +114,11 @@ sealed class LiveState
             "date"            => DateTime.Now.ToString("ddd d").ToUpper(),
             "date.day"        => DateTime.Now.Day.ToString(),
             "date.month"      => DateTime.Now.ToString("MMM").ToUpper(),
+            "weather.icon"    => WeatherIcon,
+            "weather.temp"    => WeatherTemp,
+            "weather.city"    => WeatherCity,
+            "weather"         => $"{WeatherIcon} {WeatherTemp}".Trim(),
+            "ext.text"        => ExternalText,
             _                 => $"{{{key}}}",
         };
 

@@ -15,10 +15,14 @@ sealed class CanvasEditorForm : Form
     private const int CanvasW = BitmapFrame.Width  * Zoom;  // 204
     private const int CanvasH = BitmapFrame.Height * Zoom;  // 480
 
-    private readonly AppSettings                   _settings;
-    private readonly LiveState                     _liveState;
-    private readonly Action<List<WidgetPlacement>> _onApply;
+    private readonly AppSettings                        _settings;
+    private readonly LiveState                          _liveState;
+    private readonly Action<List<CanvasPage>, bool>      _onApply;
 
+    // Pages being edited (working copies). _placements/_previews always reflect
+    // the currently selected page; switching pages syncs them back into _pages.
+    private readonly List<CanvasPage>      _pages      = [];
+    private          int                   _pageIndex;
     private readonly List<WidgetPlacement> _placements = [];
     private readonly List<IWidget>         _previews   = [];
 
@@ -36,9 +40,15 @@ sealed class CanvasEditorForm : Form
     private          bool          _suppressNud;
     private          int           _propsY;
 
+    private readonly ComboBox      _cmbPages;
+    private readonly TextBox       _txtPageName;
+    private readonly CheckBox      _chkCyclePages;
+    private readonly NumericUpDown _nudPageDur;
+    private          bool          _suppressPageUi;
+
     // ── Construction ─────────────────────────────────────────────────────────
 
-    public CanvasEditorForm(AppSettings settings, LiveState liveState, Action<List<WidgetPlacement>> onApply)
+    public CanvasEditorForm(AppSettings settings, LiveState liveState, Action<List<CanvasPage>, bool> onApply)
     {
         _settings  = settings;
         _liveState = liveState;
@@ -63,6 +73,56 @@ sealed class CanvasEditorForm : Form
         _canvas.MouseMove += OnCanvasMouseMove;
         _canvas.MouseUp   += (_, _) => _dragging = false;
         Controls.Add(_canvas);
+
+        // ── Pages group (below canvas) ────────────────────────────────────────
+        var grpPages = new GroupBox { Text = "Pages", Location = new Point(8, 494), Size = new Size(CanvasW, 126) };
+
+        _cmbPages = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(6, 20), Size = new Size(140, 23) };
+        _cmbPages.SelectedIndexChanged += OnPageComboChanged;
+        grpPages.Controls.Add(_cmbPages);
+
+        var btnAddPage = new Button { Text = "+", Location = new Point(150, 20), Size = new Size(24, 23) };
+        btnAddPage.Click += (_, _) =>
+        {
+            SyncCurrentPageFromEditor();
+            _pages.Add(new CanvasPage { Name = $"Page {_pages.Count + 1}" });
+            LoadPageIntoEditor(_pages.Count - 1);
+        };
+        grpPages.Controls.Add(btnAddPage);
+
+        var btnRemovePage = new Button { Text = "−", Location = new Point(176, 20), Size = new Size(24, 23) };
+        btnRemovePage.Click += (_, _) =>
+        {
+            if (_pages.Count <= 1) return;
+            _pages.RemoveAt(_pageIndex);
+            LoadPageIntoEditor(Math.Min(_pageIndex, _pages.Count - 1));
+        };
+        grpPages.Controls.Add(btnRemovePage);
+
+        grpPages.Controls.Add(new Label { Text = "Name:", Location = new Point(6, 49), Size = new Size(40, 18) });
+        _txtPageName = new TextBox { Location = new Point(48, 46), Size = new Size(150, 22) };
+        _txtPageName.TextChanged += (_, _) =>
+        {
+            if (_suppressPageUi || _pageIndex < 0 || _pageIndex >= _pages.Count) return;
+            _pages[_pageIndex].Name = _txtPageName.Text;
+            RefreshPageCombo();
+        };
+        grpPages.Controls.Add(_txtPageName);
+
+        _chkCyclePages = new CheckBox { Text = "Cycle pages", Checked = _settings.CyclePages, Location = new Point(6, 74), Size = new Size(100, 22) };
+        grpPages.Controls.Add(_chkCyclePages);
+
+        grpPages.Controls.Add(new Label { Text = "Every:", Location = new Point(108, 76), Size = new Size(40, 18) });
+        _nudPageDur = new NumericUpDown { Location = new Point(148, 74), Size = new Size(46, 22), Minimum = 2, Maximum = 3600, Value = 10 };
+        _nudPageDur.ValueChanged += (_, _) =>
+        {
+            if (_suppressPageUi || _pageIndex < 0 || _pageIndex >= _pages.Count) return;
+            _pages[_pageIndex].DurationSeconds = (int)_nudPageDur.Value;
+        };
+        grpPages.Controls.Add(_nudPageDur);
+        grpPages.Controls.Add(new Label { Text = "s", Location = new Point(196, 76), Size = new Size(12, 18) });
+
+        Controls.Add(grpPages);
 
         int rx = CanvasW + 20;  // 224
 
@@ -126,10 +186,6 @@ sealed class CanvasEditorForm : Form
 
         // ── Load + initial selection ──────────────────────────────────────────
         LoadFromSettings();
-        if (_placements.Count > 0) _sel = 0;
-        RefreshWidgetList();
-        RefreshBoundsPanel();
-        RefreshPropsPanel();
 
         var refreshTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         refreshTimer.Tick    += (_, _) => _canvas.Invalidate();
@@ -141,12 +197,69 @@ sealed class CanvasEditorForm : Form
 
     private void LoadFromSettings()
     {
-        foreach (var p in _settings.Canvas)
+        foreach (var pg in _settings.Pages)
+            _pages.Add(pg.Clone());
+        if (_pages.Count == 0) _pages.Add(new CanvasPage());
+        LoadPageIntoEditor(0);
+    }
+
+    // ── Pages ─────────────────────────────────────────────────────────────────
+
+    // Writes the currently-edited widget list back into the working page copy.
+    private void SyncCurrentPageFromEditor()
+    {
+        if (_pageIndex < 0 || _pageIndex >= _pages.Count) return;
+        _pages[_pageIndex].Widgets = _placements.Select(p => p.Clone()).ToList();
+    }
+
+    // Loads page `index` into the editor's widget list/canvas/props, disposing
+    // the previous page's preview widgets.
+    private void LoadPageIntoEditor(int index)
+    {
+        index = Math.Clamp(index, 0, _pages.Count - 1);
+
+        foreach (var w in _previews) w.Dispose();
+        _previews.Clear();
+        _placements.Clear();
+
+        foreach (var p in _pages[index].Widgets)
         {
             var clone = p.Clone();
             _placements.Add(clone);
             _previews.Add(MakePreview(clone));
         }
+
+        _pageIndex = index;
+        _sel       = _placements.Count > 0 ? 0 : -1;
+
+        _suppressPageUi = true;
+        RefreshPageCombo();
+        _txtPageName.Text = _pages[index].Name;
+        _nudPageDur.Value = Math.Clamp(_pages[index].DurationSeconds, (int)_nudPageDur.Minimum, (int)_nudPageDur.Maximum);
+        _suppressPageUi = false;
+
+        RefreshWidgetList();
+        RefreshBoundsPanel();
+        RefreshPropsPanel();
+        _canvas.Invalidate();
+    }
+
+    private void RefreshPageCombo()
+    {
+        _cmbPages.SelectedIndexChanged -= OnPageComboChanged;
+        _cmbPages.Items.Clear();
+        for (int i = 0; i < _pages.Count; i++) _cmbPages.Items.Add($"{i + 1}. {_pages[i].Name}");
+        _cmbPages.SelectedIndex = Math.Clamp(_pageIndex, 0, _pages.Count - 1);
+        _cmbPages.SelectedIndexChanged += OnPageComboChanged;
+    }
+
+    private void OnPageComboChanged(object? sender, EventArgs e)
+    {
+        if (_suppressPageUi) return;
+        int idx = _cmbPages.SelectedIndex;
+        if (idx < 0 || idx == _pageIndex) return;
+        SyncCurrentPageFromEditor();
+        LoadPageIntoEditor(idx);
     }
 
     internal IWidget MakePreview(WidgetPlacement p)
@@ -162,7 +275,11 @@ sealed class CanvasEditorForm : Form
         };
     }
 
-    private void Apply() => _onApply(_placements.Select(p => p.Clone()).ToList());
+    private void Apply()
+    {
+        SyncCurrentPageFromEditor();
+        _onApply(_pages.Select(p => p.Clone()).ToList(), _chkCyclePages.Checked);
+    }
 
     // ── Canvas paint ──────────────────────────────────────────────────────────
 
@@ -445,6 +562,15 @@ sealed class CanvasEditorForm : Form
             ("{date}",   "date"),
             ("{date.month}", "month"),
             ("{date.day}",   "day"),
+        ]);
+        // Row 3 — sports / weather / external text
+        AddBindingButtons(p, txtTemplate,
+        [
+            ("{weather}",      "weather"),
+            ("{weather.icon}", "wx icon"),
+            ("{weather.temp}", "wx temp"),
+            ("{sports}",       "sports"),
+            ("{ext.text}",     "ext text"),
         ]);
 
         // Glyph picker button

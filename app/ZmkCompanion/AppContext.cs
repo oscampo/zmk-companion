@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using ZmkCompanion.Core;
+using ZmkCompanion.Features;
 using ZmkCompanion.Features.Widgets;
 using ZmkCompanion.UI;
 
@@ -20,6 +21,14 @@ sealed class ZmkAppContext : ApplicationContext
     private readonly ConcurrentQueue<string> _textQueue = new();
     private System.Windows.Forms.Timer? _drainTimer;
 
+    // Canvas page cycling.
+    private int _activePage;
+    private System.Windows.Forms.Timer? _pageTimer;
+
+    // Background pollers feeding LiveState bindings ({weather.*}, {sports...}).
+    private System.Windows.Forms.Timer? _weatherTimer;
+    private System.Windows.Forms.Timer? _sportsTimer;
+
     public ZmkAppContext()
     {
         _settings = AppSettings.Load();
@@ -27,8 +36,7 @@ sealed class ZmkAppContext : ApplicationContext
         _tray     = new TrayIcon(_ble, _settings);
 
         _compositor = new DisplayCompositor(_ble);
-        foreach (var p in _settings.Canvas)
-            _compositor.Add(CreateWidget(p));
+        LoadPage(0);
 
         _pipe = new PipeServer();
 
@@ -65,11 +73,84 @@ sealed class ZmkAppContext : ApplicationContext
 
         _pipe.Start(text =>
         {
+            _liveState.UpdateExternalText(text);
             _textQueue.Enqueue(text);
             return Task.FromResult(true);
         });
 
+        _weatherTimer = new System.Windows.Forms.Timer { Interval = 10 * 60_000 };
+        _weatherTimer.Tick += async (_, _) => await RefreshWeatherAsync();
+        _weatherTimer.Start();
+        _ = RefreshWeatherAsync();
+
+        _sportsTimer = new System.Windows.Forms.Timer { Interval = 60_000 };
+        _sportsTimer.Tick += async (_, _) => await RefreshSportsAsync();
+        _sportsTimer.Start();
+        _ = RefreshSportsAsync();
+
+        RestartPageCycle();
+
         _ = ConnectLoopAsync(_cts.Token);
+    }
+
+    // ── Live data pollers ────────────────────────────────────────────────────
+
+    private async Task RefreshWeatherAsync()
+    {
+        try
+        {
+            var data = await WeatherFeature.FetchWeatherAsync(_settings.City);
+            _liveState.UpdateWeather(data.Icon.ToString(), $"{data.TempC:F0}°", data.City);
+        }
+        catch { /* offline / bad city — keep last known value */ }
+    }
+
+    private async Task RefreshSportsAsync()
+    {
+        var leagues = _settings.SelectedLeagues.Count > 0
+            ? _settings.SelectedLeagues.Select(SportsFeature.FindOrCreate).ToList()
+            : [SportsFeature.DefaultLeague];
+
+        bool first = true;
+        foreach (var lg in leagues)
+        {
+            try
+            {
+                var games = await SportsFeature.FetchLiveAsync(lg, _settings.SportsTeam);
+                if (games.Count == 0) games = await SportsFeature.FetchScheduleAsync(lg, _settings.SportsTeam);
+                if (games.Count == 0) games = await SportsFeature.FetchResultsAsync(lg, _settings.SportsTeam);
+
+                string text = games.Count > 0 ? SportsFeature.FormatGame(games[0]) : "No games";
+                _liveState.UpdateSports(lg.ShortName, text);
+                if (first) { _liveState.UpdateSports("default", text); first = false; }
+            }
+            catch { /* offline — keep last known value for this league */ }
+        }
+    }
+
+    // ── Canvas pages ─────────────────────────────────────────────────────────
+
+    private void LoadPage(int index)
+    {
+        if (_settings.Pages.Count == 0) _settings.Pages.Add(new CanvasPage());
+        _activePage = Math.Clamp(index, 0, _settings.Pages.Count - 1);
+        _compositor.Rebuild(_settings.Pages[_activePage].Widgets.Select(CreateWidget));
+        if (_ble.IsConnected) _compositor.StartAll();
+    }
+
+    private void RestartPageCycle()
+    {
+        _pageTimer?.Stop(); _pageTimer?.Dispose(); _pageTimer = null;
+        if (!_settings.CyclePages || _settings.Pages.Count < 2) return;
+
+        _pageTimer = new System.Windows.Forms.Timer();
+        _pageTimer.Tick += (_, _) =>
+        {
+            LoadPage((_activePage + 1) % _settings.Pages.Count);
+            _pageTimer!.Interval = Math.Max(2, _settings.Pages[_activePage].DurationSeconds) * 1000;
+        };
+        _pageTimer.Interval = Math.Max(2, _settings.Pages[_activePage].DurationSeconds) * 1000;
+        _pageTimer.Start();
     }
 
     // ── BLE status events ─────────────────────────────────────────────────────
@@ -99,16 +180,17 @@ sealed class ZmkAppContext : ApplicationContext
 
     private void OnCanvasEditor()
     {
-        var form = new CanvasEditorForm(_settings, _liveState, ApplyCanvas);
+        var form = new CanvasEditorForm(_settings, _liveState, ApplyPages);
         form.Show();
     }
 
-    internal void ApplyCanvas(List<WidgetPlacement> canvas)
+    internal void ApplyPages(List<CanvasPage> pages, bool cyclePages)
     {
-        _settings.Canvas = canvas;
+        _settings.Pages      = pages;
+        _settings.CyclePages = cyclePages;
         _settings.Save();
-        _compositor.Rebuild(canvas.Select(CreateWidget));
-        if (_ble.IsConnected) _compositor.StartAll();
+        LoadPage(_activePage);
+        RestartPageCycle();
     }
 
     private IWidget CreateWidget(WidgetPlacement p)
@@ -168,6 +250,12 @@ sealed class ZmkAppContext : ApplicationContext
             _cts.Dispose();
             _drainTimer?.Stop();
             _drainTimer?.Dispose();
+            _pageTimer?.Stop();
+            _pageTimer?.Dispose();
+            _weatherTimer?.Stop();
+            _weatherTimer?.Dispose();
+            _sportsTimer?.Stop();
+            _sportsTimer?.Dispose();
             _pipe.Dispose();
             _compositor.Dispose();
             _tray.Dispose();

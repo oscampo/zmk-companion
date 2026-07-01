@@ -17,8 +17,16 @@ sealed class AppSettings
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    // Canvas widget layout — persisted as JSON array of placements.
-    public List<WidgetPlacement> Canvas { get; set; } = [new WidgetPlacement()];
+    // Canvas pages — each page is an independent set of widget placements.
+    // When CyclePages is true and there is more than one page, AppContext
+    // rotates through them using each page's DurationSeconds.
+    public List<CanvasPage> Pages       { get; set; } = [new CanvasPage { Widgets = [new WidgetPlacement()] }];
+    public bool             CyclePages  { get; set; } = false;
+
+    // Legacy single-page layout — kept only so old settings.json files can be
+    // migrated into Pages on load. Not written after migration.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<WidgetPlacement>? Canvas { get; set; }
 
     public string City { get; set; } = "";
     public string NflTeam { get; set; } = "";
@@ -61,6 +69,13 @@ sealed class AppSettings
                     s.SelectedLeagues = ["football/nfl"];
                 // Clear legacy field so it isn't written back
                 s.SportEspnPath = null;
+                // Migrate single-page Canvas → Pages (old files only; Canvas is never
+                // written after migration, so non-empty here means a pre-Pages file).
+                if (s.Canvas is { Count: > 0 } oldCanvas)
+                    s.Pages = [new CanvasPage { Name = "Page 1", Widgets = oldCanvas }];
+                s.Canvas = null;
+                if (s.Pages == null || s.Pages.Count == 0)
+                    s.Pages = [new CanvasPage { Widgets = [new WidgetPlacement()] }];
                 return s;
             }
         }
