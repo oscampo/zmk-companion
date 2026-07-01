@@ -97,6 +97,15 @@ sealed class DisplayCompositor : IDisposable
         _ = RenderAndSendAsync();
     }
 
+    // Forces a render+send even with no pending widget invalidation. Used as a
+    // periodic safety net: if a single BLE write silently fails (no exception,
+    // just GattCommunicationStatus != Success), the frame that failed is never
+    // retried on its own — nothing invalidates again until the next natural
+    // event (e.g. the clock's once-a-minute tick), so the display can be stuck
+    // showing stale content for a while. A periodic ForceRedraw call bounds
+    // how long that staleness can last.
+    public void ForceRedraw() => OnInvalidated();
+
     public async Task RenderAndSendAsync()
     {
         do
@@ -118,7 +127,17 @@ sealed class DisplayCompositor : IDisposable
 
             byte[] frame = BitmapFrame.Pack(bmp);
             await _sendLock.WaitAsync();
-            try   { await _ble.SendBitmapAsync(frame); }
+            try
+            {
+                // One immediate retry on failure — cheap insurance against a
+                // transient GATT write hiccup, without adding latency when the
+                // send simply succeeds (the common case).
+                if (!await _ble.SendBitmapAsync(frame))
+                {
+                    await Task.Delay(300);
+                    await _ble.SendBitmapAsync(frame);
+                }
+            }
             finally { _sendLock.Release(); }
         } while (_renderQueued);
 

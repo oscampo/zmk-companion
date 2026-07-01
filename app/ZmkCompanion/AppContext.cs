@@ -29,6 +29,11 @@ sealed class ZmkAppContext : ApplicationContext
     private System.Windows.Forms.Timer? _weatherTimer;
     private System.Windows.Forms.Timer? _sportsTimer;
 
+    // Safety net: forces a redraw periodically so a single silently-failed BLE
+    // write (e.g. the clock's once-a-minute tick) can't leave the display
+    // stuck on stale content indefinitely.
+    private System.Windows.Forms.Timer? _heartbeatTimer;
+
     public ZmkAppContext()
     {
         _settings = AppSettings.Load();
@@ -89,6 +94,10 @@ sealed class ZmkAppContext : ApplicationContext
         _ = RefreshSportsAsync();
 
         RestartPageCycle();
+
+        _heartbeatTimer = new System.Windows.Forms.Timer { Interval = 30_000 };
+        _heartbeatTimer.Tick += (_, _) => { if (_ble.IsConnected) _compositor.ForceRedraw(); };
+        _heartbeatTimer.Start();
 
         _ = ConnectLoopAsync(_cts.Token);
     }
@@ -292,6 +301,8 @@ sealed class ZmkAppContext : ApplicationContext
             _weatherTimer?.Dispose();
             _sportsTimer?.Stop();
             _sportsTimer?.Dispose();
+            _heartbeatTimer?.Stop();
+            _heartbeatTimer?.Dispose();
             _pipe.Dispose();
             _compositor.Dispose();
             _tray.Dispose();
