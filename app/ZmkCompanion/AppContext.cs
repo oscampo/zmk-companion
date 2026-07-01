@@ -50,7 +50,8 @@ sealed class ZmkAppContext : ApplicationContext
         _ble      = new BleService();
         _tray     = new TrayIcon(_ble, _settings);
 
-        _compositor = new DisplayCompositor(_ble);
+        _compositor    = new DisplayCompositor(_ble);
+        _tray.Compositor = _compositor;
         LoadPage(0);
 
         _pipe = new PipeServer();

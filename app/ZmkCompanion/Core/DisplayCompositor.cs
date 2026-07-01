@@ -119,42 +119,74 @@ sealed class DisplayCompositor : IDisposable
             await Task.Delay(100);
     }
 
+    // Set whenever a render or send throws, so a single bad frame is visible in
+    // Diagnostics instead of silently vanishing.
+    public string? LastRenderError { get; private set; }
+
     public async Task RenderAndSendAsync()
     {
-        do
+        // This whole loop runs inside try/finally so _renderInFlight is ALWAYS
+        // cleared, even if something throws. Previously it was only cleared
+        // after the loop's last statement — an unhandled exception anywhere in
+        // here (fired via "_ = RenderAndSendAsync()", so the exception becomes
+        // a silently-swallowed unobserved task fault) left _renderInFlight
+        // stuck true forever. Once stuck, OnInvalidated never starts another
+        // render again for the rest of the process's life, and the display
+        // freezes permanently at whatever was last shown — no BLE error, no
+        // disconnect, nothing visible anywhere except a clock that stops
+        // advancing. This is a much better fit for "starts correct, then falls
+        // behind and never recovers" than anything about send speed or timing.
+        try
         {
-            _renderQueued = false;
-
-            using var bmp = BitmapFrame.CreateCanvas();
-            using var g   = Graphics.FromImage(bmp);
-            g.Clear(Color.Black);
-            g.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
-
-            foreach (var widget in _widgets)
+            do
             {
-                var clip = g.Clip;
-                g.SetClip(widget.Bounds);
-                widget.Render(g);
-                g.Clip = clip;
-            }
+                _renderQueued = false;
 
-            byte[] frame = BitmapFrame.Pack(bmp);
-            await _sendLock.WaitAsync();
-            try
-            {
-                // One immediate retry on failure — cheap insurance against a
-                // transient GATT write hiccup, without adding latency when the
-                // send simply succeeds (the common case).
-                if (!await _ble.SendBitmapAsync(frame))
+                using var bmp = BitmapFrame.CreateCanvas();
+                using var g   = Graphics.FromImage(bmp);
+                g.Clear(Color.Black);
+                g.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
+
+                foreach (var widget in _widgets)
                 {
-                    await Task.Delay(300);
-                    await _ble.SendBitmapAsync(frame);
+                    var clip = g.Clip;
+                    try
+                    {
+                        g.SetClip(widget.Bounds);
+                        widget.Render(g);
+                    }
+                    catch (Exception ex)
+                    {
+                        // One widget's bug shouldn't blank or freeze the whole display.
+                        LastRenderError = $"{widget.GetType().Name}.Render: {ex.Message}";
+                    }
+                    finally { g.Clip = clip; }
                 }
-            }
-            finally { _sendLock.Release(); }
-        } while (_renderQueued);
 
-        _renderInFlight = false;
+                byte[] frame = BitmapFrame.Pack(bmp);
+                await _sendLock.WaitAsync();
+                try
+                {
+                    // One immediate retry on failure — cheap insurance against a
+                    // transient GATT write hiccup, without adding latency when the
+                    // send simply succeeds (the common case).
+                    if (!await _ble.SendBitmapAsync(frame))
+                    {
+                        await Task.Delay(300);
+                        await _ble.SendBitmapAsync(frame);
+                    }
+                }
+                finally { _sendLock.Release(); }
+            } while (_renderQueued);
+        }
+        catch (Exception ex)
+        {
+            LastRenderError = ex.Message;
+        }
+        finally
+        {
+            _renderInFlight = false;
+        }
     }
 
     // ── Cleanup ───────────────────────────────────────────────────────────────

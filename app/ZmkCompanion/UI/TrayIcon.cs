@@ -21,6 +21,10 @@ sealed class TrayIcon : IDisposable
     private CancellationTokenSource? _sportsCts;
     private CancellationTokenSource? _cycleCts;
 
+    // Set post-construction (compositor is created after TrayIcon) so
+    // Diagnostics can surface DisplayCompositor.LastRenderError.
+    internal DisplayCompositor? Compositor { get; set; }
+
     public event Action? ExitRequested;
     public event Action? CanvasEditorRequested;
 
@@ -202,7 +206,8 @@ sealed class TrayIcon : IDisposable
               $"Bitmap chunks/frame: {_ble.LastChunkCount}\n" +
               $"Write mode: {(_ble.LastWithResponse ? "with response (slower, acked)" : "without response (fast)")}\n" +
               $"Last frame send time: {_ble.LastSendMs} ms\n" +
-              $"Last error: {_ble.LastBitmapError ?? "(none)"}\n" +
+              $"Last BLE error: {_ble.LastBitmapError ?? "(none)"}\n" +
+              $"Last render error: {Compositor?.LastRenderError ?? "(none)"}\n" +
               connLine
             : $"Not connected.\n{connLine}";
         MessageBox.Show(msg, "ZMK Companion — Diagnostics", MessageBoxButtons.OK, MessageBoxIcon.Information);
