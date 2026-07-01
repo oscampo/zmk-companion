@@ -21,9 +21,11 @@ sealed class ZmkAppContext : ApplicationContext
     private readonly ConcurrentQueue<string> _textQueue = new();
     private System.Windows.Forms.Timer? _drainTimer;
 
-    // Canvas page cycling.
+    // Canvas page cycling — a self-pacing async loop rather than a fixed-interval
+    // Timer, so a slow BLE link stretches dwell time instead of piling up more
+    // page switches than the link can actually drain (see RunPageCycleAsync).
     private int _activePage;
-    private System.Windows.Forms.Timer? _pageTimer;
+    private CancellationTokenSource? _pageCycleCts;
 
     // Background pollers feeding LiveState bindings ({weather.*}, {sports...}).
     private System.Windows.Forms.Timer? _weatherTimer;
@@ -193,17 +195,34 @@ sealed class ZmkAppContext : ApplicationContext
 
     private void RestartPageCycle()
     {
-        _pageTimer?.Stop(); _pageTimer?.Dispose(); _pageTimer = null;
+        _pageCycleCts?.Cancel();
+        _pageCycleCts?.Dispose();
+        _pageCycleCts = null;
         if (!_settings.CyclePages || _settings.Pages.Count < 2) return;
 
-        _pageTimer = new System.Windows.Forms.Timer();
-        _pageTimer.Tick += (_, _) =>
+        _pageCycleCts = new CancellationTokenSource();
+        _ = RunPageCycleAsync(_pageCycleCts.Token);
+    }
+
+    // Each iteration: wait for the current page's frame to actually finish
+    // transmitting, dwell for its configured DurationSeconds, then switch to
+    // the next page. Because the wait happens BEFORE the dwell countdown, a
+    // slow BLE send extends how long the page stays on screen instead of the
+    // next switch firing on schedule regardless — the previous fixed-interval
+    // Timer could queue up page switches faster than frames could actually be
+    // sent, and that backlog was very likely why the clock fell behind whenever
+    // cycling was on.
+    private async Task RunPageCycleAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
         {
+            await _compositor.WaitForIdleAsync();
+            int durationMs = Math.Max(2, _settings.Pages[_activePage].DurationSeconds) * 1000;
+            try   { await Task.Delay(durationMs, ct); }
+            catch (OperationCanceledException) { break; }
+            if (ct.IsCancellationRequested) break;
             LoadPage((_activePage + 1) % _settings.Pages.Count);
-            _pageTimer!.Interval = Math.Max(2, _settings.Pages[_activePage].DurationSeconds) * 1000;
-        };
-        _pageTimer.Interval = Math.Max(2, _settings.Pages[_activePage].DurationSeconds) * 1000;
-        _pageTimer.Start();
+        }
     }
 
     // ── BLE status events ─────────────────────────────────────────────────────
@@ -303,8 +322,8 @@ sealed class ZmkAppContext : ApplicationContext
             _cts.Dispose();
             _drainTimer?.Stop();
             _drainTimer?.Dispose();
-            _pageTimer?.Stop();
-            _pageTimer?.Dispose();
+            _pageCycleCts?.Cancel();
+            _pageCycleCts?.Dispose();
             _weatherTimer?.Stop();
             _weatherTimer?.Dispose();
             _sportsTimer?.Stop();

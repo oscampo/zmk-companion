@@ -106,6 +106,19 @@ sealed class DisplayCompositor : IDisposable
     // how long that staleness can last.
     public void ForceRedraw() => OnInvalidated();
 
+    // Waits until any in-flight render+send has actually finished transmitting,
+    // instead of just assuming it did. Used by page cycling so the next page's
+    // dwell time is counted from when its frame really landed on the keyboard —
+    // if BLE is slow, this naturally stretches out the cycle instead of firing
+    // page switches on a fixed wall-clock schedule that outpaces what the link
+    // can drain (which builds an ever-growing backlog of stale frames).
+    public async Task WaitForIdleAsync(int maxWaitMs = 20_000)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (_renderInFlight && sw.ElapsedMilliseconds < maxWaitMs)
+            await Task.Delay(100);
+    }
+
     public async Task RenderAndSendAsync()
     {
         do
