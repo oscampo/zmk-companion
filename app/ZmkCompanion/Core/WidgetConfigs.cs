@@ -55,19 +55,27 @@ sealed class LabelConfig
     public float LetterSpacing { get; set; } = 0f;
 }
 
-// Profile bar widget: 5 numbered boxes, active BLE profile inverted.
+// Profile bar widget: 5 slots showing BLE profiles 1-5 with three visual states.
+// Connected  = the currently active BLE profile.
+// Assigned   = paired (bonded) but not currently connected.
+// Free       = slot has no paired device.
 sealed class ProfileBarConfig
 {
     public float Scale { get; set; } = 1.0f;
 
-    // Glyph style used for the ACTIVE profile number (1-5).
-    // "gdi" = classic GDI+ inverted box (default).
-    // Other values: any NerdFont.NumericGlyph style key ("box", "circle", etc.)
-    public string ActiveStyle { get; set; } = "gdi";
+    // Glyph style for the CONNECTED (currently active) profile.
+    // "gdi" = classic GDI+ inverted box; otherwise any NerdFont.NumericGlyph style.
+    public string ConnectedStyle { get; set; } = "box";
 
-    // Glyph style used for INACTIVE profile numbers (1-5).
-    // "gdi" = classic GDI+ outlined box (default).
-    public string InactiveStyle { get; set; } = "gdi";
+    // Glyph style for ASSIGNED (paired but not connected) profiles.
+    public string AssignedStyle { get; set; } = "plain";
+
+    // Glyph style for FREE (unpaired) profile slots.
+    public string FreeStyle { get; set; } = "box_outline";
+
+    // Bitmask indicating which profiles (1–5) are "assigned" (have a paired device).
+    // Bit i-1 = profile i.  Default 0b11111 = all assigned (two-state: connected / assigned).
+    public int AssignedMask { get; set; } = 0b11111;
 
     // Extra pixels between profile glyphs (negative = tighten).
     public float LetterSpacing { get; set; } = 0f;

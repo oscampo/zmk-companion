@@ -688,29 +688,59 @@ sealed class CanvasEditorForm : Form
     {
         var cfg = p.GetConfig<ProfileBarConfig>();
 
-        // Active profile glyph style
-        AddPropComboRow("Active style:", NerdFont.NumericStyleLabel,
-            ["gdi", "box", "box_outline", "box_multiple", "box_multiple_outline", "plain", "circle", "circle_outline"],
-            cfg.ActiveStyle, v =>
+        var styles = new[] { "gdi", "box", "box_outline", "box_multiple", "box_multiple_outline",
+                             "plain", "circle", "circle_outline" };
+
+        AddPropComboRow("Connected:", NerdFont.NumericStyleLabel, styles, cfg.ConnectedStyle, v =>
+        {
+            var c = p.GetConfig<ProfileBarConfig>(); c.ConnectedStyle = v; p.SetConfig(c);
+            if (_previews[_sel] is ProfileBarWidget w) w.Config = c;
+            _canvas.Invalidate();
+        });
+
+        AddPropComboRow("Assigned:", NerdFont.NumericStyleLabel, styles, cfg.AssignedStyle, v =>
+        {
+            var c = p.GetConfig<ProfileBarConfig>(); c.AssignedStyle = v; p.SetConfig(c);
+            if (_previews[_sel] is ProfileBarWidget w) w.Config = c;
+            _canvas.Invalidate();
+        });
+
+        AddPropComboRow("Free:", NerdFont.NumericStyleLabel, styles, cfg.FreeStyle, v =>
+        {
+            var c = p.GetConfig<ProfileBarConfig>(); c.FreeStyle = v; p.SetConfig(c);
+            if (_previews[_sel] is ProfileBarWidget w) w.Config = c;
+            _canvas.Invalidate();
+        });
+
+        // AssignedMask — 5 compact checkboxes labelled P1…P5
+        AddLabel("Assigned profiles:");
+        for (int slot = 0; slot < 5; slot++)
+        {
+            int s = slot;
+            var chk = new CheckBox
             {
-                var c = p.GetConfig<ProfileBarConfig>(); c.ActiveStyle = v; p.SetConfig(c);
+                Text      = $"P{s + 1}",
+                Checked   = ((cfg.AssignedMask >> s) & 1) == 1,
+                Location  = new Point(s * 52, _propsY),
+                Size      = new Size(50, 22),
+                ForeColor = Color.White,
+            };
+            chk.CheckedChanged += (_, _) =>
+            {
+                var c  = p.GetConfig<ProfileBarConfig>();
+                if (chk.Checked) c.AssignedMask |=  (1 << s);
+                else             c.AssignedMask &= ~(1 << s);
+                p.SetConfig(c);
                 if (_previews[_sel] is ProfileBarWidget w) w.Config = c;
                 _canvas.Invalidate();
-            });
+            };
+            _propsPanel.Controls.Add(chk);
+        }
+        _propsY += 26;
 
-        // Inactive profile glyph style
-        AddPropComboRow("Inactive style:", NerdFont.NumericStyleLabel,
-            ["gdi", "box", "box_outline", "box_multiple", "box_multiple_outline", "plain", "circle", "circle_outline"],
-            cfg.InactiveStyle, v =>
-            {
-                var c = p.GetConfig<ProfileBarConfig>(); c.InactiveStyle = v; p.SetConfig(c);
-                if (_previews[_sel] is ProfileBarWidget w) w.Config = c;
-                _canvas.Invalidate();
-            });
-
-        // Letter spacing between profile glyphs
+        // Letter spacing
         _propsPanel.Controls.Add(new Label { Text = "Spacing:", Location = new Point(0, _propsY + 3), Size = new Size(54, 18) });
-        var nudPLS = new NumericUpDown
+        var nudLS = new NumericUpDown
         {
             Location      = new Point(56, _propsY),
             Size          = new Size(64, 23),
@@ -718,13 +748,13 @@ sealed class CanvasEditorForm : Form
             Value         = (decimal)Math.Clamp(cfg.LetterSpacing, -4, 20),
         };
         _propsPanel.Controls.Add(new Label { Text = "px", Location = new Point(124, _propsY + 3), Size = new Size(22, 18) });
-        nudPLS.ValueChanged += (_, _) =>
+        nudLS.ValueChanged += (_, _) =>
         {
-            var c = p.GetConfig<ProfileBarConfig>(); c.LetterSpacing = (float)nudPLS.Value; p.SetConfig(c);
+            var c = p.GetConfig<ProfileBarConfig>(); c.LetterSpacing = (float)nudLS.Value; p.SetConfig(c);
             if (_previews[_sel] is ProfileBarWidget w) w.Config = c;
             _canvas.Invalidate();
         };
-        _propsPanel.Controls.Add(nudPLS);
+        _propsPanel.Controls.Add(nudLS);
         _propsY += 28;
 
         AddPropScale(cfg.Scale, v =>
