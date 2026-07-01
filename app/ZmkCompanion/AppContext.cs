@@ -95,7 +95,15 @@ sealed class ZmkAppContext : ApplicationContext
 
         RestartPageCycle();
 
-        _heartbeatTimer = new System.Windows.Forms.Timer { Interval = 30_000 };
+        // A rare last-resort safety net (e.g. a page with no clock/weather/sports
+        // binding, so nothing else ever invalidates it) — not a primary corrective
+        // mechanism. Kept infrequent: LiveState.Update* now only fires Changed when
+        // a value actually differs, so most polls no longer force a resend, and
+        // this heartbeat shouldn't add back the load that caused the clock to fall
+        // behind (a full-frame BLE send is comparatively expensive; forcing one
+        // every 30s regardless of whether anything changed just queued up work
+        // faster than the link could drain it).
+        _heartbeatTimer = new System.Windows.Forms.Timer { Interval = 5 * 60_000 };
         _heartbeatTimer.Tick += (_, _) => { if (_ble.IsConnected) _compositor.ForceRedraw(); };
         _heartbeatTimer.Start();
 

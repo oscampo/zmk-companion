@@ -29,8 +29,18 @@ sealed class LiveState
     private readonly Dictionary<string, SportsSnapshot> _sportsData = new(StringComparer.OrdinalIgnoreCase);
     private static readonly SportsSnapshot _emptySports = new();
 
+    // Every Update* below only fires Changed when a value actually differs from
+    // what's cached. Changed drives a full-frame BLE resend for every widget on
+    // the active page — not just the one bound to this data — so firing it on
+    // every poll regardless of whether anything moved (weather rarely changes
+    // between 10-min polls, sports scores rarely change between 60s polls)
+    // forces far more full-frame transmissions than the display can keep up
+    // with, and the clock progressively falls behind while the pipeline is
+    // busy re-sending unchanged data.
+
     public void UpdateBattery(int level, bool charging)
     {
+        if (level == BatteryLevel && charging == BatteryCharging) return;
         BatteryLevel    = level;
         BatteryCharging = charging;
         Changed?.Invoke();
@@ -38,6 +48,7 @@ sealed class LiveState
 
     public void UpdateConnection(bool usb, int profile, int profileMask = 0b11111)
     {
+        if (usb == UsbActive && profile == BleProfile && profileMask == BleProfileMask) return;
         UsbActive      = usb;
         BleProfile     = profile;
         BleProfileMask = profileMask;
@@ -46,6 +57,7 @@ sealed class LiveState
 
     public void UpdateWeather(string icon, string temp, string city)
     {
+        if (icon == WeatherIcon && temp == WeatherTemp && city == WeatherCity) return;
         WeatherIcon = icon;
         WeatherTemp = temp;
         WeatherCity = city;
@@ -54,12 +66,14 @@ sealed class LiveState
 
     public void UpdateExternalText(string text)
     {
+        if (text == ExternalText) return;
         ExternalText = text;
         Changed?.Invoke();
     }
 
     public void UpdateSports(string leagueKey, SportsSnapshot snapshot)
     {
+        if (_sportsData.TryGetValue(leagueKey, out var old) && old == snapshot) return;
         _sportsData[leagueKey] = snapshot;
         Changed?.Invoke();
     }

@@ -3,7 +3,10 @@ namespace ZmkCompanion.Core;
 // Formatted sports fields for the {sports.*} bindings, resolved from the last
 // poll. Kept independent of the Features layer's SportsGame/SportsLeague types
 // so Core doesn't need to reference Features — AppContext maps one to the other.
-sealed class SportsSnapshot
+// A record so LiveState can cheaply compare old vs. new snapshots by value and
+// skip firing Changed (and therefore a full-frame BLE resend) when a poll
+// returns the same data as last time — which is the common case.
+sealed record SportsSnapshot
 {
     public string Sport     { get; init; } = "";  // "Football" | "Soccer" | "Basketball" | "Hockey"
     public string League    { get; init; } = "";  // short league name, e.g. "NFL"
