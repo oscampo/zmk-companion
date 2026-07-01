@@ -73,10 +73,6 @@ sealed class ProfileBarConfig
     // Glyph style for FREE (unpaired) profile slots.
     public string FreeStyle { get; set; } = "box_outline";
 
-    // Bitmask indicating which profiles (1–5) are "assigned" (have a paired device).
-    // Bit i-1 = profile i.  Default 0b11111 = all assigned (two-state: connected / assigned).
-    public int AssignedMask { get; set; } = 0b11111;
-
     // Extra pixels between profile glyphs (negative = tighten).
     public float LetterSpacing { get; set; } = 0f;
 }

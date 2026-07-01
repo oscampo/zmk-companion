@@ -45,7 +45,7 @@ sealed class ProfileBarWidget : IWidget
     private SlotState GetSlotState(int i, ProfileBarConfig cfg)
     {
         if (i == _state.BleProfile) return SlotState.Connected;
-        return ((cfg.AssignedMask >> i) & 1) == 1 ? SlotState.Assigned : SlotState.Free;
+        return ((_state.BleProfileMask >> i) & 1) == 1 ? SlotState.Assigned : SlotState.Free;
     }
 
     private string StyleForState(SlotState s, ProfileBarConfig cfg) => s switch

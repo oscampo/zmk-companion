@@ -48,7 +48,7 @@ sealed class CanvasEditorForm : Form
         FormBorderStyle = FormBorderStyle.FixedSingle;
         StartPosition   = FormStartPosition.CenterScreen;
         MaximizeBox     = false;
-        ClientSize      = new Size(532, 630);
+        ClientSize      = new Size(572, 630);
 
         // ── Left: canvas preview ─────────────────────────────────────────────
         _canvas = new Panel
@@ -67,24 +67,24 @@ sealed class CanvasEditorForm : Form
         int rx = CanvasW + 20;  // 224
 
         // ── Widgets group ────────────────────────────────────────────────────
-        var grpWidgets = new GroupBox { Text = "Widgets", Location = new Point(rx, 8), Size = new Size(298, 218) };
+        var grpWidgets = new GroupBox { Text = "Widgets", Location = new Point(rx, 8), Size = new Size(338, 218) };
 
-        _listWidgets = new ListBox { Location = new Point(8, 20), Size = new Size(282, 138) };
+        _listWidgets = new ListBox { Location = new Point(8, 20), Size = new Size(322, 138) };
         _listWidgets.SelectedIndexChanged += OnListSelectionChanged;
         grpWidgets.Controls.Add(_listWidgets);
 
-        var btnAdd = new Button { Text = "Add ▾", Location = new Point(8, 166), Size = new Size(135, 26) };
+        var btnAdd = new Button { Text = "Add ▾", Location = new Point(8, 166), Size = new Size(155, 26) };
         btnAdd.Click += OnAddClick;
         grpWidgets.Controls.Add(btnAdd);
 
-        var btnRemove = new Button { Text = "Remove", Location = new Point(151, 166), Size = new Size(131, 26) };
+        var btnRemove = new Button { Text = "Remove", Location = new Point(171, 166), Size = new Size(151, 26) };
         btnRemove.Click += OnRemoveClick;
         grpWidgets.Controls.Add(btnRemove);
 
         Controls.Add(grpWidgets);
 
         // ── Position & size group ─────────────────────────────────────────────
-        var grpBounds = new GroupBox { Text = "Position && Size  (CX / CY = center)", Location = new Point(rx, 234), Size = new Size(298, 130) };
+        var grpBounds = new GroupBox { Text = "Position && Size  (CX / CY = center)", Location = new Point(rx, 234), Size = new Size(338, 130) };
 
         grpBounds.Controls.Add(MakeLbl("CX:", 4,  24)); _nudCX = MakeNud(30,  20, 0, BitmapFrame.Width);
         grpBounds.Controls.Add(MakeLbl("CY:", 98, 24)); _nudCY = MakeNud(124, 20, 0, BitmapFrame.Height);
@@ -105,11 +105,11 @@ sealed class CanvasEditorForm : Form
         Controls.Add(grpBounds);
 
         // ── Properties group (scrollable, rebuilt per widget type) ────────────
-        _grpProps = new GroupBox { Text = "Properties", Location = new Point(rx, 372), Size = new Size(298, 210) };
+        _grpProps = new GroupBox { Text = "Properties", Location = new Point(rx, 372), Size = new Size(338, 210) };
         _propsPanel = new Panel
         {
             Location    = new Point(4, 18),
-            Size        = new Size(288, 188),
+            Size        = new Size(328, 188),
             AutoScroll  = true,
         };
         _grpProps.Controls.Add(_propsPanel);
@@ -711,32 +711,6 @@ sealed class CanvasEditorForm : Form
             if (_previews[_sel] is ProfileBarWidget w) w.Config = c;
             _canvas.Invalidate();
         });
-
-        // AssignedMask — 5 compact checkboxes labelled P1…P5
-        AddLabel("Assigned profiles:");
-        for (int slot = 0; slot < 5; slot++)
-        {
-            int s = slot;
-            var chk = new CheckBox
-            {
-                Text      = $"P{s + 1}",
-                Checked   = ((cfg.AssignedMask >> s) & 1) == 1,
-                Location  = new Point(s * 52, _propsY),
-                Size      = new Size(50, 22),
-                ForeColor = Color.White,
-            };
-            chk.CheckedChanged += (_, _) =>
-            {
-                var c  = p.GetConfig<ProfileBarConfig>();
-                if (chk.Checked) c.AssignedMask |=  (1 << s);
-                else             c.AssignedMask &= ~(1 << s);
-                p.SetConfig(c);
-                if (_previews[_sel] is ProfileBarWidget w) w.Config = c;
-                _canvas.Invalidate();
-            };
-            _propsPanel.Controls.Add(chk);
-        }
-        _propsY += 26;
 
         // Letter spacing
         _propsPanel.Controls.Add(new Label { Text = "Spacing:", Location = new Point(0, _propsY + 3), Size = new Size(54, 18) });

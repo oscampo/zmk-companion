@@ -84,11 +84,12 @@ sealed class ZmkAppContext : ApplicationContext
             w.Update(level, false);
     }
 
-    private void OnStatusChanged(byte status)
+    private void OnStatusChanged(byte status, byte bonds)
     {
-        bool usb     = (status & 0x01) != 0;
-        int  profile = (status >> 1) & 0x07;
-        _liveState.UpdateConnection(usb, profile);
+        bool usb      = (status & 0x01) != 0;
+        int  profile  = (status >> 1) & 0x07;
+        int  bondMask = bonds & 0x1F;  // bits 0-4 = profiles 1-5 bonded
+        _liveState.UpdateConnection(usb, profile, bondMask);
         // Legacy rigid widgets still wired for backwards compat.
         foreach (var w in _compositor.Widgets.OfType<ConnectionWidget>())
             w.Update(usb, profile);

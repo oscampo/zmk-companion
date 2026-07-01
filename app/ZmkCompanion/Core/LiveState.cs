@@ -13,6 +13,7 @@ sealed class LiveState
     public bool BatteryCharging { get; private set; }
     public bool UsbActive       { get; private set; }
     public int  BleProfile      { get; private set; } = -1;  // 0-4
+    public int  BleProfileMask  { get; private set; } = 0b11111;  // bits 0-4: profiles 1-5 bonded
 
     public void UpdateBattery(int level, bool charging)
     {
@@ -21,10 +22,11 @@ sealed class LiveState
         Changed?.Invoke();
     }
 
-    public void UpdateConnection(bool usb, int profile)
+    public void UpdateConnection(bool usb, int profile, int profileMask = 0b11111)
     {
-        UsbActive  = usb;
-        BleProfile = profile;
+        UsbActive      = usb;
+        BleProfile     = profile;
+        BleProfileMask = profileMask;
         Changed?.Invoke();
     }
 
