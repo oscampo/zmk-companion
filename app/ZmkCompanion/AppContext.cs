@@ -119,19 +119,24 @@ sealed class ZmkAppContext : ApplicationContext
 
         RestartPageCycle();
 
-        // A rare last-resort safety net (e.g. a page with no clock/weather/sports
-        // binding, so nothing else ever invalidates it) — not a primary corrective
-        // mechanism. Kept infrequent: LiveState.Update* now only fires Changed when
-        // a value actually differs, so most polls no longer force a resend, and
-        // this heartbeat shouldn't add back the load that caused the clock to fall
-        // behind (a full-frame BLE send is comparatively expensive; forcing one
-        // every 30s regardless of whether anything changed just queued up work
-        // faster than the link could drain it).
-        _heartbeatTimer = new System.Windows.Forms.Timer { Interval = 5 * 60_000 };
+        // Unconditional periodic refresh of whatever page is currently active —
+        // the same principle the old (pre-canvas) ClockFeature used: a single
+        // persistent timer that just resends a fresh frame on a fixed cadence,
+        // completely independent of any per-widget state. That's what made the
+        // old clock mode reliable — it never depended on a widget's own timer
+        // surviving a page switch. LabelWidget's {time} refresh, by contrast,
+        // lives INSIDE the widget and gets disposed/recreated every time
+        // Rebuild() runs (i.e. every page cycle switch), which is what caused
+        // the residual staleness during cycling: the widget only resyncs when
+        // its own page becomes active. This heartbeat plugs that gap without
+        // needing {time} duplicated on every page or any firmware change —
+        // diagnostics confirmed transport is fast (30-50ms/frame) and the real
+        // freeze bug was the connection watchdog gap now fixed above, so a
+        // short interval here is cheap and safe.
+        _heartbeatTimer = new System.Windows.Forms.Timer { Interval = 15_000 };
         _heartbeatTimer.Tick += (_, _) =>
         {
             if (!_ble.IsConnected) return;
-            DebugLog.Log("heartbeat: ForceRedraw");
             _compositor.ForceRedraw();
         };
         _heartbeatTimer.Start();
