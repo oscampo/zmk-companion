@@ -191,14 +191,20 @@ sealed class TrayIcon : IDisposable
 
     private void OnDiagnostics()
     {
+        string connLine = _ble.LastDisconnectAt is { } since
+            ? $"Disconnects: {_ble.DisconnectCount} (last {(DateTime.Now - since).TotalSeconds:F0}s ago" +
+              (_ble.LastDowntime is { } down ? $", was down {down.TotalSeconds:F1}s)" : ")")
+            : $"Disconnects: {_ble.DisconnectCount}";
+
         string msg = _ble.IsConnected
             ? $"Device: {_ble.DeviceName}\n" +
               $"Negotiated MTU: {_ble.LastMtu} bytes\n" +
               $"Bitmap chunks/frame: {_ble.LastChunkCount}\n" +
               $"Write mode: {(_ble.LastWithResponse ? "with response (slower, acked)" : "without response (fast)")}\n" +
               $"Last frame send time: {_ble.LastSendMs} ms\n" +
-              $"Last error: {_ble.LastBitmapError ?? "(none)"}"
-            : "Not connected.";
+              $"Last error: {_ble.LastBitmapError ?? "(none)"}\n" +
+              connLine
+            : $"Not connected.\n{connLine}";
         MessageBox.Show(msg, "ZMK Companion — Diagnostics", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 

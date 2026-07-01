@@ -31,6 +31,14 @@ sealed class BleService : IDisposable
     public bool HasBitmapChar => _bitmapCharacteristic is not null;
     public string? DeviceName { get; private set; }
 
+    // Connection-stability diagnostics: a link that drops and reconnects
+    // repeatedly freezes the display for the whole gap (rendering stops on
+    // disconnect, and reconnect requires a fresh scan + full GATT discovery),
+    // which can look exactly like clock drift when sampled at low frequency.
+    public int       DisconnectCount { get; private set; }
+    public DateTime? LastDisconnectAt { get; private set; }
+    public TimeSpan? LastDowntime     { get; private set; }
+
     private BluetoothLEDevice? _device;
     private GattSession?        _session;
     private GattCharacteristic? _characteristic;
@@ -167,6 +175,7 @@ sealed class BleService : IDisposable
 
         DeviceName = deviceInfo.Name;
 
+        if (LastDisconnectAt is { } since) LastDowntime = DateTime.Now - since;
         _uiContext.Post(_ => Connected?.Invoke(DeviceName!), null);
         return true;
     }
@@ -308,6 +317,8 @@ sealed class BleService : IDisposable
         {
             _characteristic = null;
             DeviceName = null;
+            DisconnectCount++;
+            LastDisconnectAt = DateTime.Now;
             _uiContext.Post(_ => Disconnected?.Invoke(), null);
         }
     }

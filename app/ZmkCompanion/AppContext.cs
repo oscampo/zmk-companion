@@ -310,15 +310,27 @@ sealed class ZmkAppContext : ApplicationContext
         _ = _ble.SendAsync(Protocol.BuildClock());
     }
 
+    private bool _reconnecting;
+
     private void OnDisconnected()
     {
         _compositor.StopAll();
         _tray.SetDisconnected();
-        _ = Task.Delay(10_000).ContinueWith(async _ =>
-        {
-            if (!_ble.IsConnected && !_cts.IsCancellationRequested)
-                await _ble.ScanAndConnectAsync(_cts.Token);
-        });
+
+        // The display is frozen (StopAll) for the entire gap until reconnected,
+        // so any delay here shows up as apparent "clock drift" if the link ever
+        // drops. This used to wait a flat 10s before even trying once — now it
+        // reuses the startup retry loop, which attempts immediately and keeps
+        // retrying every 15s until reconnected.
+        if (_reconnecting) return;
+        _reconnecting = true;
+        _ = ReconnectAsync();
+    }
+
+    private async Task ReconnectAsync()
+    {
+        try   { await ConnectLoopAsync(_cts.Token); }
+        finally { _reconnecting = false; }
     }
 
     private void OnExit()
