@@ -257,12 +257,29 @@ sealed class BleService : IDisposable
         if (ch is null) { LastBitmapError = "char is null"; return false; }
 
         // Choose write type based on what the characteristic actually declares.
+        // Prefer WriteWithResponse when available: WriteWithoutResponse is a fire-
+        // and-forget GATT "Write Command" with no ATT-level acknowledgment, so a
+        // chunk silently dropped over the air (marginal radio conditions, range,
+        // interference) looks IDENTICAL to a successful send from here — the local
+        // stack reports Success because the packet was queued/transmitted locally,
+        // regardless of whether the peripheral actually got it. If firmware only
+        // swaps its displayed framebuffer once a complete frame has been
+        // reassembled, one dropped chunk silently discards the whole update and
+        // the display just keeps showing whatever it had before — with nothing
+        // wrong visible anywhere in this app's logs, which is exactly what two
+        // extensive debug-log captures showed: flawless render/send on the app
+        // side while the physical display fell further behind. WriteWithResponse
+        // gets an ATT-level ack per chunk, so a real delivery failure surfaces as
+        // an actual failure our existing retry logic can catch, instead of a
+        // silent no-op. Diagnostics already confirmed full-frame timing is cheap
+        // either way (30-50ms with WriteWithoutResponse), so there's no real
+        // speed cost to trading for reliability here.
         var props = ch.CharacteristicProperties;
         GattWriteOption writeOpt;
-        if (props.HasFlag(GattCharacteristicProperties.WriteWithoutResponse))
-            writeOpt = GattWriteOption.WriteWithoutResponse;
-        else if (props.HasFlag(GattCharacteristicProperties.Write))
+        if (props.HasFlag(GattCharacteristicProperties.Write))
             writeOpt = GattWriteOption.WriteWithResponse;
+        else if (props.HasFlag(GattCharacteristicProperties.WriteWithoutResponse))
+            writeOpt = GattWriteOption.WriteWithoutResponse;
         else
         {
             LastBitmapError = $"props={props} — no write permission on 0x1525";
