@@ -233,9 +233,11 @@ sealed class BleService : IDisposable
     }
 
     // Diagnostics set on every SendBitmapAsync call.
-    public string? LastBitmapError { get; private set; }
-    public int     LastChunkCount  { get; private set; }
-    public int     LastMtu         { get; private set; }
+    public string? LastBitmapError  { get; private set; }
+    public int     LastChunkCount   { get; private set; }
+    public int     LastMtu          { get; private set; }
+    public long     LastSendMs      { get; private set; }
+    public bool     LastWithResponse { get; private set; }
 
     // Sends a 1,440-byte bitmap frame via characteristic 0x1525 in 240-byte chunks.
     // Header per chunk: [2B offset LE][2B total LE][data].
@@ -264,9 +266,11 @@ sealed class BleService : IDisposable
         int mtu       = _session?.MaxPduSize ?? 23;
         int chunkData = Math.Max(1, mtu - 3 - 4);
         ushort total  = (ushort)frame.Length;
-        LastMtu        = mtu;
-        LastChunkCount = (int)Math.Ceiling((double)frame.Length / chunkData);
+        LastMtu          = mtu;
+        LastChunkCount   = (int)Math.Ceiling((double)frame.Length / chunkData);
+        LastWithResponse = writeOpt == GattWriteOption.WriteWithResponse;
 
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         for (int offset = 0; offset < frame.Length; offset += chunkData)
         {
             int len = Math.Min(chunkData, frame.Length - offset);
@@ -280,11 +284,18 @@ sealed class BleService : IDisposable
                 if (result.Status != GattCommunicationStatus.Success)
                 {
                     LastBitmapError = $"chunk@{offset}/{chunkData}B mtu={mtu} status={result.Status} proto={result.ProtocolError} opt={writeOpt} props={props}";
+                    LastSendMs = sw.ElapsedMilliseconds;
                     return false;
                 }
             }
-            catch (Exception ex) { LastBitmapError = $"chunk@{offset} ex={ex.Message}"; return false; }
+            catch (Exception ex)
+            {
+                LastBitmapError = $"chunk@{offset} ex={ex.Message}";
+                LastSendMs = sw.ElapsedMilliseconds;
+                return false;
+            }
         }
+        LastSendMs      = sw.ElapsedMilliseconds;
         LastBitmapError = null;
         return true;
     }

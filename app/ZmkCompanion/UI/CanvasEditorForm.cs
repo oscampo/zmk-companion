@@ -563,14 +563,26 @@ sealed class CanvasEditorForm : Form
             ("{date.month}", "month"),
             ("{date.day}",   "day"),
         ]);
-        // Row 3 — sports / weather / external text
+        // Row 3 — weather / external text
         AddBindingButtons(p, txtTemplate,
         [
             ("{weather}",      "weather"),
             ("{weather.icon}", "wx icon"),
             ("{weather.temp}", "wx temp"),
-            ("{sports}",       "sports"),
+            ("{weather.city}", "wx city"),
             ("{ext.text}",     "ext text"),
+        ]);
+        // Row 4 — sports (granular fields; use {sports.field:LEAGUE} to pin a league)
+        AddBindingButtons(p, txtTemplate,
+        [
+            ("{sports}",           "sports"),
+            ("{sports.sport}",     "sport"),
+            ("{sports.league}",    "league"),
+            ("{sports.team}",      "team"),
+            ("{sports.game}",      "game"),
+            ("{sports.marker}",    "marker"),
+            ("{sports.time}",      "time"),
+            ("{sports.scheduled}", "scheduled"),
         ]);
 
         // Glyph picker button

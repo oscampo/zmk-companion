@@ -23,10 +23,11 @@ sealed class LiveState
     // Last text pushed by an external process via the named pipe (zkc CLI).
     public string ExternalText { get; private set; } = "";
 
-    // Formatted game text per league (keyed by SportsLeague.ShortName, upper-case),
+    // Formatted game data per league (keyed by SportsLeague.ShortName, upper-case),
     // refreshed periodically by AppContext from SportsFeature. "default" is the
-    // first configured league, used by the bare {sports} binding.
-    private readonly Dictionary<string, string> _sportsText = new(StringComparer.OrdinalIgnoreCase);
+    // first configured league, used by the bare {sports} / {sports.*} bindings.
+    private readonly Dictionary<string, SportsSnapshot> _sportsData = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly SportsSnapshot _emptySports = new();
 
     public void UpdateBattery(int level, bool charging)
     {
@@ -57,14 +58,14 @@ sealed class LiveState
         Changed?.Invoke();
     }
 
-    public void UpdateSports(string leagueKey, string text)
+    public void UpdateSports(string leagueKey, SportsSnapshot snapshot)
     {
-        _sportsText[leagueKey] = text;
+        _sportsData[leagueKey] = snapshot;
         Changed?.Invoke();
     }
 
-    private string SportsText(string leagueKey) =>
-        _sportsText.TryGetValue(leagueKey, out var v) ? v : "···";
+    private SportsSnapshot Sports(string leagueKey) =>
+        _sportsData.TryGetValue(leagueKey, out var v) ? v : _emptySports;
 
     // Resolves a single binding key to its current display value (no glyph styling).
     public string Resolve(string key, bool use24h = false) => Resolve(key, use24h, null);
@@ -94,14 +95,9 @@ sealed class LiveState
             return UsbActive ? usbG : bleG;
         }
 
-        // Sports — {sports} uses the first configured league; {sports:NFL} picks one by ShortName.
-        if (key.StartsWith("sports", StringComparison.OrdinalIgnoreCase))
-        {
-            int colon = key.IndexOf(':');
-            return SportsText(colon >= 0 ? key[(colon + 1)..] : "default");
-        }
-
-        string raw = key switch
+        // Sports — {sports}, {sports:NFL}, {sports.team}, {sports.team:NFL}, etc.
+        bool isSports = key.StartsWith("sports", StringComparison.OrdinalIgnoreCase);
+        string raw = isSports ? ResolveSports(key) : key switch
         {
             "battery.level"   => BatteryLevel < 0 ? "--"  : $"{BatteryLevel}",
             "battery.percent" => BatteryLevel < 0 ? "--%": $"{BatteryLevel}%",
@@ -117,7 +113,7 @@ sealed class LiveState
             "weather.icon"    => WeatherIcon,
             "weather.temp"    => WeatherTemp,
             "weather.city"    => WeatherCity,
-            "weather"         => $"{WeatherIcon} {WeatherTemp}".Trim(),
+            "weather"         => $"{WeatherCity} {WeatherIcon} {WeatherTemp}".Trim(),
             "ext.text"        => ExternalText,
             _                 => $"{{{key}}}",
         };
@@ -125,20 +121,53 @@ sealed class LiveState
         // Apply numeric/alpha glyph conversion for relevant bindings
         if (cfg != null)
         {
-            bool numConvert = cfg.NumericStyle   != "text";
+            bool numConvert   = cfg.NumericStyle != "text";
             bool alphaConvert = cfg.AlphaStyle   != "text";
             if (numConvert || alphaConvert)
             {
-                bool applyAlpha = alphaConvert && key is "date" or "date.month";
-                bool applyNum   = numConvert   && key is "time" or "time24" or "time12"
+                bool applyAlpha = alphaConvert && (isSports || key is "date" or "date.month" or "weather" or "weather.city");
+                bool applyNum   = numConvert   && (isSports || key is "time" or "time24" or "time12"
                                                         or "date" or "date.day" or "date.month"
-                                                        or "conn.profile";
+                                                        or "conn.profile" or "weather" or "weather.temp");
                 if (applyNum || applyAlpha)
                     raw = ApplyGlyphStyles(raw, applyNum ? cfg.NumericStyle : "text",
                                                applyAlpha ? cfg.AlphaStyle : "text");
             }
         }
         return raw;
+    }
+
+    // Parses "sports", "sports:NFL", "sports.team", "sports.team:NFL" into a field
+    // lookup on the cached SportsSnapshot for the given league (or "default").
+    private string ResolveSports(string key)
+    {
+        string rest = key.Length > "sports".Length ? key["sports".Length..] : "";
+        string field = "summary";
+        string leagueKey = "default";
+
+        if (rest.StartsWith('.'))
+        {
+            int colon = rest.IndexOf(':');
+            field     = colon >= 0 ? rest[1..colon] : rest[1..];
+            leagueKey = colon >= 0 ? rest[(colon + 1)..] : "default";
+        }
+        else if (rest.StartsWith(':'))
+        {
+            leagueKey = rest[1..];
+        }
+
+        var s = Sports(leagueKey);
+        return field switch
+        {
+            "sport"     => s.Sport,
+            "league"    => s.League,
+            "team"      => s.Team,
+            "game"      => s.Game,
+            "marker"    => s.Marker,
+            "time"      => s.Time,
+            "scheduled" => s.Scheduled,
+            _           => s.Summary,
+        };
     }
 
     // Converts digits and/or letters in a string to MD Nerd Font glyphs.

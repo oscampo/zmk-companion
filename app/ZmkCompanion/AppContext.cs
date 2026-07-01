@@ -120,12 +120,48 @@ sealed class ZmkAppContext : ApplicationContext
                 if (games.Count == 0) games = await SportsFeature.FetchScheduleAsync(lg, _settings.SportsTeam);
                 if (games.Count == 0) games = await SportsFeature.FetchResultsAsync(lg, _settings.SportsTeam);
 
-                string text = games.Count > 0 ? SportsFeature.FormatGame(games[0]) : "No games";
-                _liveState.UpdateSports(lg.ShortName, text);
-                if (first) { _liveState.UpdateSports("default", text); first = false; }
+                var snapshot = BuildSportsSnapshot(lg, games.Count > 0 ? games[0] : null);
+                _liveState.UpdateSports(lg.ShortName, snapshot);
+                if (first) { _liveState.UpdateSports("default", snapshot); first = false; }
             }
             catch { /* offline — keep last known value for this league */ }
         }
+    }
+
+    private SportsSnapshot BuildSportsSnapshot(SportsLeague league, SportsGame? g)
+    {
+        if (g is null)
+            return new SportsSnapshot
+            {
+                Sport   = league.Sport.ToString(),
+                League  = league.ShortName,
+                Team    = _settings.SportsTeam,
+                Game    = "No games",
+                Summary = "No games",
+            };
+
+        string game = g.StatusState == "pre"
+            ? $"{g.Away} @ {g.Home}"
+            : $"{g.Away} {g.AwayScore}-{g.HomeScore} {g.Home}";
+
+        string marker = g.StatusState switch
+        {
+            "in"   => "", // nf-fa-bolt (live)
+            "post" => "", // nf-fa-trophy (final)
+            _      => "",
+        };
+
+        return new SportsSnapshot
+        {
+            Sport     = g.Sport.ToString(),
+            League    = league.ShortName,
+            Team      = string.IsNullOrWhiteSpace(_settings.SportsTeam) ? g.Home : _settings.SportsTeam,
+            Game      = game,
+            Marker    = marker,
+            Time      = g.StatusState == "in"  ? g.StatusDetail : "",
+            Scheduled = g.StatusState == "pre" ? g.StatusDetail : "",
+            Summary   = SportsFeature.FormatGame(g),
+        };
     }
 
     // ── Canvas pages ─────────────────────────────────────────────────────────

@@ -184,8 +184,22 @@ sealed class TrayIcon : IDisposable
                 { Enabled = connected });
 
         strip.Items.Add(new ToolStripSeparator());
+        strip.Items.Add(new ToolStripMenuItem("Diagnostics…", null, (_, _) => OnDiagnostics()));
         strip.Items.Add(new ToolStripMenuItem("Settings…", null, (_, _) => OnSettings()));
         strip.Items.Add(new ToolStripMenuItem("Exit", null, (_, _) => ExitRequested?.Invoke()));
+    }
+
+    private void OnDiagnostics()
+    {
+        string msg = _ble.IsConnected
+            ? $"Device: {_ble.DeviceName}\n" +
+              $"Negotiated MTU: {_ble.LastMtu} bytes\n" +
+              $"Bitmap chunks/frame: {_ble.LastChunkCount}\n" +
+              $"Write mode: {(_ble.LastWithResponse ? "with response (slower, acked)" : "without response (fast)")}\n" +
+              $"Last frame send time: {_ble.LastSendMs} ms\n" +
+              $"Last error: {_ble.LastBitmapError ?? "(none)"}"
+            : "Not connected.";
+        MessageBox.Show(msg, "ZMK Companion — Diagnostics", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     // ── Menu handlers ─────────────────────────────────────────────────────────

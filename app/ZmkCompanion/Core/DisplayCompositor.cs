@@ -79,38 +79,50 @@ sealed class DisplayCompositor : IDisposable
 
     // ── Render ────────────────────────────────────────────────────────────────
 
-    // Coalesces bursts of Invalidated (e.g. StartAll firing one per widget)
-    // into a single re-render+send instead of queuing one per event.
-    private bool _renderPending;
+    // Coalesces bursts of Invalidated (e.g. StartAll firing one per widget, or
+    // several widgets updating around the same time) into a single re-render+
+    // send. A render is "in flight" from the moment it starts until the BLE
+    // send completes — invalidations arriving during that window only set
+    // _renderQueued, so at most one extra render+send runs after the current
+    // one finishes (always capturing the latest state at that point), instead
+    // of spawning a new concurrent task per event and building up a backlog of
+    // stale frames that slowly drains out over several BLE round-trips.
+    private bool _renderInFlight;
+    private bool _renderQueued;
 
     private void OnInvalidated()
     {
-        if (_renderPending) return;
-        _renderPending = true;
+        if (_renderInFlight) { _renderQueued = true; return; }
+        _renderInFlight = true;
         _ = RenderAndSendAsync();
     }
 
     public async Task RenderAndSendAsync()
     {
-        _renderPending = false;
-
-        using var bmp = BitmapFrame.CreateCanvas();
-        using var g   = Graphics.FromImage(bmp);
-        g.Clear(Color.Black);
-        g.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
-
-        foreach (var widget in _widgets)
+        do
         {
-            var clip = g.Clip;
-            g.SetClip(widget.Bounds);
-            widget.Render(g);
-            g.Clip = clip;
-        }
+            _renderQueued = false;
 
-        byte[] frame = BitmapFrame.Pack(bmp);
-        await _sendLock.WaitAsync();
-        try   { await _ble.SendBitmapAsync(frame); }
-        finally { _sendLock.Release(); }
+            using var bmp = BitmapFrame.CreateCanvas();
+            using var g   = Graphics.FromImage(bmp);
+            g.Clear(Color.Black);
+            g.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
+
+            foreach (var widget in _widgets)
+            {
+                var clip = g.Clip;
+                g.SetClip(widget.Bounds);
+                widget.Render(g);
+                g.Clip = clip;
+            }
+
+            byte[] frame = BitmapFrame.Pack(bmp);
+            await _sendLock.WaitAsync();
+            try   { await _ble.SendBitmapAsync(frame); }
+            finally { _sendLock.Release(); }
+        } while (_renderQueued);
+
+        _renderInFlight = false;
     }
 
     // ── Cleanup ───────────────────────────────────────────────────────────────
