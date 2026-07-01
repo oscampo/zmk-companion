@@ -44,6 +44,18 @@ sealed class ZmkAppContext : ApplicationContext
     // accurate independent of how backed-up the bitmap send pipeline gets.
     private System.Windows.Forms.Timer? _clockSyncTimer;
 
+    // Debug logs showed long stretches where _ble.IsConnected read false (the
+    // bitmap characteristic gone, every send failing with "char is null") but
+    // BleService.Disconnected NEVER fired — Windows' ConnectionStatusChanged
+    // event apparently doesn't reliably cover every way this link degrades.
+    // Since reconnection was entirely event-driven, the app just sat there
+    // with a dead link, LoadPage skipping StartAll() every cycle (IsConnected
+    // false), and the display frozen forever — which looks exactly like the
+    // clock "stopping" rather than drifting. This watchdog checks connection
+    // health directly and kicks off a reconnect regardless of whether the
+    // event ever tells us to.
+    private System.Windows.Forms.Timer? _connectionWatchdog;
+
     public ZmkAppContext()
     {
         DebugLog.Reset();
@@ -132,6 +144,17 @@ sealed class ZmkAppContext : ApplicationContext
             _ = _ble.SendAsync(Protocol.BuildClock());
         };
         _clockSyncTimer.Start();
+
+        _connectionWatchdog = new System.Windows.Forms.Timer { Interval = 10_000 };
+        _connectionWatchdog.Tick += (_, _) =>
+        {
+            bool healthy = _ble.IsConnected && _ble.HasBitmapChar;
+            if (healthy || _reconnecting) return;
+            DebugLog.Log($"watchdog: unhealthy link (IsConnected={_ble.IsConnected} HasBitmapChar={_ble.HasBitmapChar}) — forcing reconnect");
+            _reconnecting = true;
+            _ = ReconnectAsync();
+        };
+        _connectionWatchdog.Start();
 
         _ = ConnectLoopAsync(_cts.Token);
     }
@@ -381,6 +404,8 @@ sealed class ZmkAppContext : ApplicationContext
             _heartbeatTimer?.Dispose();
             _clockSyncTimer?.Stop();
             _clockSyncTimer?.Dispose();
+            _connectionWatchdog?.Stop();
+            _connectionWatchdog?.Dispose();
             _pipe.Dispose();
             _compositor.Dispose();
             _tray.Dispose();
