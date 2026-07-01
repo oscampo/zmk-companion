@@ -92,7 +92,12 @@ sealed class DisplayCompositor : IDisposable
 
     private void OnInvalidated()
     {
-        if (_renderInFlight) { _renderQueued = true; return; }
+        if (_renderInFlight)
+        {
+            DebugLog.Log("OnInvalidated: render already in flight — queued");
+            _renderQueued = true;
+            return;
+        }
         _renderInFlight = true;
         _ = RenderAndSendAsync();
     }
@@ -136,11 +141,15 @@ sealed class DisplayCompositor : IDisposable
         // disconnect, nothing visible anywhere except a clock that stops
         // advancing. This is a much better fit for "starts correct, then falls
         // behind and never recovers" than anything about send speed or timing.
+        var loopSw = System.Diagnostics.Stopwatch.StartNew();
+        int pass = 0;
         try
         {
             do
             {
+                pass++;
                 _renderQueued = false;
+                var passSw = System.Diagnostics.Stopwatch.StartNew();
 
                 using var bmp = BitmapFrame.CreateCanvas();
                 using var g   = Graphics.FromImage(bmp);
@@ -159,21 +168,32 @@ sealed class DisplayCompositor : IDisposable
                     {
                         // One widget's bug shouldn't blank or freeze the whole display.
                         LastRenderError = $"{widget.GetType().Name}.Render: {ex.Message}";
+                        DebugLog.Log($"RENDER EXCEPTION in {widget.GetType().Name}: {ex}");
                     }
                     finally { g.Clip = clip; }
                 }
 
                 byte[] frame = BitmapFrame.Pack(bmp);
+                long renderMs = passSw.ElapsedMilliseconds;
                 await _sendLock.WaitAsync();
+                var sendSw = System.Diagnostics.Stopwatch.StartNew();
                 try
                 {
                     // One immediate retry on failure — cheap insurance against a
                     // transient GATT write hiccup, without adding latency when the
                     // send simply succeeds (the common case).
-                    if (!await _ble.SendBitmapAsync(frame))
+                    bool ok = await _ble.SendBitmapAsync(frame);
+                    if (!ok)
                     {
+                        DebugLog.Log($"send FAILED (pass {pass}), retrying in 300ms: {_ble.LastBitmapError}");
                         await Task.Delay(300);
-                        await _ble.SendBitmapAsync(frame);
+                        sendSw.Restart();
+                        ok = await _ble.SendBitmapAsync(frame);
+                        DebugLog.Log($"send retry ok={ok} {sendSw.ElapsedMilliseconds}ms: {_ble.LastBitmapError}");
+                    }
+                    else
+                    {
+                        DebugLog.Log($"render+send pass {pass}: render={renderMs}ms send={sendSw.ElapsedMilliseconds}ms widgets={_widgets.Count} queuedMore={_renderQueued}");
                     }
                 }
                 finally { _sendLock.Release(); }
@@ -182,6 +202,7 @@ sealed class DisplayCompositor : IDisposable
         catch (Exception ex)
         {
             LastRenderError = ex.Message;
+            DebugLog.Log($"RenderAndSendAsync EXCEPTION after {pass} pass(es), {loopSw.ElapsedMilliseconds}ms: {ex}");
         }
         finally
         {

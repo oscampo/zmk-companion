@@ -189,8 +189,27 @@ sealed class TrayIcon : IDisposable
 
         strip.Items.Add(new ToolStripSeparator());
         strip.Items.Add(new ToolStripMenuItem("Diagnostics…", null, (_, _) => OnDiagnostics()));
+        strip.Items.Add(new ToolStripMenuItem("Open Debug Log", null, (_, _) => OnOpenDebugLog()));
         strip.Items.Add(new ToolStripMenuItem("Settings…", null, (_, _) => OnSettings()));
         strip.Items.Add(new ToolStripMenuItem("Exit", null, (_, _) => ExitRequested?.Invoke()));
+    }
+
+    private void OnOpenDebugLog()
+    {
+        try
+        {
+            if (!File.Exists(DebugLog.Path))
+            {
+                MessageBox.Show("No debug log yet.", "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            Process.Start(new ProcessStartInfo { FileName = DebugLog.Path, UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Couldn't open log: {ex.Message}\n\nPath: {DebugLog.Path}",
+                "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
     private void OnDiagnostics()

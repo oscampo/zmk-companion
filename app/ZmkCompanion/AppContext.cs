@@ -46,6 +46,7 @@ sealed class ZmkAppContext : ApplicationContext
 
     public ZmkAppContext()
     {
+        DebugLog.Reset();
         _settings = AppSettings.Load();
         _ble      = new BleService();
         _tray     = new TrayIcon(_ble, _settings);
@@ -115,11 +116,21 @@ sealed class ZmkAppContext : ApplicationContext
         // every 30s regardless of whether anything changed just queued up work
         // faster than the link could drain it).
         _heartbeatTimer = new System.Windows.Forms.Timer { Interval = 5 * 60_000 };
-        _heartbeatTimer.Tick += (_, _) => { if (_ble.IsConnected) _compositor.ForceRedraw(); };
+        _heartbeatTimer.Tick += (_, _) =>
+        {
+            if (!_ble.IsConnected) return;
+            DebugLog.Log("heartbeat: ForceRedraw");
+            _compositor.ForceRedraw();
+        };
         _heartbeatTimer.Start();
 
         _clockSyncTimer = new System.Windows.Forms.Timer { Interval = 60_000 };
-        _clockSyncTimer.Tick += (_, _) => { if (_ble.IsConnected) _ = _ble.SendAsync(Protocol.BuildClock()); };
+        _clockSyncTimer.Tick += (_, _) =>
+        {
+            if (!_ble.IsConnected) return;
+            DebugLog.Log($"clockSyncTimer tick now={DateTime.Now:HH:mm:ss.fff}");
+            _ = _ble.SendAsync(Protocol.BuildClock());
+        };
         _clockSyncTimer.Start();
 
         _ = ConnectLoopAsync(_cts.Token);
@@ -202,7 +213,10 @@ sealed class ZmkAppContext : ApplicationContext
     {
         if (_settings.Pages.Count == 0) _settings.Pages.Add(new CanvasPage());
         _activePage = Math.Clamp(index, 0, _settings.Pages.Count - 1);
-        _compositor.Rebuild(_settings.Pages[_activePage].Widgets.Select(CreateWidget));
+        var page = _settings.Pages[_activePage];
+        DebugLog.Log($"LoadPage({_activePage}) name='{page.Name}' widgets={page.Widgets.Count} " +
+                     $"connected={_ble.IsConnected} now={DateTime.Now:HH:mm:ss.fff}");
+        _compositor.Rebuild(page.Widgets.Select(CreateWidget));
         if (_ble.IsConnected) _compositor.StartAll();
     }
 
@@ -211,6 +225,7 @@ sealed class ZmkAppContext : ApplicationContext
         _pageCycleCts?.Cancel();
         _pageCycleCts?.Dispose();
         _pageCycleCts = null;
+        DebugLog.Log($"RestartPageCycle: CyclePages={_settings.CyclePages} pageCount={_settings.Pages.Count}");
         if (!_settings.CyclePages || _settings.Pages.Count < 2) return;
 
         _pageCycleCts = new CancellationTokenSource();
@@ -227,15 +242,21 @@ sealed class ZmkAppContext : ApplicationContext
     // cycling was on.
     private async Task RunPageCycleAsync(CancellationToken ct)
     {
+        DebugLog.Log("RunPageCycleAsync: started");
         while (!ct.IsCancellationRequested)
         {
+            var idleSw = System.Diagnostics.Stopwatch.StartNew();
             await _compositor.WaitForIdleAsync();
             int durationMs = Math.Max(2, _settings.Pages[_activePage].DurationSeconds) * 1000;
+            DebugLog.Log($"cycle: page {_activePage} idle after {idleSw.ElapsedMilliseconds}ms, dwelling {durationMs}ms");
             try   { await Task.Delay(durationMs, ct); }
             catch (OperationCanceledException) { break; }
             if (ct.IsCancellationRequested) break;
-            LoadPage((_activePage + 1) % _settings.Pages.Count);
+            int next = (_activePage + 1) % _settings.Pages.Count;
+            DebugLog.Log($"cycle: switching page {_activePage} -> {next}");
+            LoadPage(next);
         }
+        DebugLog.Log("RunPageCycleAsync: stopped");
     }
 
     // ── BLE status events ─────────────────────────────────────────────────────
@@ -306,6 +327,7 @@ sealed class ZmkAppContext : ApplicationContext
 
     private void OnConnected(string deviceName)
     {
+        DebugLog.Log($"OnConnected: {deviceName} now={DateTime.Now:HH:mm:ss.fff}");
         _tray.SetConnected(deviceName);
         _compositor.StartAll();
         _ = _ble.SendAsync(Protocol.BuildClock());
@@ -315,6 +337,7 @@ sealed class ZmkAppContext : ApplicationContext
 
     private void OnDisconnected()
     {
+        DebugLog.Log($"OnDisconnected now={DateTime.Now:HH:mm:ss.fff} (display frozen until reconnect)");
         _compositor.StopAll();
         _tray.SetDisconnected();
 

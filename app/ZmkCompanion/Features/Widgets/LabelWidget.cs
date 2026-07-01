@@ -31,15 +31,20 @@ sealed class LabelWidget : IWidget
         Stop();
         Invalidated?.Invoke();
         if (LiveState.HasTimeBind(Config.Template))
+        {
+            DebugLog.Log($"LabelWidget.Start (clock) template='{Config.Template}' now={DateTime.Now:HH:mm:ss.fff}");
             StartClockTimer();
+        }
     }
 
     private void StartClockTimer()
     {
         int msUntilNext = (60 - DateTime.Now.Second) * 1000 - DateTime.Now.Millisecond;
+        DebugLog.Log($"StartClockTimer: msUntilNext={msUntilNext}");
         _clockTimer = new System.Windows.Forms.Timer { Interval = Math.Max(1, msUntilNext) };
         _clockTimer.Tick += (_, _) =>
         {
+            DebugLog.Log($"clockTimer TICK now={DateTime.Now:HH:mm:ss.fff}");
             _clockTimer!.Interval = 60_000;
             Invalidated?.Invoke();
         };
@@ -48,6 +53,7 @@ sealed class LabelWidget : IWidget
 
     public void Stop()
     {
+        if (_clockTimer != null) DebugLog.Log($"LabelWidget.Stop (clock timer disposed) now={DateTime.Now:HH:mm:ss.fff}");
         _clockTimer?.Stop(); _clockTimer?.Dispose(); _clockTimer = null;
     }
 
@@ -55,6 +61,8 @@ sealed class LabelWidget : IWidget
     {
         var    cfg  = Config;
         string text = _state.Expand(cfg.Template, cfg.Use24h, cfg);
+        if (LiveState.HasTimeBind(cfg.Template))
+            DebugLog.Log($"LabelWidget.Render clock template='{cfg.Template}' resolved='{text.Replace('\n', '|')}' now={DateTime.Now:HH:mm:ss.fff}");
         if (text.Length == 0) return;
 
         g.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
