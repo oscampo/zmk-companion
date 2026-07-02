@@ -73,12 +73,19 @@ sealed class CellGridEditorForm : Form
             ("Ciudad clima",         "{weather.city}"),
         ]),
         ("Deportes", [
-            ("Juego (resumen)",      "{sports}"),
+            ("Partido (resumen)",    "{sports}"),
             ("Equipo",               "{sports.team}"),
-            ("Partido",              "{sports.game}"),
-            ("Marcador/estado",      "{sports.marker}"),
-            ("Tiempo de juego",      "{sports.time}"),
+            ("Marcador en juego",    "{sports.game}"),
+            ("Estado (icono)",       "{sports.marker}"),
+            ("Tiempo en juego",      "{sports.time}"),
             ("Liga",                 "{sports.league}"),
+            // Último resultado
+            ("Último marcador",      "{sports.last_game}"),
+            ("Último (final icono)", "{sports.last_marker}"),
+            // Próximo partido
+            ("Próx. partido",        "{sports.next_game}"),
+            ("Próx. fecha",          "{sports.next_date}"),
+            ("Próx. hora",           "{sports.next_gametime}"),
         ]),
         ("Pomodoro", [
             ("Tiempo pomodoro",      "{pomodoro.time}"),
@@ -332,9 +339,8 @@ sealed class CellGridEditorForm : Form
         if (_pages.Count == 0) _pages.Add(new CellGridPage());
         LoadPage(0);
 
-        // Trigger weather refresh if not already cached
-        if (string.IsNullOrEmpty(_liveState.WeatherTemp) || _liveState.WeatherTemp == "--°")
-            _ = RefreshWeatherPreviewAsync(settings.City);
+        // Refresh weather on every editor open so the preview reflects the saved city.
+        _ = RefreshWeatherPreviewAsync(settings.City);
     }
 
     // ── Binding picker ────────────────────────────────────────────────────────

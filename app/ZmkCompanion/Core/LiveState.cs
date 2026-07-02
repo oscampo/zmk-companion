@@ -184,26 +184,39 @@ sealed class LiveState
         return raw;
     }
 
-    // Parses "sports", "sports:NFL", "sports.team", "sports.team:NFL" into a field
-    // lookup on the cached SportsSnapshot for the given league (or "default").
+    // Parses "sports", "sports:NFL", "sports.team", "sports.team:NFL",
+    // "sports.next_game", "sports.last_marker", etc.
+    // Fields prefixed with "next_" or "last_" look up the _next / _last snapshot.
     private string ResolveSports(string key)
     {
-        string rest = key.Length > "sports".Length ? key["sports".Length..] : "";
-        string field = "summary";
+        string rest      = key.Length > "sports".Length ? key["sports".Length..] : "";
+        string field     = "summary";
         string leagueKey = "default";
+        string suffix    = ""; // "", "_next", "_last"
 
         if (rest.StartsWith('.'))
         {
-            int colon = rest.IndexOf(':');
-            field     = colon >= 0 ? rest[1..colon] : rest[1..];
-            leagueKey = colon >= 0 ? rest[(colon + 1)..] : "default";
+            int colon   = rest.IndexOf(':');
+            string fp   = colon >= 0 ? rest[1..colon] : rest[1..];
+            leagueKey   = colon >= 0 ? rest[(colon + 1)..] : "default";
+
+            int under = fp.IndexOf('_');
+            if (under > 0 && (fp.StartsWith("next_") || fp.StartsWith("last_")))
+            {
+                suffix = "_" + fp[..under];   // "_next" or "_last"
+                field  = fp[(under + 1)..];   // e.g. "game", "marker", "date", "gametime"
+            }
+            else
+            {
+                field = fp;
+            }
         }
         else if (rest.StartsWith(':'))
         {
             leagueKey = rest[1..];
         }
 
-        var s = Sports(leagueKey);
+        var s = Sports(leagueKey + suffix);
         return field switch
         {
             "sport"     => s.Sport,
@@ -213,8 +226,17 @@ sealed class LiveState
             "marker"    => s.Marker,
             "time"      => s.Time,
             "scheduled" => s.Scheduled,
+            "date"      => SplitScheduled(s.Scheduled, 0), // "7/10"
+            "gametime"  => SplitScheduled(s.Scheduled, 1), // "7:30p"
             _           => s.Summary,
         };
+    }
+
+    private static string SplitScheduled(string detail, int part)
+    {
+        int idx = detail.IndexOf(" - ");
+        if (idx < 0) return part == 0 ? detail : "";
+        return part == 0 ? detail[..idx].Trim() : detail[(idx + 3)..].Trim();
     }
 
     // Converts digits and/or letters in a string to MD Nerd Font glyphs.
