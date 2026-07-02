@@ -75,41 +75,45 @@ sealed class CellGridTest : IDisposable
         int tick = 0;
         _timer.Tick += async (_, _) =>
         {
-            // MUST stop the timer synchronously before the first await. The
-            // interval scheduled right at a :00 boundary is intentionally
-            // tiny (a handful of ms) so the tick lands as close to the real
-            // second as possible — but that also means if we leave the
-            // timer running, Windows keeps posting WM_TIMER at that same
-            // tiny interval for as long as this async handler is suspended
-            // awaiting BLE writes, and WinForms Timer does NOT wait for a
-            // previous async Tick handler to finish before dispatching the
-            // next one. Confirmed on hardware: this produced a storm of
-            // 150+ overlapping SendPageAsync calls in ~5 seconds right at
-            // the 07:00:00 boundary, racing each other and writing digit
-            // cells out of order — the visible symptom was a transient
-            // "7:09" ghost value during the 6:59->7:00 transition. Stopping
-            // here guarantees no reentrant tick can fire until we
-            // explicitly restart below, once the send has actually
-            // finished and the next interval is computed from a fresh
-            // DateTime.Now.
+            // Capture the clock BEFORE any await. This timestamp is used by
+            // ScheduleNextTick to anchor the next interval, so it must
+            // reflect when the tick actually fired — not when the BLE sends
+            // complete. If we read DateTime.Now inside ScheduleNextTick
+            // (after the awaits), a :59 tick whose diff-only pass returns in
+            // <5ms can push us over the :00 boundary. At that point
+            // DateTime.Now.Second == 0 and we'd schedule a full 60-second
+            // interval, silently skipping the current minute entirely.
+            // Confirmed on hardware: "11:01" was never displayed because the
+            // 11:00:59.997 tick completed at 11:01:00.002, computing
+            // (60-0)*1000-2 = 59998ms, jumping directly to 11:02:00.
+            var tickTime = DateTime.Now;
+
+            // MUST stop the timer synchronously before the first await.
+            // If the timer keeps running at a tiny interval (as set right
+            // before a :00 boundary) while we are suspended awaiting BLE
+            // writes, WinForms Timer does NOT wait for the previous async
+            // Tick handler to finish before dispatching the next one.
+            // Confirmed on hardware: this produced a storm of 150+ overlapping
+            // SendPageAsync calls in ~5 seconds at the 07:00:00 boundary.
             _timer!.Stop();
             bool fullPass = ++tick % 10 == 0;
+            DebugLog.Log($"CellGridTest: tick START tickTime={tickTime:HH:mm:ss.fff} full={fullPass}");
             bool sent = await SendPageAsync(full: fullPass);
-            DebugLog.Log($"CellGridTest: tick ok={sent} full={fullPass} err={_ble.LastCellGridError ?? "(none)"}");
-            ScheduleNextTick();
+            DebugLog.Log($"CellGridTest: tick DONE ok={sent} full={fullPass} err={_ble.LastCellGridError ?? "(none)"}");
+            ScheduleNextTick(tickTime);
             _timer.Start();
         };
-        ScheduleNextTick();
+        ScheduleNextTick(DateTime.Now);
         _timer.Start();
     }
 
-    private void ScheduleNextTick()
+    private void ScheduleNextTick(DateTime tickTime)
     {
-        int msUntilNext = (60 - DateTime.Now.Second) * 1000 - DateTime.Now.Millisecond;
-        // Floor at 250ms rather than 1ms: with the Stop()/Start() guard above
-        // an overlapping fire is already impossible, but a near-zero interval
-        // computed right at the rollover instant would still cause back-to-back
-        // sequential passes within the same second for no benefit.
+        // Anchor to tickTime (when the tick fired), not DateTime.Now (after
+        // sends complete). A :59 tick that finishes in <5ms would read
+        // second==0 from DateTime.Now and schedule 60 seconds out, skipping
+        // the current minute. Using tickTime avoids that race entirely.
+        int msUntilNext = (60 - tickTime.Second) * 1000 - tickTime.Millisecond;
         _timer!.Interval = Math.Max(250, msUntilNext);
     }
 
