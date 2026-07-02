@@ -47,14 +47,22 @@ sealed class CellGridTest : IDisposable
                && await SendPageAsync(full: true);
         DebugLog.Log($"CellGridTest: initial paint ok={ok} err={_ble.LastCellGridError ?? "(none)"}");
 
-        // Re-render on each minute boundary, then every 60s.
+        // Re-render on each minute boundary, then every 60s. Every 10th tick
+        // resends ALL cells regardless of diff state: a lost firmware-side
+        // area invalidation (observed once on hardware: a units digit stuck
+        // on the previous glyph for one minute despite an ATT ack) leaves a
+        // stale cell that diff-only updates would never touch again if its
+        // content stopped changing. The periodic full pass bounds any such
+        // staleness to ~10 minutes at a cost of a handful of tiny writes.
         int msUntilNext = (60 - DateTime.Now.Second) * 1000 - DateTime.Now.Millisecond;
         _timer = new System.Windows.Forms.Timer { Interval = Math.Max(1, msUntilNext) };
+        int tick = 0;
         _timer.Tick += async (_, _) =>
         {
             _timer!.Interval = 60_000;
-            bool sent = await SendPageAsync(full: false);
-            DebugLog.Log($"CellGridTest: tick ok={sent} err={_ble.LastCellGridError ?? "(none)"}");
+            bool fullPass = ++tick % 10 == 0;
+            bool sent = await SendPageAsync(full: fullPass);
+            DebugLog.Log($"CellGridTest: tick ok={sent} full={fullPass} err={_ble.LastCellGridError ?? "(none)"}");
         };
         _timer.Start();
     }

@@ -168,6 +168,16 @@ Byte 0:              msg_type = 0x03  (no payload)
    from the currently active one) + complete CELL set for the new page.
 3. **Steady state** = CELL messages only, for cells whose rendered bitmap
    differs from the last one sent.
+4. **Periodic full refresh (recommended).** First hardware test observed
+   one stale cell: a digit kept its previous glyph for a minute despite
+   the app receiving an ATT ack for the write (suspected lost
+   `lv_obj_invalidate_area()` — LVGL is not thread-safe, and an
+   invalidation issued from the BT RX thread can race the LVGL timer;
+   the old 0x1525 path hopped to the system workqueue via
+   `k_work_submit()` before touching LVGL). Until that is fixed
+   firmware-side, clients SHOULD periodically (e.g. every ~10 updates)
+   resend all cells ignoring diff state, bounding any stale cell's
+   lifetime. Cheap: a full page is only a handful of ≤60-byte writes.
 
 ## Worked example
 
