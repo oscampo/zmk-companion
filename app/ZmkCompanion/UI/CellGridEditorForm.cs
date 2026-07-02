@@ -52,6 +52,7 @@ sealed class CellGridEditorForm : Form
     private readonly TextBox       _txtCity;
     private readonly TextBox       _txtTeam;
     private readonly Label         _lblLeagues;
+    private readonly Label         _lblWeatherStatus;
     private          List<string>  _editLeagues;
 
     // Binding catalog — category → list of (label, token)
@@ -303,6 +304,16 @@ sealed class CellGridEditorForm : Form
         btnRefreshWeather.Click += (_, _) => _ = RefreshWeatherPreviewAsync(_txtCity.Text.Trim());
         grpData.Controls.Add(btnRefreshWeather);
 
+        _lblWeatherStatus = new Label
+        {
+            Text      = "…",
+            Location  = new Point(238, 22),
+            Size      = new Size(160, 18),
+            ForeColor = System.Drawing.Color.Gray,
+            AutoSize  = false,
+        };
+        grpData.Controls.Add(_lblWeatherStatus);
+
         grpData.Controls.Add(new Label { Text = "Equipo:", Location = new Point(6, 52), Size = new Size(50, 18) });
         _txtTeam = new TextBox { Text = settings.SportsTeam, Location = new Point(60, 49), Size = new Size(60, 23) };
         grpData.Controls.Add(_txtTeam);
@@ -373,12 +384,20 @@ sealed class CellGridEditorForm : Form
 
     private async Task RefreshWeatherPreviewAsync(string city)
     {
+        _lblWeatherStatus.Text      = "consultando…";
+        _lblWeatherStatus.ForeColor = System.Drawing.Color.Gray;
         try
         {
             var data = await WeatherFeature.FetchWeatherAsync(city);
             _liveState.UpdateWeather(data.Icon.ToString(), $"{data.TempC:F0}°", data.City);
+            _lblWeatherStatus.Text      = $"{data.City} {data.TempC:F0}°";
+            _lblWeatherStatus.ForeColor = System.Drawing.Color.LimeGreen;
         }
-        catch { }
+        catch (Exception ex)
+        {
+            _lblWeatherStatus.Text      = ex.Message.Length > 28 ? ex.Message[..28] + "…" : ex.Message;
+            _lblWeatherStatus.ForeColor = System.Drawing.Color.OrangeRed;
+        }
     }
 
     private void OnLiveStateChanged() => RefreshPreview();

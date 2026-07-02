@@ -149,23 +149,23 @@ sealed class ZmkAppContext : ApplicationContext
 
                 // Primary: live > next scheduled > last result.
                 SportsGame? primary = live.Count > 0 ? live[0] : next.Count > 0 ? next[0] : last.Count > 0 ? last[0] : null;
-                var snap = BuildSportsSnapshot(lg, primary);
-                _liveState.UpdateSports(lg.ShortName, snap);
+                var snap     = BuildSportsSnapshot(lg, primary);
+                var snapNext = BuildSportsSnapshot(lg, next.Count > 0 ? next[0] : null);
+                var snapLast = BuildSportsSnapshot(lg, last.Count > 0 ? last[0] : null);
 
-                if (next.Count > 0)
-                {
-                    var snapNext = BuildSportsSnapshot(lg, next[0]);
-                    _liveState.UpdateSports(lg.ShortName + "_next", snapNext);
-                    if (first) _liveState.UpdateSports("default_next", snapNext);
-                }
-                if (last.Count > 0)
-                {
-                    var snapLast = BuildSportsSnapshot(lg, last[0]);
-                    _liveState.UpdateSports(lg.ShortName + "_last", snapLast);
-                    if (first) _liveState.UpdateSports("default_last", snapLast);
-                }
+                _liveState.UpdateSports(lg.ShortName,           snap);
+                _liveState.UpdateSports(lg.ShortName + "_next", snapNext);
+                _liveState.UpdateSports(lg.ShortName + "_last", snapLast);
 
-                if (first) { _liveState.UpdateSports("default", snap); first = false; }
+                // Always update "default*" for the first league so switching leagues
+                // never leaves stale data from the previous league in the live state.
+                if (first)
+                {
+                    _liveState.UpdateSports("default",      snap);
+                    _liveState.UpdateSports("default_next", snapNext);
+                    _liveState.UpdateSports("default_last", snapLast);
+                    first = false;
+                }
             }
             catch { }
         }
