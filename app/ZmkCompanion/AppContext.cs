@@ -2,29 +2,27 @@ using System.Collections.Concurrent;
 using System.Windows.Forms;
 using ZmkCompanion.Core;
 using ZmkCompanion.Features;
-using ZmkCompanion.Features.Widgets;
 using ZmkCompanion.UI;
 
 namespace ZmkCompanion;
 
 sealed class ZmkAppContext : ApplicationContext
 {
-    private readonly AppSettings       _settings;
-    private readonly BleService        _ble;
-    private readonly TrayIcon          _tray;
-    private readonly DisplayCompositor _compositor;
-    private readonly PipeServer        _pipe;
-    private readonly LiveState         _liveState = new();
-    private readonly PomodoroFeature   _pomodoro  = new();
+    private readonly AppSettings          _settings;
+    private readonly BleService           _ble;
+    private readonly TrayIcon             _tray;
+    private readonly CellGridCompositor   _compositor;
+    private readonly PipeServer           _pipe;
+    private readonly LiveState            _liveState = new();
+    private readonly PomodoroFeature      _pomodoro  = new();
 
     private readonly CancellationTokenSource _cts = new();
-    private CellGridTest? _cellGrid;
 
     // Pipe callbacks run on the thread pool; compositor/WinForms timers need STA.
     private readonly ConcurrentQueue<string> _textQueue = new();
     private System.Windows.Forms.Timer? _drainTimer;
 
-    // Canvas page cycling.
+    // Display page cycling.
     private int _activePage;
     private CancellationTokenSource? _pageCycleCts;
 
@@ -32,22 +30,18 @@ sealed class ZmkAppContext : ApplicationContext
     private System.Windows.Forms.Timer? _weatherTimer;
     private System.Windows.Forms.Timer? _sportsTimer;
     private System.Windows.Forms.Timer? _heartbeatTimer;
-    private System.Windows.Forms.Timer? _clockSyncTimer;
     private System.Windows.Forms.Timer? _connectionWatchdog;
 
-    // Tracks last pomodoro phase so tray only rebuilds on phase change, not every tick.
+    // Tracks last pomodoro phase so tray only rebuilds on phase change, not every second.
     private PomodoroPhase _lastTrayPhase = PomodoroPhase.Done;
 
     public ZmkAppContext()
     {
         DebugLog.Reset();
-        _settings = AppSettings.Load();
-        _ble      = new BleService();
-        _tray     = new TrayIcon(_ble);
-
-        _compositor    = new DisplayCompositor(_ble);
-        _tray.Compositor = _compositor;
-        LoadPage(0);
+        _settings   = AppSettings.Load();
+        _ble        = new BleService();
+        _tray       = new TrayIcon(_ble);
+        _compositor = new CellGridCompositor(_ble, _liveState);
 
         _pipe = new PipeServer();
 
@@ -56,10 +50,10 @@ sealed class ZmkAppContext : ApplicationContext
         _ble.BatteryLevelChanged    += OnBatteryLevelChanged;
         _ble.StatusChanged          += OnStatusChanged;
         _tray.ExitRequested         += OnExit;
-        _tray.CanvasEditorRequested += OnCanvasEditor;
+        _tray.CanvasEditorRequested += OnDisplayEditor;
         _tray.PomodoroToggleRequested += OnPomodoroToggle;
 
-        _pomodoro.StateChanged    += OnPomodoroStateChanged;
+        _pomodoro.StateChanged     += OnPomodoroStateChanged;
         _pomodoro.SessionCompleted += OnPomodoroCompleted;
 
         Application.Idle += OnFirstIdle;
@@ -103,31 +97,20 @@ sealed class ZmkAppContext : ApplicationContext
         _sportsTimer.Start();
         _ = RefreshSportsAsync();
 
-        RestartPageCycle();
-
         _heartbeatTimer = new System.Windows.Forms.Timer { Interval = 15_000 };
         _heartbeatTimer.Tick += (_, _) =>
         {
             if (!_ble.IsConnected) return;
-            _compositor.ForceRedraw();
+            _ = _compositor.ForceRedrawAsync();
         };
         _heartbeatTimer.Start();
-
-        _clockSyncTimer = new System.Windows.Forms.Timer { Interval = 60_000 };
-        _clockSyncTimer.Tick += (_, _) =>
-        {
-            if (!_ble.IsConnected) return;
-            DebugLog.Log($"clockSyncTimer tick now={DateTime.Now:HH:mm:ss.fff}");
-            _ = _ble.SendAsync(Protocol.BuildClock());
-        };
-        _clockSyncTimer.Start();
 
         _connectionWatchdog = new System.Windows.Forms.Timer { Interval = 10_000 };
         _connectionWatchdog.Tick += (_, _) =>
         {
-            bool healthy = _ble.IsConnected && _ble.HasBitmapChar;
+            bool healthy = _ble.IsConnected && _ble.HasCellGridChar;
             if (healthy || _reconnecting) return;
-            DebugLog.Log($"watchdog: unhealthy link (IsConnected={_ble.IsConnected} HasBitmapChar={_ble.HasBitmapChar}) — forcing reconnect");
+            DebugLog.Log($"watchdog: unhealthy link (IsConnected={_ble.IsConnected} HasCellGridChar={_ble.HasCellGridChar}) — forcing reconnect");
             _reconnecting = true;
             _ = ReconnectAsync();
         };
@@ -217,15 +200,9 @@ sealed class ZmkAppContext : ApplicationContext
         }
         else
         {
-            var wcfg = FindPomodoroWidgetConfig();
+            var wcfg = FindPomodoroConfig();
             if (wcfg == null) return;
-            _pomodoro.Start(new PomodoroConfig
-            {
-                WorkMin      = wcfg.WorkMin,
-                BreakMin     = wcfg.BreakMin,
-                Cycles       = wcfg.Cycles,
-                LongBreakMin = wcfg.LongBreakMin,
-            });
+            _pomodoro.Start(wcfg);
         }
     }
 
@@ -234,7 +211,6 @@ sealed class ZmkAppContext : ApplicationContext
         var (time, phase, bar, icon, cycle) = _pomodoro.GetDisplayState();
         _liveState.UpdatePomodoro(time, phase, bar, icon, cycle);
 
-        // Only rebuild the tray menu when the phase changes, not every second.
         if (_pomodoro.Phase != _lastTrayPhase)
         {
             _lastTrayPhase = _pomodoro.Phase;
@@ -251,8 +227,9 @@ sealed class ZmkAppContext : ApplicationContext
 
     private void UpdateTrayPomodoro()
     {
-        bool hasWidget = _settings.Pages.Any(p => p.Widgets.Any(w => w.Type == "pomodoro"));
-        _tray.HasPomodoroWidget = hasWidget;
+        bool hasPomodoro = _settings.DisplayPages.Any(p =>
+            p.Rows.Any(r => r.Template.Contains("{pomodoro.", StringComparison.OrdinalIgnoreCase)));
+        _tray.HasPomodoroWidget = hasPomodoro;
 
         if (_pomodoro.Phase != PomodoroPhase.Done)
         {
@@ -272,44 +249,28 @@ sealed class ZmkAppContext : ApplicationContext
         }
     }
 
-    private PomodoroWidgetConfig? FindPomodoroWidgetConfig()
+    private PomodoroConfig? FindPomodoroConfig()
     {
-        foreach (var page in _settings.Pages)
-            foreach (var w in page.Widgets)
-                if (w.Type == "pomodoro")
-                    return w.GetConfig<PomodoroWidgetConfig>();
+        foreach (var page in _settings.DisplayPages)
+            foreach (var row in page.Rows)
+                if (row.Template.Contains("{pomodoro.", StringComparison.OrdinalIgnoreCase))
+                    return new PomodoroConfig(); // default timings; editor sets them per-row
         return null;
     }
 
-    // ── Canvas pages ──────────────────────────────────────────────────────────
+    // ── Display pages ─────────────────────────────────────────────────────────
 
     private void LoadPage(int index)
     {
-        if (_settings.Pages.Count == 0) _settings.Pages.Add(new CanvasPage());
-        _activePage = Math.Clamp(index, 0, _settings.Pages.Count - 1);
-        var page = _settings.Pages[_activePage];
-        DebugLog.Log($"LoadPage({_activePage}) name='{page.Name}' cellGrid={page.CellGrid} widgets={page.Widgets.Count} " +
+        if (_settings.DisplayPages.Count == 0)
+            _settings.DisplayPages.Add(new CellGridPage());
+        _activePage = Math.Clamp(index, 0, _settings.DisplayPages.Count - 1);
+        var page = _settings.DisplayPages[_activePage];
+        DebugLog.Log($"LoadPage({_activePage}) name='{page.Name}' rows={page.Rows.Count} " +
                      $"connected={_ble.IsConnected} now={DateTime.Now:HH:mm:ss.fff}");
-
-        // Stop any running cell-grid clock; rebuild full-frame widgets regardless
-        // so they are ready when/if cell-grid mode is turned off.
-        _cellGrid?.Stop();
-        _compositor.Rebuild(page.Widgets.Select(CreateWidget));
-
         if (_ble.IsConnected)
-        {
-            if (page.CellGrid)
-                _ = StartCellGridAsync();
-            else
-                _compositor.StartAll();
-        }
+            _ = _compositor.LoadPageAsync(page);
         UpdateTrayPomodoro();
-    }
-
-    private async Task StartCellGridAsync()
-    {
-        _cellGrid ??= new CellGridTest(_ble, _compositor);
-        await _cellGrid.StartAsync();
     }
 
     private void RestartPageCycle()
@@ -317,8 +278,8 @@ sealed class ZmkAppContext : ApplicationContext
         _pageCycleCts?.Cancel();
         _pageCycleCts?.Dispose();
         _pageCycleCts = null;
-        DebugLog.Log($"RestartPageCycle: CyclePages={_settings.CyclePages} pageCount={_settings.Pages.Count}");
-        if (!_settings.CyclePages || _settings.Pages.Count < 2) return;
+        DebugLog.Log($"RestartPageCycle: CycleDisplayPages={_settings.CycleDisplayPages} pageCount={_settings.DisplayPages.Count}");
+        if (!_settings.CycleDisplayPages || _settings.DisplayPages.Count < 2) return;
 
         _pageCycleCts = new CancellationTokenSource();
         _ = RunPageCycleAsync(_pageCycleCts.Token);
@@ -329,14 +290,12 @@ sealed class ZmkAppContext : ApplicationContext
         DebugLog.Log("RunPageCycleAsync: started");
         while (!ct.IsCancellationRequested)
         {
-            var idleSw = System.Diagnostics.Stopwatch.StartNew();
-            await _compositor.WaitForIdleAsync();
-            int durationMs = Math.Max(2, _settings.Pages[_activePage].DurationSeconds) * 1000;
-            DebugLog.Log($"cycle: page {_activePage} idle after {idleSw.ElapsedMilliseconds}ms, dwelling {durationMs}ms");
+            int durationMs = Math.Max(2, _settings.DisplayPages[_activePage].DurationSeconds) * 1000;
+            DebugLog.Log($"cycle: page {_activePage} dwelling {durationMs}ms");
             try   { await Task.Delay(durationMs, ct); }
             catch (OperationCanceledException) { break; }
             if (ct.IsCancellationRequested) break;
-            int next = (_activePage + 1) % _settings.Pages.Count;
+            int next = (_activePage + 1) % _settings.DisplayPages.Count;
             DebugLog.Log($"cycle: switching page {_activePage} -> {next}");
             LoadPage(next);
         }
@@ -345,12 +304,7 @@ sealed class ZmkAppContext : ApplicationContext
 
     // ── BLE status events ─────────────────────────────────────────────────────
 
-    private void OnBatteryLevelChanged(byte level)
-    {
-        _liveState.UpdateBattery(level, false);
-        foreach (var w in _compositor.Widgets.OfType<BatteryWidget>())
-            w.Update(level, false);
-    }
+    private void OnBatteryLevelChanged(byte level) => _liveState.UpdateBattery(level, false);
 
     private void OnStatusChanged(byte status, byte bonds)
     {
@@ -358,57 +312,25 @@ sealed class ZmkAppContext : ApplicationContext
         int  profile  = (status >> 1) & 0x07;
         int  bondMask = bonds & 0x1F;
         _liveState.UpdateConnection(usb, profile, bondMask);
-        foreach (var w in _compositor.Widgets.OfType<ConnectionWidget>())
-            w.Update(usb, profile);
     }
 
-    // ── Canvas editor ─────────────────────────────────────────────────────────
+    // ── Display editor ────────────────────────────────────────────────────────
 
-    private void OnCanvasEditor()
+    private void OnDisplayEditor()
     {
-        var form = new CanvasEditorForm(_settings, _liveState, ApplyPages);
+        var form = new CellGridEditorForm(_settings, _liveState, ApplyDisplayPages);
         form.Show();
     }
 
-    internal void ApplyPages(List<CanvasPage> pages, bool cyclePages)
+    internal void ApplyDisplayPages(List<CellGridPage> pages, bool cycle)
     {
-        _settings.Pages      = pages;
-        _settings.CyclePages = cyclePages;
+        _settings.DisplayPages      = pages;
+        _settings.CycleDisplayPages = cycle;
         _settings.Save();
-        LoadPage(_activePage);
+        LoadPage(_activePage < pages.Count ? _activePage : 0);
         RestartPageCycle();
-        // Trigger immediate data refresh in case city/leagues changed.
         _ = RefreshWeatherAsync();
         _ = RefreshSportsAsync();
-    }
-
-    private IWidget CreateWidget(WidgetPlacement p)
-    {
-        var bounds = p.ToRectangle();
-        if (p.Type == "pomodoro")
-        {
-            var pcfg = p.GetConfig<PomodoroWidgetConfig>();
-            return new LabelWidget(_liveState)
-            {
-                Bounds = bounds,
-                Config = new LabelConfig
-                {
-                    Template    = pcfg.Template,
-                    Size        = pcfg.Size,
-                    Bold        = pcfg.Bold,
-                    UseNerdFont = pcfg.UseNerdFont,
-                    Align       = pcfg.Align,
-                },
-            };
-        }
-        return p.Type switch
-        {
-            "label"      => new LabelWidget(_liveState)      { Bounds = bounds, Config = p.GetConfig<LabelConfig>() },
-            "profilebar" => new ProfileBarWidget(_liveState) { Bounds = bounds, Config = p.GetConfig<ProfileBarConfig>() },
-            "battery"    => new BatteryWidget    { Bounds = bounds, Config = p.GetConfig<BatteryConfig>() },
-            "connection" => new ConnectionWidget { Bounds = bounds, Config = p.GetConfig<ConnectionConfig>() },
-            _            => new ClockWidget      { Bounds = bounds, Config = p.GetConfig<ClockConfig>() },
-        };
     }
 
     // ── Connection lifecycle ──────────────────────────────────────────────────
@@ -427,12 +349,9 @@ sealed class ZmkAppContext : ApplicationContext
     {
         DebugLog.Log($"OnConnected: {deviceName} now={DateTime.Now:HH:mm:ss.fff}");
         _tray.SetConnected(deviceName);
-        var page = _settings.Pages.Count > _activePage ? _settings.Pages[_activePage] : null;
-        if (page?.CellGrid == true)
-            _ = StartCellGridAsync();
-        else
-            _compositor.StartAll();
         _ = _ble.SendAsync(Protocol.BuildClock());
+        LoadPage(_activePage);
+        RestartPageCycle();
     }
 
     private bool _reconnecting;
@@ -440,8 +359,7 @@ sealed class ZmkAppContext : ApplicationContext
     private void OnDisconnected()
     {
         DebugLog.Log($"OnDisconnected now={DateTime.Now:HH:mm:ss.fff}");
-        _cellGrid?.Stop();
-        _compositor.StopAll();
+        _compositor.Stop();
         _pomodoro.Stop();
         _tray.SetDisconnected();
 
@@ -478,13 +396,10 @@ sealed class ZmkAppContext : ApplicationContext
             _sportsTimer?.Dispose();
             _heartbeatTimer?.Stop();
             _heartbeatTimer?.Dispose();
-            _clockSyncTimer?.Stop();
-            _clockSyncTimer?.Dispose();
             _connectionWatchdog?.Stop();
             _connectionWatchdog?.Dispose();
             _pipe.Dispose();
             _pomodoro.Dispose();
-            _cellGrid?.Dispose();
             _compositor.Dispose();
             _tray.Dispose();
             _ble.Dispose();

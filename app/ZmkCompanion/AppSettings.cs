@@ -17,16 +17,10 @@ sealed class AppSettings
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    // Canvas pages — each page is an independent set of widget placements.
-    // When CyclePages is true and there is more than one page, AppContext
-    // rotates through them using each page's DurationSeconds.
-    public List<CanvasPage> Pages       { get; set; } = [new CanvasPage { Widgets = [new WidgetPlacement()] }];
-    public bool             CyclePages  { get; set; } = false;
-
-    // Legacy single-page layout — kept only so old settings.json files can be
-    // migrated into Pages on load. Not written after migration.
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public List<WidgetPlacement>? Canvas { get; set; }
+    // Cell-grid display pages — primary display model (0x1527).
+    // Each page is a sequence of rows (tier + template) rendered glyph-by-glyph.
+    public List<CellGridPage> DisplayPages      { get; set; } = [DefaultDisplayPage()];
+    public bool               CycleDisplayPages { get; set; } = false;
 
     // Weather data source — city name for API queries (blank = IP geolocation).
     public string City { get; set; } = "";
@@ -35,11 +29,26 @@ sealed class AppSettings
     // Team abbreviation filter for sports (e.g. "KC", "FRA")
     public string SportsTeam { get; set; } = "";
 
-    // Kept for migration from older settings; not written after migration.
+    // Legacy fields — not written after migration.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<CanvasPage>? Pages { get; set; }
+    public bool CyclePages { get; set; } = false;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<WidgetPlacement>? Canvas { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? NflTeam { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? SportEspnPath { get; set; }
+
+    private static CellGridPage DefaultDisplayPage() => new()
+    {
+        Name = "Reloj",
+        Rows =
+        [
+            new CellGridRow { TierId = 4, Template = "{time}",  Align = "center" },
+            new CellGridRow { TierId = 0, Template = "{date}",  Align = "center" },
+        ],
+    };
 
     public static AppSettings Load()
     {
@@ -49,24 +58,22 @@ sealed class AppSettings
             {
                 var json = File.ReadAllText(_path);
                 var s = JsonSerializer.Deserialize<AppSettings>(json, _json) ?? new AppSettings();
-                // Migrate NflTeam → SportsTeam
+                // Migrate legacy fields
                 if (string.IsNullOrEmpty(s.SportsTeam) && !string.IsNullOrEmpty(s.NflTeam))
                     s.SportsTeam = s.NflTeam;
-                // Migrate SportEspnPath (single) → SelectedLeagues (list)
+                s.NflTeam = null;
                 if ((s.SelectedLeagues == null || s.SelectedLeagues.Count == 0) &&
                     !string.IsNullOrEmpty(s.SportEspnPath))
                     s.SelectedLeagues = [s.SportEspnPath];
                 if (s.SelectedLeagues == null || s.SelectedLeagues.Count == 0)
                     s.SelectedLeagues = ["football/nfl"];
-                // Clear legacy field so it isn't written back
                 s.SportEspnPath = null;
-                // Migrate single-page Canvas → Pages (old files only; Canvas is never
-                // written after migration, so non-empty here means a pre-Pages file).
-                if (s.Canvas is { Count: > 0 } oldCanvas)
-                    s.Pages = [new CanvasPage { Name = "Page 1", Widgets = oldCanvas }];
+                // Clear legacy canvas fields
                 s.Canvas = null;
-                if (s.Pages == null || s.Pages.Count == 0)
-                    s.Pages = [new CanvasPage { Widgets = [new WidgetPlacement()] }];
+                s.Pages  = null;
+                // Ensure at least one display page
+                if (s.DisplayPages == null || s.DisplayPages.Count == 0)
+                    s.DisplayPages = [DefaultDisplayPage()];
                 return s;
             }
         }
