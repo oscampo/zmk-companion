@@ -90,8 +90,14 @@ sealed class DisplayCompositor : IDisposable
     private bool _renderInFlight;
     private bool _renderQueued;
 
+    // While true, all full-frame (0x1525) sends are suppressed — including
+    // heartbeat ForceRedraw. Used by the cell-grid A/B test so the two
+    // protocols don't fight over the same firmware canvas buffer.
+    public bool Paused { get; set; }
+
     private void OnInvalidated()
     {
+        if (Paused) return;
         if (_renderInFlight)
         {
             DebugLog.Log("OnInvalidated: render already in flight — queued");

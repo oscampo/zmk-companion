@@ -10,10 +10,11 @@ namespace ZmkCompanion.Core;
 // Works with already-paired devices (HID profile) — no re-pairing needed.
 sealed class BleService : IDisposable
 {
-    public static readonly Guid ServiceUuid     = new("00001523-1212-efde-1523-785feabcd123");
-    public static readonly Guid CharUuid        = new("00001524-1212-efde-1523-785feabcd123");
-    public static readonly Guid BitmapCharUuid  = new("00001525-1212-efde-1523-785feabcd123");
-    public static readonly Guid StatusCharUuid  = new("00001526-1212-efde-1523-785feabcd123");
+    public static readonly Guid ServiceUuid      = new("00001523-1212-efde-1523-785feabcd123");
+    public static readonly Guid CharUuid         = new("00001524-1212-efde-1523-785feabcd123");
+    public static readonly Guid BitmapCharUuid   = new("00001525-1212-efde-1523-785feabcd123");
+    public static readonly Guid StatusCharUuid   = new("00001526-1212-efde-1523-785feabcd123");
+    public static readonly Guid CellGridCharUuid = new("00001527-1212-efde-1523-785feabcd123");
 
     private static readonly string[] KeyboardNames = ["zmk", "corne", "eyelash"];
 
@@ -27,8 +28,9 @@ sealed class BleService : IDisposable
     //   byte 1 — bits[4:0] = bond mask (bit i = profile i+1 has a paired device); 0xFF if absent (old firmware)
     public event Action<byte, byte>?   StatusChanged;
 
-    public bool IsConnected   => _device?.ConnectionStatus == BluetoothConnectionStatus.Connected;
-    public bool HasBitmapChar => _bitmapCharacteristic is not null;
+    public bool IsConnected     => _device?.ConnectionStatus == BluetoothConnectionStatus.Connected;
+    public bool HasBitmapChar   => _bitmapCharacteristic is not null;
+    public bool HasCellGridChar => _cellGridCharacteristic is not null;
     public string? DeviceName { get; private set; }
 
     // Connection-stability diagnostics: a link that drops and reconnects
@@ -43,6 +45,7 @@ sealed class BleService : IDisposable
     private GattSession?        _session;
     private GattCharacteristic? _characteristic;
     private GattCharacteristic? _bitmapCharacteristic;
+    private GattCharacteristic? _cellGridCharacteristic;
     private GattCharacteristic? _batteryCharacteristic;
     private GattCharacteristic? _statusCharacteristic;
     private SynchronizationContext _uiContext = SynchronizationContext.Current
@@ -120,6 +123,12 @@ sealed class BleService : IDisposable
             .GetCharacteristicsForUuidAsync(BitmapCharUuid, BluetoothCacheMode.Uncached).AsTask(ct);
         if (bmpResult.Status == GattCommunicationStatus.Success && bmpResult.Characteristics.Count > 0)
             _bitmapCharacteristic = bmpResult.Characteristics[0];
+
+        // 0x1527 — cell-grid display characteristic (newest firmware); optional.
+        var cellResult = await service
+            .GetCharacteristicsForUuidAsync(CellGridCharUuid, BluetoothCacheMode.Uncached).AsTask(ct);
+        if (cellResult.Status == GattCommunicationStatus.Success && cellResult.Characteristics.Count > 0)
+            _cellGridCharacteristic = cellResult.Characteristics[0];
 
         // Need at least one usable characteristic; otherwise it's the wrong device.
         if (_characteristic is null && _bitmapCharacteristic is null)
@@ -326,6 +335,40 @@ sealed class BleService : IDisposable
         return true;
     }
 
+    // ── Cell-grid protocol (0x1527, docs/cell_grid_protocol.md) ──────────────
+
+    public string? LastCellGridError { get; private set; }
+
+    // Sends one protocol message (LAYOUT/CELL/CLEAR). Always WriteWithResponse:
+    // every message is small enough for a single acked write at MTU 65, and the
+    // whole point of the protocol is that delivery failures are visible.
+    // Must be called from the UI (STA) thread.
+    public async Task<bool> SendCellGridAsync(byte[] message)
+    {
+        var ch = _cellGridCharacteristic;
+        if (ch is null) { LastCellGridError = "0x1527 not found — firmware too old?"; return false; }
+
+        var dw = new DataWriter();
+        dw.WriteBytes(message);
+        try
+        {
+            var result = await ch.WriteValueWithResultAsync(
+                dw.DetachBuffer(), GattWriteOption.WriteWithResponse);
+            if (result.Status != GattCommunicationStatus.Success)
+            {
+                LastCellGridError = $"msg 0x{message[0]:X2} len={message.Length} status={result.Status} proto={result.ProtocolError}";
+                return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            LastCellGridError = $"msg 0x{message[0]:X2} ex={ex.Message}";
+            return false;
+        }
+        LastCellGridError = null;
+        return true;
+    }
+
     // ── Connection events ─────────────────────────────────────────────────────
 
     private void OnConnectionStatusChanged(BluetoothLEDevice sender, object args)
@@ -351,9 +394,10 @@ sealed class BleService : IDisposable
             _device = null;
         }
         _session?.Dispose();
-        _session              = null;
-        _characteristic       = null;
-        _bitmapCharacteristic = null;
+        _session                = null;
+        _characteristic         = null;
+        _bitmapCharacteristic   = null;
+        _cellGridCharacteristic = null;
 
         if (_batteryCharacteristic is not null)
         {

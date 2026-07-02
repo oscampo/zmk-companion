@@ -189,9 +189,26 @@ sealed class TrayIcon : IDisposable
 
         strip.Items.Add(new ToolStripSeparator());
         strip.Items.Add(new ToolStripMenuItem("Diagnostics…", null, (_, _) => OnDiagnostics()));
+        strip.Items.Add(new ToolStripMenuItem(
+            _cellGridTest?.Running == true ? "Cell Grid Test  [running — stop]" : "Cell Grid Test (A/B)",
+            null, (_, _) => OnCellGridTest())
+            { Enabled = connected && _ble.HasCellGridChar || _cellGridTest?.Running == true });
         strip.Items.Add(new ToolStripMenuItem("Open Debug Log", null, (_, _) => OnOpenDebugLog()));
         strip.Items.Add(new ToolStripMenuItem("Settings…", null, (_, _) => OnSettings()));
         strip.Items.Add(new ToolStripMenuItem("Exit", null, (_, _) => ExitRequested?.Invoke()));
+    }
+
+    private CellGridTest? _cellGridTest;
+
+    private async void OnCellGridTest()
+    {
+        if (Compositor is null) return;
+        _cellGridTest ??= new CellGridTest(_ble, Compositor);
+        if (_cellGridTest.Running)
+            _cellGridTest.Stop();
+        else
+            await _cellGridTest.StartAsync();
+        RebuildMenu();
     }
 
     private void OnOpenDebugLog()
@@ -227,6 +244,9 @@ sealed class TrayIcon : IDisposable
               $"Last frame send time: {_ble.LastSendMs} ms\n" +
               $"Last BLE error: {_ble.LastBitmapError ?? "(none)"}\n" +
               $"Last render error: {Compositor?.LastRenderError ?? "(none)"}\n" +
+              $"Cell grid (0x1527): {(_ble.HasCellGridChar ? "available" : "not present")}" +
+              $"{(_cellGridTest?.Running == true ? " — TEST RUNNING" : "")}\n" +
+              $"Last cell-grid error: {_ble.LastCellGridError ?? "(none)"}\n" +
               connLine
             : $"Not connected.\n{connLine}";
         MessageBox.Show(msg, "ZMK Companion — Diagnostics", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -414,6 +434,7 @@ sealed class TrayIcon : IDisposable
         _sportsCts?.Dispose();
         _cycleCts?.Cancel();
         _cycleCts?.Dispose();
+        _cellGridTest?.Dispose();
         _pomodoro.Dispose();
         _notify.Visible = false;
         _notify.Dispose();
