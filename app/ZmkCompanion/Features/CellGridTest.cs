@@ -47,24 +47,47 @@ sealed class CellGridTest : IDisposable
                && await SendPageAsync(full: true);
         DebugLog.Log($"CellGridTest: initial paint ok={ok} err={_ble.LastCellGridError ?? "(none)"}");
 
-        // Re-render on each minute boundary, then every 60s. Every 10th tick
-        // resends ALL cells regardless of diff state: a lost firmware-side
-        // area invalidation (observed once on hardware: a units digit stuck
-        // on the previous glyph for one minute despite an ATT ack) leaves a
+        // Re-render on each minute boundary. Every 10th tick resends ALL
+        // cells regardless of diff state: a lost firmware-side area
+        // invalidation (observed once on hardware: a units digit stuck on
+        // the previous glyph for one minute despite an ATT ack) leaves a
         // stale cell that diff-only updates would never touch again if its
         // content stopped changing. The periodic full pass bounds any such
         // staleness to ~10 minutes at a cost of a handful of tiny writes.
-        int msUntilNext = (60 - DateTime.Now.Second) * 1000 - DateTime.Now.Millisecond;
-        _timer = new System.Windows.Forms.Timer { Interval = Math.Max(1, msUntilNext) };
+        //
+        // IMPORTANT: the interval is recomputed from the wall clock on
+        // EVERY tick (see ScheduleNextTick), not fixed at 60_000ms after
+        // the first alignment. A second hardware run showed exactly why
+        // that matters: System.Windows.Forms.Timer has no guaranteed
+        // sub-second precision, and a single tick that fires a couple of
+        // seconds early (observed at 06:26:58 instead of 06:27:00) used to
+        // permanently shift every subsequent tick to that same offset,
+        // since "always add 60000ms" never looks at the real clock again.
+        // The visible symptom was a rock-steady ~1-minute-behind display
+        // that "transitioned instantly" each minute (because the tick was
+        // firing 1-2s before the real rollover, so the correct value for
+        // the *previous* minute kept showing for nearly a full minute
+        // before the next early tick caught up) — a scheduling bug, not a
+        // BLE or firmware one. Recomputing every tick means any single
+        // tick's jitter is bounded to well under a second and never
+        // accumulates.
+        _timer = new System.Windows.Forms.Timer();
         int tick = 0;
         _timer.Tick += async (_, _) =>
         {
-            _timer!.Interval = 60_000;
             bool fullPass = ++tick % 10 == 0;
             bool sent = await SendPageAsync(full: fullPass);
             DebugLog.Log($"CellGridTest: tick ok={sent} full={fullPass} err={_ble.LastCellGridError ?? "(none)"}");
+            ScheduleNextTick();
         };
+        ScheduleNextTick();
         _timer.Start();
+    }
+
+    private void ScheduleNextTick()
+    {
+        int msUntilNext = (60 - DateTime.Now.Second) * 1000 - DateTime.Now.Millisecond;
+        _timer!.Interval = Math.Max(1, msUntilNext);
     }
 
     public void Stop()

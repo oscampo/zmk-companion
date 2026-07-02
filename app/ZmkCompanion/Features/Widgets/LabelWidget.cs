@@ -37,18 +37,34 @@ sealed class LabelWidget : IWidget
         }
     }
 
+    // Recomputes the interval from the wall clock on EVERY tick instead of
+    // fixing it at 60_000ms after the first alignment. System.Windows.Forms.Timer
+    // has no guaranteed sub-second precision — a single tick firing even a
+    // couple of seconds early permanently shifts every subsequent tick to
+    // that offset if you just keep adding 60000ms, since nothing ever looks
+    // at the real clock again. Confirmed on hardware: this produced a
+    // rock-steady ~1-minute-behind clock that "jumped" in sync with the real
+    // minute change (because the tick fired 1-2s before the true rollover,
+    // so the previous minute's value kept showing almost the whole next
+    // minute) — a scheduling bug, not a BLE/render/firmware one.
     private void StartClockTimer()
     {
-        int msUntilNext = (60 - DateTime.Now.Second) * 1000 - DateTime.Now.Millisecond;
-        DebugLog.Log($"StartClockTimer: msUntilNext={msUntilNext}");
-        _clockTimer = new System.Windows.Forms.Timer { Interval = Math.Max(1, msUntilNext) };
+        _clockTimer = new System.Windows.Forms.Timer();
         _clockTimer.Tick += (_, _) =>
         {
             DebugLog.Log($"clockTimer TICK now={DateTime.Now:HH:mm:ss.fff}");
-            _clockTimer!.Interval = 60_000;
             Invalidated?.Invoke();
+            ScheduleNextClockTick();
         };
+        ScheduleNextClockTick();
         _clockTimer.Start();
+    }
+
+    private void ScheduleNextClockTick()
+    {
+        int msUntilNext = (60 - DateTime.Now.Second) * 1000 - DateTime.Now.Millisecond;
+        DebugLog.Log($"ScheduleNextClockTick: msUntilNext={msUntilNext}");
+        _clockTimer!.Interval = Math.Max(1, msUntilNext);
     }
 
     public void Stop()
