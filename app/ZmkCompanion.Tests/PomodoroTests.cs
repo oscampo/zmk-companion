@@ -75,7 +75,7 @@ public class PomodoroConfigTests
     [Fact]
     public void InitialPhase_IsDone()
     {
-        var feature = new PomodoroFeature(null!); // null BleService — not called in ctor
+        var feature = new PomodoroFeature();
         Assert.Equal(PomodoroPhase.Done, feature.Phase);
     }
 
