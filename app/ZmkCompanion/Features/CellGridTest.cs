@@ -75,10 +75,29 @@ sealed class CellGridTest : IDisposable
         int tick = 0;
         _timer.Tick += async (_, _) =>
         {
+            // MUST stop the timer synchronously before the first await. The
+            // interval scheduled right at a :00 boundary is intentionally
+            // tiny (a handful of ms) so the tick lands as close to the real
+            // second as possible — but that also means if we leave the
+            // timer running, Windows keeps posting WM_TIMER at that same
+            // tiny interval for as long as this async handler is suspended
+            // awaiting BLE writes, and WinForms Timer does NOT wait for a
+            // previous async Tick handler to finish before dispatching the
+            // next one. Confirmed on hardware: this produced a storm of
+            // 150+ overlapping SendPageAsync calls in ~5 seconds right at
+            // the 07:00:00 boundary, racing each other and writing digit
+            // cells out of order — the visible symptom was a transient
+            // "7:09" ghost value during the 6:59->7:00 transition. Stopping
+            // here guarantees no reentrant tick can fire until we
+            // explicitly restart below, once the send has actually
+            // finished and the next interval is computed from a fresh
+            // DateTime.Now.
+            _timer!.Stop();
             bool fullPass = ++tick % 10 == 0;
             bool sent = await SendPageAsync(full: fullPass);
             DebugLog.Log($"CellGridTest: tick ok={sent} full={fullPass} err={_ble.LastCellGridError ?? "(none)"}");
             ScheduleNextTick();
+            _timer.Start();
         };
         ScheduleNextTick();
         _timer.Start();
@@ -87,7 +106,11 @@ sealed class CellGridTest : IDisposable
     private void ScheduleNextTick()
     {
         int msUntilNext = (60 - DateTime.Now.Second) * 1000 - DateTime.Now.Millisecond;
-        _timer!.Interval = Math.Max(1, msUntilNext);
+        // Floor at 250ms rather than 1ms: with the Stop()/Start() guard above
+        // an overlapping fire is already impossible, but a near-zero interval
+        // computed right at the rollover instant would still cause back-to-back
+        // sequential passes within the same second for no benefit.
+        _timer!.Interval = Math.Max(250, msUntilNext);
     }
 
     public void Stop()

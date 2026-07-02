@@ -64,7 +64,12 @@ sealed class LabelWidget : IWidget
     {
         int msUntilNext = (60 - DateTime.Now.Second) * 1000 - DateTime.Now.Millisecond;
         DebugLog.Log($"ScheduleNextClockTick: msUntilNext={msUntilNext}");
-        _clockTimer!.Interval = Math.Max(1, msUntilNext);
+        // Floor at 250ms, matching CellGridTest's ScheduleNextTick — this
+        // handler is synchronous (Invalidated?.Invoke() doesn't await
+        // anything), so it can't reproduce the overlapping-async-tick storm
+        // seen in CellGridTest, but a near-zero interval right at the
+        // rollover instant is still pointless jitter worth avoiding.
+        _clockTimer!.Interval = Math.Max(250, msUntilNext);
     }
 
     public void Stop()
