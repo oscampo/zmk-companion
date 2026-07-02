@@ -51,6 +51,7 @@ sealed class CanvasEditorForm : Form
     private readonly TextBox       _txtPageName;
     private readonly CheckBox      _chkCyclePages;
     private readonly NumericUpDown _nudPageDur;
+    private readonly CheckBox      _chkCellGrid;
     private          bool          _suppressPageUi;
 
     // ── Construction ─────────────────────────────────────────────────────────
@@ -128,6 +129,14 @@ sealed class CanvasEditorForm : Form
         };
         grpPages.Controls.Add(_nudPageDur);
         grpPages.Controls.Add(new Label { Text = "s", Location = new Point(196, 76), Size = new Size(12, 18) });
+
+        _chkCellGrid = new CheckBox { Text = "Cell Grid Clock", Location = new Point(216, 74), Size = new Size(120, 22) };
+        _chkCellGrid.CheckedChanged += (_, _) =>
+        {
+            if (_suppressPageUi || _pageIndex < 0 || _pageIndex >= _pages.Count) return;
+            _pages[_pageIndex].CellGrid = _chkCellGrid.Checked;
+        };
+        grpPages.Controls.Add(_chkCellGrid);
 
         Controls.Add(grpPages);
 
@@ -277,8 +286,9 @@ sealed class CanvasEditorForm : Form
 
         _suppressPageUi = true;
         RefreshPageCombo();
-        _txtPageName.Text = _pages[index].Name;
-        _nudPageDur.Value = Math.Clamp(_pages[index].DurationSeconds, (int)_nudPageDur.Minimum, (int)_nudPageDur.Maximum);
+        _txtPageName.Text    = _pages[index].Name;
+        _nudPageDur.Value    = Math.Clamp(_pages[index].DurationSeconds, (int)_nudPageDur.Minimum, (int)_nudPageDur.Maximum);
+        _chkCellGrid.Checked = _pages[index].CellGrid;
         _suppressPageUi = false;
 
         RefreshWidgetList();

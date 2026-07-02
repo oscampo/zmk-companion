@@ -18,17 +18,27 @@ sealed class ClockWidget : IWidget
     {
         Stop();
         Invalidated?.Invoke();
-        // First tick fires at the next minute boundary; subsequent ticks every 60s.
-        int msUntilNextMinute = (60 - DateTime.Now.Second) * 1000 - DateTime.Now.Millisecond;
-        _timer = new System.Windows.Forms.Timer { Interval = Math.Max(1, msUntilNextMinute) };
+        _timer = new System.Windows.Forms.Timer();
         _timer.Tick += OnTick;
+        ScheduleNextTick(DateTime.Now);
         _timer.Start();
     }
 
     private void OnTick(object? sender, EventArgs e)
     {
-        _timer!.Interval = 60_000;
+        var tickTime = DateTime.Now;
+        _timer!.Stop();
         Invalidated?.Invoke();
+        ScheduleNextTick(tickTime);
+        _timer.Start();
+    }
+
+    // Recomputed from wall clock on every tick so any single tick's jitter
+    // never accumulates into a permanently drifted display.
+    private void ScheduleNextTick(DateTime tickTime)
+    {
+        int ms = (60 - tickTime.Second) * 1000 - tickTime.Millisecond;
+        _timer!.Interval = Math.Max(250, ms);
     }
 
     public void Stop()

@@ -18,6 +18,7 @@ sealed class ZmkAppContext : ApplicationContext
     private readonly PomodoroFeature   _pomodoro  = new();
 
     private readonly CancellationTokenSource _cts = new();
+    private CellGridTest? _cellGrid;
 
     // Pipe callbacks run on the thread pool; compositor/WinForms timers need STA.
     private readonly ConcurrentQueue<string> _textQueue = new();
@@ -287,11 +288,28 @@ sealed class ZmkAppContext : ApplicationContext
         if (_settings.Pages.Count == 0) _settings.Pages.Add(new CanvasPage());
         _activePage = Math.Clamp(index, 0, _settings.Pages.Count - 1);
         var page = _settings.Pages[_activePage];
-        DebugLog.Log($"LoadPage({_activePage}) name='{page.Name}' widgets={page.Widgets.Count} " +
+        DebugLog.Log($"LoadPage({_activePage}) name='{page.Name}' cellGrid={page.CellGrid} widgets={page.Widgets.Count} " +
                      $"connected={_ble.IsConnected} now={DateTime.Now:HH:mm:ss.fff}");
+
+        // Stop any running cell-grid clock; rebuild full-frame widgets regardless
+        // so they are ready when/if cell-grid mode is turned off.
+        _cellGrid?.Stop();
         _compositor.Rebuild(page.Widgets.Select(CreateWidget));
-        if (_ble.IsConnected) _compositor.StartAll();
+
+        if (_ble.IsConnected)
+        {
+            if (page.CellGrid)
+                _ = StartCellGridAsync();
+            else
+                _compositor.StartAll();
+        }
         UpdateTrayPomodoro();
+    }
+
+    private async Task StartCellGridAsync()
+    {
+        _cellGrid ??= new CellGridTest(_ble, _compositor);
+        await _cellGrid.StartAsync();
     }
 
     private void RestartPageCycle()
@@ -409,7 +427,11 @@ sealed class ZmkAppContext : ApplicationContext
     {
         DebugLog.Log($"OnConnected: {deviceName} now={DateTime.Now:HH:mm:ss.fff}");
         _tray.SetConnected(deviceName);
-        _compositor.StartAll();
+        var page = _settings.Pages.Count > _activePage ? _settings.Pages[_activePage] : null;
+        if (page?.CellGrid == true)
+            _ = StartCellGridAsync();
+        else
+            _compositor.StartAll();
         _ = _ble.SendAsync(Protocol.BuildClock());
     }
 
@@ -418,6 +440,7 @@ sealed class ZmkAppContext : ApplicationContext
     private void OnDisconnected()
     {
         DebugLog.Log($"OnDisconnected now={DateTime.Now:HH:mm:ss.fff}");
+        _cellGrid?.Stop();
         _compositor.StopAll();
         _pomodoro.Stop();
         _tray.SetDisconnected();
@@ -461,6 +484,7 @@ sealed class ZmkAppContext : ApplicationContext
             _connectionWatchdog?.Dispose();
             _pipe.Dispose();
             _pomodoro.Dispose();
+            _cellGrid?.Dispose();
             _compositor.Dispose();
             _tray.Dispose();
             _ble.Dispose();
