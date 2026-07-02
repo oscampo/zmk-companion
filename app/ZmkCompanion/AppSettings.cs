@@ -26,8 +26,9 @@ sealed class AppSettings
     public string City { get; set; } = "";
     // Selected leagues as ESPN paths, e.g. ["football/nfl", "soccer/eng.1"]
     public List<string> SelectedLeagues { get; set; } = ["football/nfl"];
-    // Team abbreviation filter for sports (e.g. "KC", "FRA")
-    public string SportsTeam { get; set; } = "";
+    // Per-league team abbreviation filter keyed by ESPN path, e.g.
+    // {"football/nfl": "KC", "soccer/fifa.cwc": "COL"}
+    public Dictionary<string, string> SportsTeams { get; set; } = new();
 
     // Legacy fields — not written after migration.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -39,6 +40,8 @@ sealed class AppSettings
     public string? NflTeam { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? SportEspnPath { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SportsTeam { get; set; } // migrated → SportsTeams
 
     private static CellGridPage DefaultDisplayPage() => new()
     {
@@ -58,10 +61,15 @@ sealed class AppSettings
             {
                 var json = File.ReadAllText(_path);
                 var s = JsonSerializer.Deserialize<AppSettings>(json, _json) ?? new AppSettings();
-                // Migrate legacy fields
+                // Migrate NflTeam → SportsTeam (first pass)
                 if (string.IsNullOrEmpty(s.SportsTeam) && !string.IsNullOrEmpty(s.NflTeam))
                     s.SportsTeam = s.NflTeam;
                 s.NflTeam = null;
+                // Migrate SportsTeam → SportsTeams (per-league dict)
+                if (!string.IsNullOrEmpty(s.SportsTeam) && s.SportsTeams.Count == 0)
+                    foreach (var path in s.SelectedLeagues)
+                        s.SportsTeams[path] = s.SportsTeam;
+                s.SportsTeam = null;
                 if ((s.SelectedLeagues == null || s.SelectedLeagues.Count == 0) &&
                     !string.IsNullOrEmpty(s.SportEspnPath))
                     s.SelectedLeagues = [s.SportEspnPath];

@@ -50,10 +50,12 @@ sealed class CellGridEditorForm : Form
 
     // Data sources
     private readonly TextBox       _txtCity;
-    private readonly TextBox       _txtTeam;
-    private readonly Label         _lblLeagues;
     private readonly Label         _lblWeatherStatus;
+    private readonly Panel         _teamsPanel;
+    private readonly Dictionary<string, TextBox> _teamBoxes = new();
     private          List<string>  _editLeagues;
+
+    private const int DeportesCategory = 2;
 
     // Binding catalog — category → list of (label, token)
     private static readonly (string Category, (string Label, string Token)[] Items)[] BindingCatalog =
@@ -73,21 +75,8 @@ sealed class CellGridEditorForm : Form
             ("Temperatura",          "{weather.temp}"),
             ("Ciudad clima",         "{weather.city}"),
         ]),
-        ("Deportes", [
-            ("Partido (resumen)",    "{sports}"),
-            ("Equipo",               "{sports.team}"),
-            ("Marcador en juego",    "{sports.game}"),
-            ("Estado (icono)",       "{sports.marker}"),
-            ("Tiempo en juego",      "{sports.time}"),
-            ("Liga",                 "{sports.league}"),
-            // Último resultado
-            ("Último marcador",      "{sports.last_game}"),
-            ("Último (final icono)", "{sports.last_marker}"),
-            // Próximo partido
-            ("Próx. partido",        "{sports.next_game}"),
-            ("Próx. fecha",          "{sports.next_date}"),
-            ("Próx. hora",           "{sports.next_gametime}"),
-        ]),
+        // Index 2 = DeportesCategory — populated dynamically in PopulateBindings/BuildDeportesItems
+        ("Deportes", []),
         ("Pomodoro", [
             ("Tiempo pomodoro",      "{pomodoro.time}"),
             ("Fase",                 "{pomodoro.phase}"),
@@ -123,7 +112,7 @@ sealed class CellGridEditorForm : Form
         FormBorderStyle = FormBorderStyle.FixedSingle;
         StartPosition   = FormStartPosition.CenterScreen;
         MaximizeBox     = false;
-        ClientSize      = new Size(640, 580);
+        ClientSize      = new Size(640, 622);
 
         // ── RIGHT: preview ────────────────────────────────────────────────────
         var previewBox = new GroupBox
@@ -294,7 +283,7 @@ sealed class CellGridEditorForm : Form
         Controls.Add(grpRows);
 
         // ── LEFT: Data Sources group ──────────────────────────────────────────
-        var grpData = new GroupBox { Text = "Fuentes de datos", Location = new Point(6, 446), Size = new Size(406, 96) };
+        var grpData = new GroupBox { Text = "Fuentes de datos", Location = new Point(6, 446), Size = new Size(406, 138) };
 
         grpData.Controls.Add(new Label { Text = "Ciudad (clima):", Location = new Point(6, 22), Size = new Size(90, 18) });
         _txtCity = new TextBox { Text = settings.City, Location = new Point(100, 19), Size = new Size(100, 23) };
@@ -314,32 +303,33 @@ sealed class CellGridEditorForm : Form
         };
         grpData.Controls.Add(_lblWeatherStatus);
 
-        grpData.Controls.Add(new Label { Text = "Equipo:", Location = new Point(6, 52), Size = new Size(50, 18) });
-        _txtTeam = new TextBox { Text = settings.SportsTeam, Location = new Point(60, 49), Size = new Size(60, 23) };
-        grpData.Controls.Add(_txtTeam);
-
-        grpData.Controls.Add(new Label { Text = "Ligas:", Location = new Point(134, 52), Size = new Size(40, 18) });
-        _lblLeagues = new Label { Text = FormatLeagueLabel(_editLeagues), Location = new Point(176, 52),
-                                  Size = new Size(160, 18), AutoSize = false };
-        grpData.Controls.Add(_lblLeagues);
-
-        var btnLeagues = new Button { Text = "Editar…", Location = new Point(340, 49), Size = new Size(56, 24) };
+        grpData.Controls.Add(new Label { Text = "Ligas y equipos:", Location = new Point(6, 52), Size = new Size(100, 18) });
+        var btnLeagues = new Button { Text = "Editar ligas…", Location = new Point(288, 49), Size = new Size(110, 24) };
         btnLeagues.Click += (_, _) =>
         {
             using var dlg = new LeaguePickerDialog(_editLeagues);
             if (dlg.ShowDialog(this) == DialogResult.OK)
             {
-                _editLeagues     = dlg.SelectedPaths.ToList();
-                _lblLeagues.Text = FormatLeagueLabel(_editLeagues);
+                _editLeagues = dlg.SelectedPaths.ToList();
+                RebuildTeamInputs();
+                PopulateBindings(_cmbBindCategory.SelectedIndex);
             }
         };
         grpData.Controls.Add(btnLeagues);
+
+        _teamsPanel = new Panel
+        {
+            Location   = new Point(6, 72),
+            Size       = new Size(390, 60),
+            AutoScroll = true,
+        };
+        grpData.Controls.Add(_teamsPanel);
         Controls.Add(grpData);
 
         // ── Bottom buttons ────────────────────────────────────────────────────
-        var btnApply = new Button { Text = "Aplicar", Location = new Point(270, 548), Size = new Size(74, 28), DialogResult = DialogResult.OK };
+        var btnApply = new Button { Text = "Aplicar", Location = new Point(270, 590), Size = new Size(74, 28), DialogResult = DialogResult.OK };
         btnApply.Click += OnApply;
-        var btnClose = new Button { Text = "Cerrar", Location = new Point(350, 548), Size = new Size(74, 28) };
+        var btnClose = new Button { Text = "Cerrar", Location = new Point(350, 590), Size = new Size(74, 28) };
         btnClose.Click += (_, _) => Close();
         Controls.Add(btnApply);
         Controls.Add(btnClose);
@@ -349,6 +339,7 @@ sealed class CellGridEditorForm : Form
         // ── Initialize ───────────────────────────────────────────────────────
         if (_pages.Count == 0) _pages.Add(new CellGridPage());
         LoadPage(0);
+        RebuildTeamInputs();
 
         // Refresh weather on every editor open so the preview reflects the saved city.
         _ = RefreshWeatherPreviewAsync(settings.City);
@@ -363,21 +354,102 @@ sealed class CellGridEditorForm : Form
     {
         _cmbBind.Items.Clear();
         if (catIndex < 0 || catIndex >= BindingCatalog.Length) return;
-        foreach (var (label, token) in BindingCatalog[catIndex].Items)
+        var items = catIndex == DeportesCategory
+            ? BuildDeportesItems()
+            : BindingCatalog[catIndex].Items;
+        foreach (var (label, token) in items)
             _cmbBind.Items.Add($"{label}  {token}");
         if (_cmbBind.Items.Count > 0) _cmbBind.SelectedIndex = 0;
+    }
+
+    // Generates the Deportes binding list dynamically based on configured leagues.
+    // Generic (default-league) entries always appear; per-league qualified entries
+    // are added when more than one league is configured.
+    private (string Label, string Token)[] BuildDeportesItems()
+    {
+        var items = new List<(string, string)>
+        {
+            ("Partido (resumen)",    "{sports}"),
+            ("Equipo",               "{sports.team}"),
+            ("Marcador en juego",    "{sports.game}"),
+            ("Estado (icono)",       "{sports.marker}"),
+            ("Tiempo en juego",      "{sports.time}"),
+            ("Liga",                 "{sports.league}"),
+            ("Últ. partido",         "{sports.last_game}"),
+            ("Últ. marcador",        "{sports.last_marker}"),
+            ("Próx. partido",        "{sports.next_game}"),
+            ("Próx. fecha",          "{sports.next_date}"),
+            ("Próx. hora",           "{sports.next_gametime}"),
+        };
+
+        // Add league-specific entries when multiple leagues are configured
+        // so the user can build pages that mix data from different sports.
+        if (_editLeagues.Count > 1)
+        {
+            foreach (var path in _editLeagues)
+            {
+                var lg = SportsFeature.FindOrCreate(path);
+                string q = ":" + lg.ShortName;
+                items.Add(($"[{lg.ShortName}] Últ. partido",   $"{{sports.last_game{q}}}"));
+                items.Add(($"[{lg.ShortName}] Últ. marcador",  $"{{sports.last_marker{q}}}"));
+                items.Add(($"[{lg.ShortName}] Próx. partido",  $"{{sports.next_game{q}}}"));
+                items.Add(($"[{lg.ShortName}] Próx. fecha",    $"{{sports.next_date{q}}}"));
+                items.Add(($"[{lg.ShortName}] Próx. hora",     $"{{sports.next_gametime{q}}}"));
+                items.Add(($"[{lg.ShortName}] Liga",           $"{{sports.league{q}}}"));
+                items.Add(($"[{lg.ShortName}] Equipo",         $"{{sports.team{q}}}"));
+            }
+        }
+        return items.ToArray();
     }
 
     private void OnInsertBinding(object? sender, EventArgs e)
     {
         int catIdx = _cmbBindCategory.SelectedIndex;
         int bindIdx = _cmbBind.SelectedIndex;
-        if (catIdx < 0 || bindIdx < 0 || bindIdx >= BindingCatalog[catIdx].Items.Length) return;
-        string token = BindingCatalog[catIdx].Items[bindIdx].Token;
+        if (catIdx < 0 || bindIdx < 0) return;
+        var items = catIdx == DeportesCategory
+            ? BuildDeportesItems()
+            : BindingCatalog[catIdx].Items;
+        if (bindIdx >= items.Length) return;
+        string token = items[bindIdx].Token;
         int sel = _txtTemplate.SelectionStart;
         _txtTemplate.Text = _txtTemplate.Text.Insert(sel, token);
         _txtTemplate.SelectionStart = sel + token.Length;
         _txtTemplate.Focus();
+    }
+
+    // ── Per-league team inputs ────────────────────────────────────────────────
+
+    private void RebuildTeamInputs()
+    {
+        // Preserve any values the user typed before rebuilding.
+        var saved = _teamBoxes.ToDictionary(kv => kv.Key, kv => kv.Value.Text.Trim());
+        _teamBoxes.Clear();
+        _teamsPanel.Controls.Clear();
+
+        // Horizontal layout: up to 3 leagues per row, each slot is 130px wide.
+        // AutoScroll handles overflow if more leagues are configured.
+        int col = 0, row = 0;
+        const int slotW = 130, rowH = 28;
+        const int colsPerRow = 3;
+
+        foreach (var path in _editLeagues)
+        {
+            var lg = SportsFeature.FindOrCreate(path);
+            string team = saved.TryGetValue(path, out var e1) ? e1
+                        : _settings.SportsTeams.TryGetValue(path, out var e2) ? e2 : "";
+
+            int px = col * slotW;
+            int py = row * rowH;
+
+            var lbl = new Label { Text = lg.ShortName + ":", Location = new Point(px, py + 4), Size = new Size(54, 18), AutoSize = false };
+            var tb  = new TextBox { Text = team, Location = new Point(px + 56, py), Size = new Size(68, 22), PlaceholderText = "equipo" };
+            _teamBoxes[path] = tb;
+            _teamsPanel.Controls.AddRange([lbl, tb]);
+
+            col++;
+            if (col >= colsPerRow) { col = 0; row++; }
+        }
     }
 
     // ── Weather preview refresh ───────────────────────────────────────────────
@@ -551,8 +623,11 @@ sealed class CellGridEditorForm : Form
         }
 
         _settings.City            = _txtCity.Text.Trim();
-        _settings.SportsTeam      = _txtTeam.Text.Trim();
         _settings.SelectedLeagues = _editLeagues.Count > 0 ? _editLeagues : ["football/nfl"];
+        _settings.SportsTeams     = _teamBoxes
+            .Where(kv => !string.IsNullOrWhiteSpace(kv.Value.Text))
+            .ToDictionary(kv => kv.Key, kv => kv.Value.Text.Trim().ToUpper());
+        _settings.SportsTeam      = null; // clear legacy field
 
         _onApply(_pages.Select(p => p.Clone()).ToList(), _chkCycle.Checked);
     }
@@ -562,8 +637,4 @@ sealed class CellGridEditorForm : Form
     private static string Truncate(string s, int max) =>
         s.Length <= max ? s : s[..max] + "…";
 
-    private static string FormatLeagueLabel(List<string> leagues) =>
-        leagues.Count == 0 ? "(ninguna)" :
-        leagues.Count == 1 ? leagues[0] :
-        $"{leagues[0]} +{leagues.Count - 1}";
 }

@@ -143,15 +143,16 @@ sealed class ZmkAppContext : ApplicationContext
         {
             try
             {
-                var live = await SportsFeature.FetchLiveAsync(lg, _settings.SportsTeam);
-                var next = await SportsFeature.FetchScheduleAsync(lg, _settings.SportsTeam);
-                var last = await SportsFeature.FetchResultsAsync(lg, _settings.SportsTeam);
+                string team = _settings.SportsTeams.TryGetValue(lg.EspnPath, out var t) ? t : "";
+                var live = await SportsFeature.FetchLiveAsync(lg, team);
+                var next = await SportsFeature.FetchScheduleAsync(lg, team);
+                var last = await SportsFeature.FetchResultsAsync(lg, team);
 
                 // Primary: live > next scheduled > last result.
                 SportsGame? primary = live.Count > 0 ? live[0] : next.Count > 0 ? next[0] : last.Count > 0 ? last[0] : null;
-                var snap     = BuildSportsSnapshot(lg, primary);
-                var snapNext = BuildSportsSnapshot(lg, next.Count > 0 ? next[0] : null);
-                var snapLast = BuildSportsSnapshot(lg, last.Count > 0 ? last[0] : null);
+                var snap     = BuildSportsSnapshot(lg, primary,                          team);
+                var snapNext = BuildSportsSnapshot(lg, next.Count > 0 ? next[0] : null, team);
+                var snapLast = BuildSportsSnapshot(lg, last.Count > 0 ? last[0] : null, team);
 
                 _liveState.UpdateSports(lg.ShortName,           snap);
                 _liveState.UpdateSports(lg.ShortName + "_next", snapNext);
@@ -171,14 +172,14 @@ sealed class ZmkAppContext : ApplicationContext
         }
     }
 
-    private SportsSnapshot BuildSportsSnapshot(SportsLeague league, SportsGame? g)
+    private static SportsSnapshot BuildSportsSnapshot(SportsLeague league, SportsGame? g, string team = "")
     {
         if (g is null)
             return new SportsSnapshot
             {
                 Sport   = league.Sport.ToString(),
                 League  = league.ShortName,
-                Team    = _settings.SportsTeam,
+                Team    = team,
                 Game    = "No games",
                 Summary = "No games",
             };
@@ -198,7 +199,7 @@ sealed class ZmkAppContext : ApplicationContext
         {
             Sport     = g.Sport.ToString(),
             League    = league.ShortName,
-            Team      = string.IsNullOrWhiteSpace(_settings.SportsTeam) ? g.Home : _settings.SportsTeam,
+            Team      = string.IsNullOrWhiteSpace(team) ? g.Home : team,
             Away      = g.Away,
             Home      = g.Home,
             Score     = g.StatusState == "post" ? $"{g.AwayScore}-{g.HomeScore}" : "",
