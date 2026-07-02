@@ -111,7 +111,7 @@ sealed class LiveState
         // Battery icon — respects BatteryGlyphStyle
         if (key == "battery.icon")
         {
-            string style = cfg?.BatteryGlyphStyle ?? "md_threshold";
+            string style = cfg?.BatteryGlyphStyle ?? "md_level";
             return style switch
             {
                 "md_level"     => NerdFont.MdBatteryLevelGlyph(BatteryLevel, BatteryCharging),

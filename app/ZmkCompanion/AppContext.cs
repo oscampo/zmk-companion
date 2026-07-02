@@ -127,8 +127,9 @@ sealed class ZmkAppContext : ApplicationContext
         {
             var data = await WeatherFeature.FetchWeatherAsync(_settings.City);
             _liveState.UpdateWeather(data.Icon.ToString(), $"{data.TempC:F0}°", data.City);
+            DebugLog.Log($"weather: {data.City} {data.TempC:F0}° wmo={data.Icon}");
         }
-        catch { }
+        catch (Exception ex) { DebugLog.Log($"weather error: {ex.Message}"); }
     }
 
     private async Task RefreshSportsAsync()

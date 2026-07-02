@@ -45,14 +45,15 @@ sealed class WeatherFeature
         }
         else
         {
-            // Auto-detect via ip-api.com (free, ~45 req/min, no key required).
-            // Note: free tier is HTTP-only.
-            var loc = await Http.GetFromJsonAsync<JsonObject>("http://ip-api.com/json/");
-            if (loc?["status"]?.GetValue<string>() != "success")
+            // Auto-detect via ipinfo.io (free HTTPS, no key required).
+            var loc = await Http.GetFromJsonAsync<JsonObject>("https://ipinfo.io/json");
+            string? locStr = loc?["loc"]?.GetValue<string>(); // "lat,lon"
+            if (locStr is null || !locStr.Contains(','))
                 throw new Exception("IP geolocation failed — specify a city in Settings.");
-            lat = loc["lat"]!.GetValue<double>();
-            lon = loc["lon"]!.GetValue<double>();
-            resolvedCity = loc["city"]?.GetValue<string>() ?? "?";
+            var parts = locStr.Split(',');
+            lat = double.Parse(parts[0], System.Globalization.CultureInfo.InvariantCulture);
+            lon = double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture);
+            resolvedCity = loc?["city"]?.GetValue<string>() ?? "?";
         }
 
         var wx = await Http.GetFromJsonAsync<JsonObject>(

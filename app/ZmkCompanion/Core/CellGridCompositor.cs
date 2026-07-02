@@ -113,11 +113,15 @@ sealed class CellGridCompositor : IDisposable
         _clockTimer = new System.Windows.Forms.Timer();
         _clockTimer.Tick += async (_, _) =>
         {
+            // Guard: Stop() may have disposed _clockTimer before this lambda runs.
+            if (!Running || _clockTimer is null) return;
             var tickTime = DateTime.Now; // capture BEFORE any await
-            _clockTimer!.Stop();        // stop BEFORE first await (reentrancy guard)
+            _clockTimer.Stop();         // stop BEFORE first await (reentrancy guard)
             bool full = ++_tickCount % 10 == 0;
             DebugLog.Log($"CellGridCompositor: clock tick tickTime={tickTime:HH:mm:ss.fff} full={full}");
             await RenderAndSendAsync(full);
+            // Guard: Stop() may have been called during the await above.
+            if (!Running || _clockTimer is null) return;
             ScheduleNextClockTick(tickTime);
             _clockTimer.Start();
         };
