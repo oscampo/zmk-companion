@@ -111,7 +111,7 @@ sealed class LiveState
         // Battery icon — respects BatteryGlyphStyle
         if (key == "battery.icon")
         {
-            string style = cfg?.BatteryGlyphStyle ?? "nf";
+            string style = cfg?.BatteryGlyphStyle ?? "md_threshold";
             return style switch
             {
                 "md_level"     => NerdFont.MdBatteryLevelGlyph(BatteryLevel, BatteryCharging),
@@ -217,6 +217,31 @@ sealed class LiveState
         }
 
         var s = Sports(leagueKey + suffix);
+
+        // For _next/_last snapshots, "game" shows only teams and "marker" includes
+        // the score ("38-35 🏆") so each piece fits in an 11-col tier.
+        if (suffix is "_next" or "_last")
+        {
+            return field switch
+            {
+                "game"      => $"{s.Away} {s.Home}".Trim(),
+                "marker"    => suffix == "_last"
+                                   ? $"{s.Score} {s.Marker}".Trim()
+                                   : s.Marker,
+                "score"     => s.Score,
+                "away"      => s.Away,
+                "home"      => s.Home,
+                "sport"     => s.Sport,
+                "league"    => s.League,
+                "team"      => s.Team,
+                "time"      => s.Time,
+                "scheduled" => s.Scheduled,
+                "date"      => SplitScheduled(s.Scheduled, 0),
+                "gametime"  => SplitScheduled(s.Scheduled, 1),
+                _           => s.Summary,
+            };
+        }
+
         return field switch
         {
             "sport"     => s.Sport,

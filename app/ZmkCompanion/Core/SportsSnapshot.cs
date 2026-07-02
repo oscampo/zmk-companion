@@ -11,6 +11,9 @@ sealed record SportsSnapshot
     public string Sport     { get; init; } = "";  // "Football" | "Soccer" | "Basketball" | "Hockey"
     public string League    { get; init; } = "";  // short league name, e.g. "NFL"
     public string Team      { get; init; } = "";  // tracked team abbreviation, if configured
+    public string Away      { get; init; } = "";  // away team abbreviation
+    public string Home      { get; init; } = "";  // home team abbreviation
+    public string Score     { get; init; } = "";  // "38-35" for post games, "" otherwise
     public string Game      { get; init; } = "";  // "AWY @ HME" or "AWY 24-20 HME"
     public string Marker    { get; init; } = "";  // live/final glyph, blank when scheduled
     public string Time      { get; init; } = "";  // live clock/period, blank otherwise
