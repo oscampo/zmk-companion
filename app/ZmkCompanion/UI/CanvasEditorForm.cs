@@ -3,6 +3,7 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using System.Windows.Forms;
 using ZmkCompanion.Core;
+using ZmkCompanion.Features;
 using ZmkCompanion.Features.Widgets;
 
 namespace ZmkCompanion.UI;
@@ -12,12 +13,18 @@ namespace ZmkCompanion.UI;
 sealed class CanvasEditorForm : Form
 {
     private const int Zoom    = 3;
-    private const int CanvasW = BitmapFrame.Width  * Zoom;  // 204
-    private const int CanvasH = BitmapFrame.Height * Zoom;  // 480
+    private const int CanvasW = BitmapFrame.Width  * Zoom;   // 204
+    private const int CanvasH = BitmapFrame.Height * Zoom;   // 480
 
-    private readonly AppSettings                        _settings;
-    private readonly LiveState                          _liveState;
-    private readonly Action<List<CanvasPage>, bool>      _onApply;
+    private readonly AppSettings                    _settings;
+    private readonly LiveState                      _liveState;
+    private readonly Action<List<CanvasPage>, bool> _onApply;
+
+    // Data Sources UI — written to _settings directly on Apply.
+    private TextBox?  _txtCity;
+    private TextBox?  _txtTeam;
+    private Label?    _lblLeagues;
+    private List<string> _editLeagues = [];
 
     // Pages being edited (working copies). _placements/_previews always reflect
     // the currently selected page; switching pages syncs them back into _pages.
@@ -58,7 +65,7 @@ sealed class CanvasEditorForm : Form
         FormBorderStyle = FormBorderStyle.FixedSingle;
         StartPosition   = FormStartPosition.CenterScreen;
         MaximizeBox     = false;
-        ClientSize      = new Size(572, 630);
+        ClientSize      = new Size(572, 780);
 
         // ── Left: canvas preview ─────────────────────────────────────────────
         _canvas = new Panel
@@ -124,6 +131,42 @@ sealed class CanvasEditorForm : Form
 
         Controls.Add(grpPages);
 
+        // ── Data Sources group (below Pages, left panel) ──────────────────────
+        var grpData = new GroupBox { Text = "Fuentes de datos", Location = new Point(8, 630), Size = new Size(CanvasW, 138) };
+
+        grpData.Controls.Add(new Label { Text = "Ciudad (clima):", Location = new Point(6, 20), Size = new Size(90, 18) });
+        _txtCity = new TextBox { Text = _settings.City, Location = new Point(100, 17), Size = new Size(96, 23) };
+        grpData.Controls.Add(_txtCity);
+
+        grpData.Controls.Add(new Label { Text = "Equipo:", Location = new Point(6, 50), Size = new Size(50, 18) });
+        _txtTeam = new TextBox { Text = _settings.SportsTeam, Location = new Point(60, 47), Size = new Size(60, 23) };
+        grpData.Controls.Add(_txtTeam);
+
+        _editLeagues = _settings.SelectedLeagues.ToList();
+        grpData.Controls.Add(new Label { Text = "Ligas:", Location = new Point(6, 80), Size = new Size(40, 18) });
+        _lblLeagues = new Label
+        {
+            Text      = FormatLeagueLabel(_editLeagues),
+            Location  = new Point(50, 80),
+            Size      = new Size(CanvasW - 110, 18),
+            AutoSize  = false,
+        };
+        grpData.Controls.Add(_lblLeagues);
+
+        var btnLeagues = new Button { Text = "Editar…", Location = new Point(6, 104), Size = new Size(70, 24) };
+        btnLeagues.Click += (_, _) =>
+        {
+            using var dlg = new LeaguePickerDialog(_editLeagues);
+            if (dlg.ShowDialog(this) == DialogResult.OK)
+            {
+                _editLeagues = dlg.SelectedPaths.ToList();
+                _lblLeagues!.Text = FormatLeagueLabel(_editLeagues);
+            }
+        };
+        grpData.Controls.Add(btnLeagues);
+
+        Controls.Add(grpData);
+
         int rx = CanvasW + 20;  // 224
 
         // ── Widgets group ────────────────────────────────────────────────────
@@ -176,11 +219,11 @@ sealed class CanvasEditorForm : Form
         Controls.Add(_grpProps);
 
         // ── Bottom buttons ────────────────────────────────────────────────────
-        var btnApply = new Button { Text = "Apply && Send", Location = new Point(rx, 594), Size = new Size(138, 30) };
+        var btnApply = new Button { Text = "Apply && Send", Location = new Point(rx, 744), Size = new Size(138, 30) };
         btnApply.Click += (_, _) => Apply();
         Controls.Add(btnApply);
 
-        var btnClose = new Button { Text = "Close", Location = new Point(rx + 148, 594), Size = new Size(110, 30) };
+        var btnClose = new Button { Text = "Close", Location = new Point(rx + 148, 744), Size = new Size(110, 30) };
         btnClose.Click += (_, _) => Close();
         Controls.Add(btnClose);
 
@@ -265,6 +308,22 @@ sealed class CanvasEditorForm : Form
     internal IWidget MakePreview(WidgetPlacement p)
     {
         var bounds = p.ToRectangle();
+        if (p.Type == "pomodoro")
+        {
+            var pcfg = p.GetConfig<PomodoroWidgetConfig>();
+            return new LabelWidget(_liveState)
+            {
+                Bounds = bounds,
+                Config = new LabelConfig
+                {
+                    Template    = pcfg.Template,
+                    Size        = pcfg.Size,
+                    Bold        = pcfg.Bold,
+                    UseNerdFont = pcfg.UseNerdFont,
+                    Align       = pcfg.Align,
+                },
+            };
+        }
         return p.Type switch
         {
             "label"      => new LabelWidget(_liveState)      { Bounds = bounds, Config = p.GetConfig<LabelConfig>() },
@@ -278,7 +337,30 @@ sealed class CanvasEditorForm : Form
     private void Apply()
     {
         SyncCurrentPageFromEditor();
+
+        // Validate: no more than one Pomodoro widget across all pages.
+        int pomCount = _pages.Sum(p => p.Widgets.Count(w => w.Type == "pomodoro"));
+        if (pomCount > 1)
+        {
+            MessageBox.Show("Solo puede haber un widget Pomodoro en el canvas.",
+                "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        // Persist data-source settings (writes to _settings which AppContext reads on apply).
+        _settings.City           = _txtCity?.Text.Trim() ?? _settings.City;
+        _settings.SportsTeam     = _txtTeam?.Text.Trim() ?? _settings.SportsTeam;
+        _settings.SelectedLeagues = _editLeagues.Count > 0 ? _editLeagues : _settings.SelectedLeagues;
+
         _onApply(_pages.Select(p => p.Clone()).ToList(), _chkCyclePages.Checked);
+    }
+
+    private static string FormatLeagueLabel(List<string> paths)
+    {
+        if (paths.Count == 0) return "(ninguna)";
+        var names = paths.Select(p => SportsFeature.FindOrCreate(p).ShortName);
+        string label = string.Join(", ", names);
+        return label.Length > 28 ? label[..28] + "…" : label;
     }
 
     // ── Canvas paint ──────────────────────────────────────────────────────────
@@ -388,15 +470,23 @@ sealed class CanvasEditorForm : Form
         _canvas.Invalidate();
     }
 
+    private bool HasPomodoroWidget() =>
+        _pages.Any(p => p.Widgets.Any(w => w.Type == "pomodoro"))
+        || _placements.Any(w => w.Type == "pomodoro");
+
     private void OnAddClick(object? sender, EventArgs e)
     {
         var menu = new ContextMenuStrip();
-        menu.Items.Add(new ToolStripMenuItem("Label (generic)",  null, (_, _) => AddWidget("label")));
+        menu.Items.Add(new ToolStripMenuItem("Label (genérico)",      null, (_, _) => AddWidget("label")));
+        menu.Items.Add(new ToolStripMenuItem("Text (externo / pipe)", null, (_, _) => AddWidget("exttext")));
         menu.Items.Add(new ToolStripMenuItem("Profile Bar (BLE 1-5)", null, (_, _) => AddWidget("profilebar")));
+        var pomItem = new ToolStripMenuItem("Pomodoro", null, (_, _) => AddWidget("pomodoro"))
+            { Enabled = !HasPomodoroWidget() };
+        menu.Items.Add(pomItem);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem("Clock (legacy)",   null, (_, _) => AddWidget("clock")));
-        menu.Items.Add(new ToolStripMenuItem("Battery (legacy)", null, (_, _) => AddWidget("battery")));
-        menu.Items.Add(new ToolStripMenuItem("Connection (legacy)", null, (_, _) => AddWidget("connection")));
+        menu.Items.Add(new ToolStripMenuItem("Clock (legacy)",        null, (_, _) => AddWidget("clock")));
+        menu.Items.Add(new ToolStripMenuItem("Battery (legacy)",      null, (_, _) => AddWidget("battery")));
+        menu.Items.Add(new ToolStripMenuItem("Connection (legacy)",   null, (_, _) => AddWidget("connection")));
         var btn = (Button)sender!;
         menu.Show(btn, new Point(0, btn.Height));
     }
@@ -404,9 +494,19 @@ sealed class CanvasEditorForm : Form
     private void AddWidget(string type)
     {
         var p = new WidgetPlacement { Type = type };
-        // Default label: a centered clock, big font
-        if (type == "label")
-            p.SetConfig(new LabelConfig { Template = "{time}", Size = 24f, Bold = true });
+        switch (type)
+        {
+            case "label":
+                p.SetConfig(new LabelConfig { Template = "{time}", Size = 24f, Bold = true });
+                break;
+            case "exttext":
+                p.Type = "label";
+                p.SetConfig(new LabelConfig { Template = "{ext.text}", Size = 16f });
+                break;
+            case "pomodoro":
+                p.SetConfig(new PomodoroWidgetConfig());
+                break;
+        }
         _placements.Add(p);
         _previews.Add(MakePreview(p));
         _sel = _placements.Count - 1;
@@ -439,6 +539,7 @@ sealed class CanvasEditorForm : Form
         }
         return p.Type switch
         {
+            "pomodoro"   => "Pomodoro",
             "profilebar" => "Profile Bar",
             "clock"      => "Clock (legacy)",
             "battery"    => "Battery (legacy)",
@@ -510,6 +611,7 @@ sealed class CanvasEditorForm : Form
         switch (p.Type)
         {
             case "label":      BuildLabelProps(p);      break;
+            case "pomodoro":   BuildPomodoroProps(p);   break;
             case "profilebar": BuildProfileBarProps(p); break;
             case "clock":      BuildClockProps(p);      break;
             case "battery":    BuildBatteryProps(p);    break;
@@ -583,6 +685,15 @@ sealed class CanvasEditorForm : Form
             ("{sports.marker}",    "marker"),
             ("{sports.time}",      "time"),
             ("{sports.scheduled}", "scheduled"),
+        ]);
+        // Row 5 — pomodoro
+        AddBindingButtons(p, txtTemplate,
+        [
+            ("{pomodoro.time}",  "pom time"),
+            ("{pomodoro.phase}", "pom phase"),
+            ("{pomodoro.bar}",   "pom bar"),
+            ("{pomodoro.icon}",  "pom icon"),
+            ("{pomodoro.cycle}", "pom cycle"),
         ]);
 
         // Glyph picker button
@@ -818,6 +929,90 @@ sealed class CanvasEditorForm : Form
             x += w + 2;
         }
         _propsY += 26;
+    }
+
+    // ── Pomodoro properties ───────────────────────────────────────────────────
+
+    private void BuildPomodoroProps(WidgetPlacement p)
+    {
+        var cfg = p.GetConfig<PomodoroWidgetConfig>();
+
+        void Refresh()
+        {
+            if (_sel >= 0 && _sel < _previews.Count && _previews[_sel] is LabelWidget w)
+            {
+                var c = p.GetConfig<PomodoroWidgetConfig>();
+                w.Config = new LabelConfig
+                {
+                    Template    = c.Template,
+                    Size        = c.Size,
+                    Bold        = c.Bold,
+                    UseNerdFont = c.UseNerdFont,
+                    Align       = c.Align,
+                };
+            }
+            _canvas.Invalidate();
+        }
+
+        // Timer config
+        AddLabel("─ Timer ─");
+        AddPomNud(p, "Trabajo (min):",       cfg.WorkMin,      1, 120, v => { var c = p.GetConfig<PomodoroWidgetConfig>(); c.WorkMin      = v; p.SetConfig(c); Refresh(); });
+        AddPomNud(p, "Descanso corto (min):", cfg.BreakMin,    1,  60, v => { var c = p.GetConfig<PomodoroWidgetConfig>(); c.BreakMin     = v; p.SetConfig(c); Refresh(); });
+        AddPomNud(p, "Ciclos:",               cfg.Cycles,      1,  12, v => { var c = p.GetConfig<PomodoroWidgetConfig>(); c.Cycles       = v; p.SetConfig(c); Refresh(); });
+        AddPomNud(p, "Descanso largo (min):", cfg.LongBreakMin,0,  60, v => { var c = p.GetConfig<PomodoroWidgetConfig>(); c.LongBreakMin = v; p.SetConfig(c); Refresh(); });
+
+        // Display config
+        AddLabel("─ Pantalla ─");
+
+        AddLabel("Template:");
+        var txtTmpl = new TextBox { Text = cfg.Template, Location = new Point(0, _propsY), Size = new Size(284, 23) };
+        txtTmpl.TextChanged += (_, _) =>
+        {
+            var c = p.GetConfig<PomodoroWidgetConfig>(); c.Template = txtTmpl.Text; p.SetConfig(c); Refresh();
+        };
+        _propsPanel.Controls.Add(txtTmpl);
+        _propsY += 27;
+
+        _propsPanel.Controls.Add(new Label { Text = "Tamaño (px):", Location = new Point(0, _propsY + 3), Size = new Size(82, 18) });
+        var nudSize = new NumericUpDown
+        {
+            Location = new Point(86, _propsY), Size = new Size(60, 23),
+            Minimum = 6, Maximum = 60, Value = (decimal)Math.Clamp(cfg.Size, 6, 60),
+        };
+        nudSize.ValueChanged += (_, _) =>
+        {
+            var c = p.GetConfig<PomodoroWidgetConfig>(); c.Size = (float)nudSize.Value; p.SetConfig(c); Refresh();
+        };
+        _propsPanel.Controls.Add(nudSize);
+        _propsY += 28;
+
+        var chkBold = new CheckBox { Text = "Bold", Checked = cfg.Bold, Location = new Point(0, _propsY), Size = new Size(70, 22) };
+        chkBold.CheckedChanged += (_, _) =>
+        {
+            var c = p.GetConfig<PomodoroWidgetConfig>(); c.Bold = chkBold.Checked; p.SetConfig(c); Refresh();
+        };
+        _propsPanel.Controls.Add(chkBold);
+        _propsY += 26;
+
+        AddPropComboRow("Alineación:", s => s, ["center", "left", "right"], cfg.Align, v =>
+        {
+            var c = p.GetConfig<PomodoroWidgetConfig>(); c.Align = v; p.SetConfig(c); Refresh();
+        });
+    }
+
+    private void AddPomNud(WidgetPlacement p, string label, int value, int min, int max, Action<int> onChange)
+    {
+        _propsPanel.Controls.Add(new Label { Text = label, Location = new Point(0, _propsY + 3), Size = new Size(142, 18) });
+        var nud = new NumericUpDown
+        {
+            Location = new Point(146, _propsY),
+            Size     = new Size(56, 23),
+            Minimum  = min, Maximum = max,
+            Value    = Math.Clamp(value, min, max),
+        };
+        nud.ValueChanged += (_, _) => onChange((int)nud.Value);
+        _propsPanel.Controls.Add(nud);
+        _propsY += 28;
     }
 
     // ── ProfileBar properties ─────────────────────────────────────────────────

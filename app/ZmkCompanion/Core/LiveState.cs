@@ -23,6 +23,13 @@ sealed class LiveState
     // Last text pushed by an external process via the named pipe (zkc CLI).
     public string ExternalText { get; private set; } = "";
 
+    // Pomodoro state, updated by AppContext on each PomodoroFeature tick.
+    public string PomodoroTime  { get; private set; } = "--:--";
+    public string PomodoroPhase { get; private set; } = "";
+    public string PomodoroBar   { get; private set; } = "";
+    public string PomodoroIcon  { get; private set; } = "";
+    public string PomodoroCycle { get; private set; } = "";
+
     // Formatted game data per league (keyed by SportsLeague.ShortName, upper-case),
     // refreshed periodically by AppContext from SportsFeature. "default" is the
     // first configured league, used by the bare {sports} / {sports.*} bindings.
@@ -71,6 +78,18 @@ sealed class LiveState
         Changed?.Invoke();
     }
 
+    public void UpdatePomodoro(string time, string phase, string bar, string icon, string cycle)
+    {
+        if (time == PomodoroTime && phase == PomodoroPhase && bar == PomodoroBar
+            && icon == PomodoroIcon && cycle == PomodoroCycle) return;
+        PomodoroTime  = time;
+        PomodoroPhase = phase;
+        PomodoroBar   = bar;
+        PomodoroIcon  = icon;
+        PomodoroCycle = cycle;
+        Changed?.Invoke();
+    }
+
     public void UpdateSports(string leagueKey, SportsSnapshot snapshot)
     {
         if (_sportsData.TryGetValue(leagueKey, out var old) && old == snapshot) return;
@@ -107,6 +126,20 @@ sealed class LiveState
             string bleG = cfg?.ConnBleGlyph is { Length: > 0 } b ? b : NerdFont.Bluetooth;
             string usbG = cfg?.ConnUsbGlyph is { Length: > 0 } u ? u : NerdFont.Usb;
             return UsbActive ? usbG : bleG;
+        }
+
+        // Pomodoro bindings
+        if (key.StartsWith("pomodoro.", StringComparison.OrdinalIgnoreCase))
+        {
+            return key["pomodoro.".Length..] switch
+            {
+                "time"  => PomodoroTime,
+                "phase" => PomodoroPhase,
+                "bar"   => PomodoroBar,
+                "icon"  => PomodoroIcon,
+                "cycle" => PomodoroCycle,
+                _       => $"{{{key}}}",
+            };
         }
 
         // Sports — {sports}, {sports:NFL}, {sports.team}, {sports.team:NFL}, etc.

@@ -1,5 +1,3 @@
-using ZmkCompanion.Core;
-
 namespace ZmkCompanion.Features;
 
 enum PomodoroPhase { Work, Break, LongBreak, Done }
@@ -37,23 +35,25 @@ sealed class PomodoroConfig
     }
 }
 
+// Pure timer state machine — no direct BLE access. Callers subscribe to
+// StateChanged and read GetDisplayState() to update LiveState / the tray.
 sealed class PomodoroFeature : IDisposable
 {
     // FiraCode Nerd Font progress bar (U+EE00-EE05)
-    private const char PbFirstFull  = ''; // left filled
-    private const char PbMidFull    = ''; // middle filled
-    private const char PbLastFull   = ''; // right filled
-    private const char PbEmpty      = ''; // middle empty
-    private const char PbFirstEmpty = ''; // left empty
-    private const char PbEndEmpty   = ''; // right empty
+    internal const char PbFirstFull  = ''; // left filled
+    internal const char PbMidFull    = ''; // middle filled
+    internal const char PbLastFull   = ''; // right filled
+    internal const char PbEmpty      = ''; // middle empty
+    internal const char PbFirstEmpty = ''; // left empty
+    internal const char PbEndEmpty   = ''; // right empty
 
     // Phase icons — Font Awesome (U+F000-F2E0)
-    private const char IconWork  = ''; // nf-fa-gavel
-    private const char IconBreak = ''; // nf-fa-coffee
-    private const char IconLong  = ''; // nf-fa-hourglass
+    internal const char IconWork  = ''; // nf-fa-gavel
+    internal const char IconBreak = ''; // nf-fa-coffee
+    internal const char IconLong  = ''; // nf-fa-hourglass
 
-    private readonly BleService _ble;
     private System.Windows.Forms.Timer? _timer;
+    private PomodoroConfig? _cfg;
 
     public PomodoroPhase Phase          { get; private set; } = PomodoroPhase.Done;
     public int CurrentCycle             { get; private set; }
@@ -62,8 +62,6 @@ sealed class PomodoroFeature : IDisposable
 
     public event Action? StateChanged;
     public event Action? SessionCompleted;
-
-    public PomodoroFeature(BleService ble) => _ble = ble;
 
     public void Start(PomodoroConfig cfg)
     {
@@ -79,16 +77,14 @@ sealed class PomodoroFeature : IDisposable
         _timer?.Dispose();
         _timer = null;
         Phase  = PomodoroPhase.Done;
+        StateChanged?.Invoke();
     }
-
-    private PomodoroConfig? _cfg;
 
     private void EnterPhase(PomodoroPhase phase, int seconds, PomodoroConfig cfg)
     {
         _cfg             = cfg;
         Phase            = phase;
         SecondsRemaining = seconds;
-        SendDisplay();
         StateChanged?.Invoke();
 
         _timer?.Dispose();
@@ -100,9 +96,7 @@ sealed class PomodoroFeature : IDisposable
     private void OnTick(object? sender, EventArgs e)
     {
         SecondsRemaining--;
-        SendDisplay();
         StateChanged?.Invoke();
-
         if (SecondsRemaining > 0) return;
         _timer?.Stop();
         AdvancePhase();
@@ -139,26 +133,36 @@ sealed class PomodoroFeature : IDisposable
     private void FinishSession()
     {
         Phase = PomodoroPhase.Done;
-        _ = _ble.SendAsync($"Done!\n{ProgressBar(TotalCycles, TotalCycles)}\x01{IconWork}");
-        SessionCompleted?.Invoke();
         StateChanged?.Invoke();
+        SessionCompleted?.Invoke();
     }
 
-    private void SendDisplay()
+    // Returns all display fields needed by LiveState.UpdatePomodoro().
+    internal (string Time, string Phase, string Bar, string Icon, string Cycle) GetDisplayState()
     {
-        char icon = Phase switch
+        if (Phase == PomodoroPhase.Done)
+            return ("--:--", "", "", "", "");
+
+        string time  = $"{SecondsRemaining / 60:D2}:{SecondsRemaining % 60:D2}";
+        string phase = Phase switch
         {
-            PomodoroPhase.Work      => IconWork,
-            PomodoroPhase.Break     => IconBreak,
-            PomodoroPhase.LongBreak => IconLong,
-            _                       => IconWork,
+            PomodoroPhase.Work      => "Work",
+            PomodoroPhase.Break     => "Break",
+            PomodoroPhase.LongBreak => "Long Break",
+            _                       => "",
         };
-        string bar  = ProgressBar(CurrentCycle - 1, TotalCycles);
-        string time = FmtTime(SecondsRemaining);
-        _ = _ble.SendAsync($"{time}\n {bar}\x01{icon}");
+        string icon = Phase switch
+        {
+            PomodoroPhase.Work      => IconWork.ToString(),
+            PomodoroPhase.Break     => IconBreak.ToString(),
+            _                       => IconLong.ToString(),
+        };
+        string bar   = BuildBar(CurrentCycle - 1, TotalCycles);
+        string cycle = $"{CurrentCycle}/{TotalCycles}";
+        return (time, phase, bar, icon, cycle);
     }
 
-    private static string ProgressBar(int done, int total)
+    internal static string BuildBar(int done, int total)
     {
         var sb = new System.Text.StringBuilder(total);
         for (int i = 0; i < total; i++)
@@ -174,26 +178,6 @@ sealed class PomodoroFeature : IDisposable
                 sb.Append(PbMidFull);
         }
         return sb.ToString();
-    }
-
-    private static string FmtTime(int seconds)
-    {
-        int m = seconds / 60, s = seconds % 60;
-        return $"{m:D2}:{s:D2}";
-    }
-
-    // Returns the formatted display text for the current state, or null if not running.
-    internal string? GetDisplayText()
-    {
-        if (Phase == PomodoroPhase.Done) return null;
-        char icon = Phase switch
-        {
-            PomodoroPhase.Work      => IconWork,
-            PomodoroPhase.Break     => IconBreak,
-            PomodoroPhase.LongBreak => IconLong,
-            _                       => IconWork,
-        };
-        return $"{FmtTime(SecondsRemaining)}\n {ProgressBar(CurrentCycle - 1, TotalCycles)}\x01{icon}";
     }
 
     public void Dispose() => Stop();

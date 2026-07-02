@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Windows.Forms;
 using ZmkCompanion.Core;
 using ZmkCompanion.Features;
 using ZmkCompanion.Features.Widgets;
@@ -14,6 +15,7 @@ sealed class ZmkAppContext : ApplicationContext
     private readonly DisplayCompositor _compositor;
     private readonly PipeServer        _pipe;
     private readonly LiveState         _liveState = new();
+    private readonly PomodoroFeature   _pomodoro  = new();
 
     private readonly CancellationTokenSource _cts = new();
 
@@ -21,47 +23,26 @@ sealed class ZmkAppContext : ApplicationContext
     private readonly ConcurrentQueue<string> _textQueue = new();
     private System.Windows.Forms.Timer? _drainTimer;
 
-    // Canvas page cycling — a self-pacing async loop rather than a fixed-interval
-    // Timer, so a slow BLE link stretches dwell time instead of piling up more
-    // page switches than the link can actually drain (see RunPageCycleAsync).
+    // Canvas page cycling.
     private int _activePage;
     private CancellationTokenSource? _pageCycleCts;
 
-    // Background pollers feeding LiveState bindings ({weather.*}, {sports...}).
+    // Background pollers feeding LiveState bindings.
     private System.Windows.Forms.Timer? _weatherTimer;
     private System.Windows.Forms.Timer? _sportsTimer;
-
-    // Safety net: forces a redraw periodically so a single silently-failed BLE
-    // write (e.g. the clock's once-a-minute tick) can't leave the display
-    // stuck on stale content indefinitely.
     private System.Windows.Forms.Timer? _heartbeatTimer;
-
-    // Clock sync sent over the legacy 0x1524 text characteristic — a ~15-byte
-    // write, effectively instant regardless of MTU/page-cycle load. Decoupled
-    // from the bitmap/canvas pipeline entirely: firmware that understands this
-    // message ("T:<unix>:A|H", see firmware/custom_status_screen.c for the
-    // reference free-running-clock implementation) can keep its own clock
-    // accurate independent of how backed-up the bitmap send pipeline gets.
     private System.Windows.Forms.Timer? _clockSyncTimer;
-
-    // Debug logs showed long stretches where _ble.IsConnected read false (the
-    // bitmap characteristic gone, every send failing with "char is null") but
-    // BleService.Disconnected NEVER fired — Windows' ConnectionStatusChanged
-    // event apparently doesn't reliably cover every way this link degrades.
-    // Since reconnection was entirely event-driven, the app just sat there
-    // with a dead link, LoadPage skipping StartAll() every cycle (IsConnected
-    // false), and the display frozen forever — which looks exactly like the
-    // clock "stopping" rather than drifting. This watchdog checks connection
-    // health directly and kicks off a reconnect regardless of whether the
-    // event ever tells us to.
     private System.Windows.Forms.Timer? _connectionWatchdog;
+
+    // Tracks last pomodoro phase so tray only rebuilds on phase change, not every tick.
+    private PomodoroPhase _lastTrayPhase = PomodoroPhase.Done;
 
     public ZmkAppContext()
     {
         DebugLog.Reset();
         _settings = AppSettings.Load();
         _ble      = new BleService();
-        _tray     = new TrayIcon(_ble, _settings);
+        _tray     = new TrayIcon(_ble);
 
         _compositor    = new DisplayCompositor(_ble);
         _tray.Compositor = _compositor;
@@ -75,6 +56,10 @@ sealed class ZmkAppContext : ApplicationContext
         _ble.StatusChanged          += OnStatusChanged;
         _tray.ExitRequested         += OnExit;
         _tray.CanvasEditorRequested += OnCanvasEditor;
+        _tray.PomodoroToggleRequested += OnPomodoroToggle;
+
+        _pomodoro.StateChanged    += OnPomodoroStateChanged;
+        _pomodoro.SessionCompleted += OnPomodoroCompleted;
 
         Application.Idle += OnFirstIdle;
     }
@@ -119,20 +104,6 @@ sealed class ZmkAppContext : ApplicationContext
 
         RestartPageCycle();
 
-        // Unconditional periodic refresh of whatever page is currently active —
-        // the same principle the old (pre-canvas) ClockFeature used: a single
-        // persistent timer that just resends a fresh frame on a fixed cadence,
-        // completely independent of any per-widget state. That's what made the
-        // old clock mode reliable — it never depended on a widget's own timer
-        // surviving a page switch. LabelWidget's {time} refresh, by contrast,
-        // lives INSIDE the widget and gets disposed/recreated every time
-        // Rebuild() runs (i.e. every page cycle switch), which is what caused
-        // the residual staleness during cycling: the widget only resyncs when
-        // its own page becomes active. This heartbeat plugs that gap without
-        // needing {time} duplicated on every page or any firmware change —
-        // diagnostics confirmed transport is fast (30-50ms/frame) and the real
-        // freeze bug was the connection watchdog gap now fixed above, so a
-        // short interval here is cheap and safe.
         _heartbeatTimer = new System.Windows.Forms.Timer { Interval = 15_000 };
         _heartbeatTimer.Tick += (_, _) =>
         {
@@ -164,7 +135,7 @@ sealed class ZmkAppContext : ApplicationContext
         _ = ConnectLoopAsync(_cts.Token);
     }
 
-    // ── Live data pollers ────────────────────────────────────────────────────
+    // ── Live data pollers ─────────────────────────────────────────────────────
 
     private async Task RefreshWeatherAsync()
     {
@@ -173,7 +144,7 @@ sealed class ZmkAppContext : ApplicationContext
             var data = await WeatherFeature.FetchWeatherAsync(_settings.City);
             _liveState.UpdateWeather(data.Icon.ToString(), $"{data.TempC:F0}°", data.City);
         }
-        catch { /* offline / bad city — keep last known value */ }
+        catch { }
     }
 
     private async Task RefreshSportsAsync()
@@ -195,7 +166,7 @@ sealed class ZmkAppContext : ApplicationContext
                 _liveState.UpdateSports(lg.ShortName, snapshot);
                 if (first) { _liveState.UpdateSports("default", snapshot); first = false; }
             }
-            catch { /* offline — keep last known value for this league */ }
+            catch { }
         }
     }
 
@@ -217,8 +188,8 @@ sealed class ZmkAppContext : ApplicationContext
 
         string marker = g.StatusState switch
         {
-            "in"   => "", // nf-fa-bolt (live)
-            "post" => "", // nf-fa-trophy (final)
+            "in"   => "", // nf-fa-bolt (live)
+            "post" => "", // nf-fa-trophy (final)
             _      => "",
         };
 
@@ -235,7 +206,81 @@ sealed class ZmkAppContext : ApplicationContext
         };
     }
 
-    // ── Canvas pages ─────────────────────────────────────────────────────────
+    // ── Pomodoro ──────────────────────────────────────────────────────────────
+
+    private void OnPomodoroToggle()
+    {
+        if (_pomodoro.Phase != PomodoroPhase.Done)
+        {
+            _pomodoro.Stop();
+        }
+        else
+        {
+            var wcfg = FindPomodoroWidgetConfig();
+            if (wcfg == null) return;
+            _pomodoro.Start(new PomodoroConfig
+            {
+                WorkMin      = wcfg.WorkMin,
+                BreakMin     = wcfg.BreakMin,
+                Cycles       = wcfg.Cycles,
+                LongBreakMin = wcfg.LongBreakMin,
+            });
+        }
+    }
+
+    private void OnPomodoroStateChanged()
+    {
+        var (time, phase, bar, icon, cycle) = _pomodoro.GetDisplayState();
+        _liveState.UpdatePomodoro(time, phase, bar, icon, cycle);
+
+        // Only rebuild the tray menu when the phase changes, not every second.
+        if (_pomodoro.Phase != _lastTrayPhase)
+        {
+            _lastTrayPhase = _pomodoro.Phase;
+            UpdateTrayPomodoro();
+        }
+    }
+
+    private void OnPomodoroCompleted()
+    {
+        _lastTrayPhase = PomodoroPhase.Done;
+        UpdateTrayPomodoro();
+        _tray.ShowBalloonTip(3000, "ZMK Companion", "¡Sesión Pomodoro completada!", ToolTipIcon.Info);
+    }
+
+    private void UpdateTrayPomodoro()
+    {
+        bool hasWidget = _settings.Pages.Any(p => p.Widgets.Any(w => w.Type == "pomodoro"));
+        _tray.HasPomodoroWidget = hasWidget;
+
+        if (_pomodoro.Phase != PomodoroPhase.Done)
+        {
+            string phaseLabel = _pomodoro.Phase switch
+            {
+                PomodoroPhase.Work      => "Work",
+                PomodoroPhase.Break     => "Break",
+                PomodoroPhase.LongBreak => "Long Break",
+                _                       => "",
+            };
+            int m = _pomodoro.SecondsRemaining / 60, s = _pomodoro.SecondsRemaining % 60;
+            _tray.SetPomodoroState(true, $"Pomodoro  [{phaseLabel} {m:D2}:{s:D2}]");
+        }
+        else
+        {
+            _tray.SetPomodoroState(false, null);
+        }
+    }
+
+    private PomodoroWidgetConfig? FindPomodoroWidgetConfig()
+    {
+        foreach (var page in _settings.Pages)
+            foreach (var w in page.Widgets)
+                if (w.Type == "pomodoro")
+                    return w.GetConfig<PomodoroWidgetConfig>();
+        return null;
+    }
+
+    // ── Canvas pages ──────────────────────────────────────────────────────────
 
     private void LoadPage(int index)
     {
@@ -246,6 +291,7 @@ sealed class ZmkAppContext : ApplicationContext
                      $"connected={_ble.IsConnected} now={DateTime.Now:HH:mm:ss.fff}");
         _compositor.Rebuild(page.Widgets.Select(CreateWidget));
         if (_ble.IsConnected) _compositor.StartAll();
+        UpdateTrayPomodoro();
     }
 
     private void RestartPageCycle()
@@ -260,14 +306,6 @@ sealed class ZmkAppContext : ApplicationContext
         _ = RunPageCycleAsync(_pageCycleCts.Token);
     }
 
-    // Each iteration: wait for the current page's frame to actually finish
-    // transmitting, dwell for its configured DurationSeconds, then switch to
-    // the next page. Because the wait happens BEFORE the dwell countdown, a
-    // slow BLE send extends how long the page stays on screen instead of the
-    // next switch firing on schedule regardless — the previous fixed-interval
-    // Timer could queue up page switches faster than frames could actually be
-    // sent, and that backlog was very likely why the clock fell behind whenever
-    // cycling was on.
     private async Task RunPageCycleAsync(CancellationToken ct)
     {
         DebugLog.Log("RunPageCycleAsync: started");
@@ -289,12 +327,9 @@ sealed class ZmkAppContext : ApplicationContext
 
     // ── BLE status events ─────────────────────────────────────────────────────
 
-    // Both handlers are raised on the UI thread by BleService via _uiContext.Post.
-
     private void OnBatteryLevelChanged(byte level)
     {
         _liveState.UpdateBattery(level, false);
-        // Legacy rigid widgets still wired for backwards compat.
         foreach (var w in _compositor.Widgets.OfType<BatteryWidget>())
             w.Update(level, false);
     }
@@ -303,9 +338,8 @@ sealed class ZmkAppContext : ApplicationContext
     {
         bool usb      = (status & 0x01) != 0;
         int  profile  = (status >> 1) & 0x07;
-        int  bondMask = bonds & 0x1F;  // bits 0-4 = profiles 1-5 bonded
+        int  bondMask = bonds & 0x1F;
         _liveState.UpdateConnection(usb, profile, bondMask);
-        // Legacy rigid widgets still wired for backwards compat.
         foreach (var w in _compositor.Widgets.OfType<ConnectionWidget>())
             w.Update(usb, profile);
     }
@@ -325,16 +359,34 @@ sealed class ZmkAppContext : ApplicationContext
         _settings.Save();
         LoadPage(_activePage);
         RestartPageCycle();
+        // Trigger immediate data refresh in case city/leagues changed.
+        _ = RefreshWeatherAsync();
+        _ = RefreshSportsAsync();
     }
 
     private IWidget CreateWidget(WidgetPlacement p)
     {
         var bounds = p.ToRectangle();
+        if (p.Type == "pomodoro")
+        {
+            var pcfg = p.GetConfig<PomodoroWidgetConfig>();
+            return new LabelWidget(_liveState)
+            {
+                Bounds = bounds,
+                Config = new LabelConfig
+                {
+                    Template    = pcfg.Template,
+                    Size        = pcfg.Size,
+                    Bold        = pcfg.Bold,
+                    UseNerdFont = pcfg.UseNerdFont,
+                    Align       = pcfg.Align,
+                },
+            };
+        }
         return p.Type switch
         {
             "label"      => new LabelWidget(_liveState)      { Bounds = bounds, Config = p.GetConfig<LabelConfig>() },
             "profilebar" => new ProfileBarWidget(_liveState) { Bounds = bounds, Config = p.GetConfig<ProfileBarConfig>() },
-            // Legacy rigid widgets — still supported for saved configs.
             "battery"    => new BatteryWidget    { Bounds = bounds, Config = p.GetConfig<BatteryConfig>() },
             "connection" => new ConnectionWidget { Bounds = bounds, Config = p.GetConfig<ConnectionConfig>() },
             _            => new ClockWidget      { Bounds = bounds, Config = p.GetConfig<ClockConfig>() },
@@ -365,15 +417,11 @@ sealed class ZmkAppContext : ApplicationContext
 
     private void OnDisconnected()
     {
-        DebugLog.Log($"OnDisconnected now={DateTime.Now:HH:mm:ss.fff} (display frozen until reconnect)");
+        DebugLog.Log($"OnDisconnected now={DateTime.Now:HH:mm:ss.fff}");
         _compositor.StopAll();
+        _pomodoro.Stop();
         _tray.SetDisconnected();
 
-        // The display is frozen (StopAll) for the entire gap until reconnected,
-        // so any delay here shows up as apparent "clock drift" if the link ever
-        // drops. This used to wait a flat 10s before even trying once — now it
-        // reuses the startup retry loop, which attempts immediately and keeps
-        // retrying every 15s until reconnected.
         if (_reconnecting) return;
         _reconnecting = true;
         _ = ReconnectAsync();
@@ -412,6 +460,7 @@ sealed class ZmkAppContext : ApplicationContext
             _connectionWatchdog?.Stop();
             _connectionWatchdog?.Dispose();
             _pipe.Dispose();
+            _pomodoro.Dispose();
             _compositor.Dispose();
             _tray.Dispose();
             _ble.Dispose();

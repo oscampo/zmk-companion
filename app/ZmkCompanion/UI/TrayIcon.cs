@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
 using ZmkCompanion.Core;
-using ZmkCompanion.Features;
 
 namespace ZmkCompanion.UI;
 
@@ -10,34 +9,26 @@ namespace ZmkCompanion.UI;
 // All mutations must happen on the UI thread (ensured by callers via BleService events).
 sealed class TrayIcon : IDisposable
 {
-    private readonly BleService _ble;
-    private readonly AppSettings _settings;
-    private readonly NotifyIcon _notify;
-    private readonly PomodoroFeature _pomodoro;
-    private readonly WeatherFeature  _weather;
-    private readonly SportsFeature   _sports;
-    private readonly CycleFeature _cycle;
+    private readonly BleService   _ble;
+    private readonly NotifyIcon   _notify;
 
-    private CancellationTokenSource? _sportsCts;
-    private CancellationTokenSource? _cycleCts;
-
-    // Set post-construction (compositor is created after TrayIcon) so
-    // Diagnostics can surface DisplayCompositor.LastRenderError.
+    // Set post-construction (compositor is created after TrayIcon).
     internal DisplayCompositor? Compositor { get; set; }
 
     public event Action? ExitRequested;
     public event Action? CanvasEditorRequested;
+    public event Action? PomodoroToggleRequested;
 
-    public TrayIcon(BleService ble, AppSettings settings)
+    // Controlled by AppContext: reflects whether any page has a Pomodoro widget.
+    public bool HasPomodoroWidget { get; set; }
+
+    private bool    _pomodoroRunning;
+    private string? _pomodoroLabel;   // null = not running; non-null = displayed in menu item
+
+    public TrayIcon(BleService ble)
     {
-        _ble      = ble;
-        _settings = settings;
-        _pomodoro = new PomodoroFeature(ble);
-        _weather  = new WeatherFeature();
-        _sports   = new SportsFeature();
-        _cycle    = new CycleFeature(ble, _weather, _sports, _pomodoro);
+        _ble    = ble;
 
-        // Initialize _notify first so lambdas below can safely reference it.
         _notify = new NotifyIcon
         {
             Visible = true,
@@ -45,14 +36,23 @@ sealed class TrayIcon : IDisposable
             Icon    = MakeIcon(Color.OrangeRed),
         };
         _notify.ContextMenuStrip = BuildMenu();
-        _notify.DoubleClick += (_, _) => OnSendText();
+    }
 
-        _pomodoro.StateChanged     += RebuildMenu;
-        _pomodoro.SessionCompleted += () =>
-            _notify.ShowBalloonTip(3000, "ZMK Companion", "Pomodoro session done!", ToolTipIcon.Info);
+    // ── Pomodoro state (set by AppContext) ────────────────────────────────────
+
+    // running=true + label = pomodoro running (label shown in menu item).
+    // running=false = idle or no widget configured.
+    public void SetPomodoroState(bool running, string? label)
+    {
+        _pomodoroRunning = running;
+        _pomodoroLabel   = label;
+        RebuildMenu();
     }
 
     // ── Connection state ──────────────────────────────────────────────────────
+
+    public void ShowBalloonTip(int ms, string title, string text, ToolTipIcon icon) =>
+        _notify.ShowBalloonTip(ms, title, text, icon);
 
     public void ShowError(string title, string message) =>
         _notify.ShowBalloonTip(5000, title, message, ToolTipIcon.Error);
@@ -61,18 +61,15 @@ sealed class TrayIcon : IDisposable
     {
         _notify.Icon = MakeIcon(Color.LimeGreen);
         _notify.Text = $"ZMK Companion — {deviceName}";
-        _notify.ShowBalloonTip(2000, "ZMK Companion", $"Connected to {deviceName}", ToolTipIcon.Info);
+        _notify.ShowBalloonTip(2000, "ZMK Companion", $"Conectado a {deviceName}", ToolTipIcon.Info);
         RebuildMenu();
     }
 
     public void SetDisconnected()
     {
-        _sportsCts?.Cancel();
-        _cycleCts?.Cancel();
-        _pomodoro.Stop();
         _notify.Icon = MakeIcon(Color.OrangeRed);
-        _notify.Text = "ZMK Companion — disconnected";
-        _notify.ShowBalloonTip(2000, "ZMK Companion", "Keyboard disconnected", ToolTipIcon.Warning);
+        _notify.Text = "ZMK Companion — desconectado";
+        _notify.ShowBalloonTip(2000, "ZMK Companion", "Teclado desconectado", ToolTipIcon.Warning);
         RebuildMenu();
     }
 
@@ -96,306 +93,39 @@ sealed class TrayIcon : IDisposable
     {
         bool connected = _ble.IsConnected;
 
-        // Header — device name or status
         var header = new ToolStripLabel(_ble.DeviceName is { } name
             ? $"  {name}"
-            : "  Not connected")
+            : "  No conectado")
         { Font = new Font(SystemFonts.MenuFont!, FontStyle.Bold) };
         strip.Items.Add(header);
         strip.Items.Add(new ToolStripSeparator());
 
-        // ── Modes ────────────────────────────────────────────────────────────
-        var itemClock = new ToolStripMenuItem("Clock", null, (_, _) => OnClock())
-            { Enabled = connected };
-        strip.Items.Add(itemClock);
-
-        var itemWeather = new ToolStripMenuItem("Weather", null, (_, _) => OnWeather())
-            { Enabled = connected };
-        strip.Items.Add(itemWeather);
-
-        // Pomodoro submenu
-        var pomSub = new ToolStripMenuItem("Pomodoro") { Enabled = connected };
-        if (_pomodoro.Phase != PomodoroPhase.Done)
-        {
-            string label = _pomodoro.Phase switch
-            {
-                PomodoroPhase.Work      => "Work",
-                PomodoroPhase.Break     => "Break",
-                PomodoroPhase.LongBreak => "Long break",
-                _                       => "",
-            };
-            int m = _pomodoro.SecondsRemaining / 60, s = _pomodoro.SecondsRemaining % 60;
-            pomSub.Text = $"Pomodoro  [{label} {m:D2}:{s:D2}]";
-            pomSub.DropDownItems.Add(new ToolStripMenuItem("Stop", null, (_, _) => OnPomodoroStop()));
-        }
-        else
-        {
-            foreach (string preset in new[] { "classic", "short", "long" })
-            {
-                string p = preset;
-                pomSub.DropDownItems.Add(new ToolStripMenuItem(
-                    char.ToUpper(p[0]) + p[1..], null, (_, _) => OnPomodoroStart(p)));
-            }
-            pomSub.DropDownItems.Add(new ToolStripSeparator());
-            pomSub.DropDownItems.Add(new ToolStripMenuItem("Custom…", null, (_, _) => OnPomodoroCustom()));
-        }
-        strip.Items.Add(pomSub);
-
-        // Sports submenu
-        string sportsLabel = _settings.SelectedLeagues.Count == 1
-            ? (SportsFeature.FindOrCreate(_settings.SelectedLeagues[0]) is { } lg
-                ? (lg.Sport == SportKind.Soccer ? $"Soccer: {lg.ShortName}" : lg.DisplayName)
-                : "Sports")
-            : $"Sports ({_settings.SelectedLeagues.Count})";
-        var sportsSub = new ToolStripMenuItem(sportsLabel) { Enabled = connected };
-        sportsSub.DropDownItems.Add(new ToolStripMenuItem("Last results",  null, (_, _) => OnSports(false)));
-        sportsSub.DropDownItems.Add(new ToolStripMenuItem("Next schedule", null, (_, _) => OnSports(true)));
-        if (!string.IsNullOrEmpty(_settings.SportsTeam))
-        {
-            sportsSub.DropDownItems.Add(new ToolStripSeparator());
-            sportsSub.DropDownItems.Add(new ToolStripMenuItem(
-                $"{_settings.SportsTeam} results",  null, (_, _) => OnSportsTeam(false)));
-            sportsSub.DropDownItems.Add(new ToolStripMenuItem(
-                $"{_settings.SportsTeam} schedule", null, (_, _) => OnSportsTeam(true)));
-        }
-        strip.Items.Add(sportsSub);
-
-        // Cycle
-        bool cycling = _cycleCts is { IsCancellationRequested: false };
-        if (cycling)
-        {
-            var cycleSub = new ToolStripMenuItem("Cycle  [running]") { Enabled = connected };
-            cycleSub.DropDownItems.Add(new ToolStripMenuItem("Stop", null, (_, _) => OnCycleStop()));
-            strip.Items.Add(cycleSub);
-        }
-        else
-        {
-            strip.Items.Add(new ToolStripMenuItem("Cycle…", null, (_, _) => OnCycleOpen())
-                { Enabled = connected });
-        }
-
-        strip.Items.Add(new ToolStripMenuItem("Terminal / Send text…", null, (_, _) => OnSendText()));
-        strip.Items.Add(new ToolStripMenuItem("Canvas…",              null, (_, _) => CanvasEditorRequested?.Invoke())
+        strip.Items.Add(new ToolStripMenuItem("Canvas…", null, (_, _) => CanvasEditorRequested?.Invoke())
             { Enabled = connected });
 
         strip.Items.Add(new ToolStripSeparator());
 
-        // ── Connection ───────────────────────────────────────────────────────
-        if (!connected)
-            strip.Items.Add(new ToolStripMenuItem("Reconnect", null, (_, _) => OnReconnect()));
-        else
-            strip.Items.Add(new ToolStripMenuItem("Disconnect", null, (_, _) => OnDisconnect())
-                { Enabled = connected });
+        string pomText = _pomodoroRunning
+            ? (_pomodoroLabel ?? "Pomodoro — Detener")
+            : "Pomodoro — Iniciar";
+        strip.Items.Add(new ToolStripMenuItem(pomText, null, (_, _) => PomodoroToggleRequested?.Invoke())
+            { Enabled = connected && HasPomodoroWidget });
 
         strip.Items.Add(new ToolStripSeparator());
-        strip.Items.Add(new ToolStripMenuItem("Diagnostics…", null, (_, _) => OnDiagnostics()));
-        strip.Items.Add(new ToolStripMenuItem(
-            _cellGridTest?.Running == true ? "Cell Grid Test  [running — stop]" : "Cell Grid Test (A/B)",
-            null, (_, _) => OnCellGridTest())
-            { Enabled = connected && _ble.HasCellGridChar || _cellGridTest?.Running == true });
-        strip.Items.Add(new ToolStripMenuItem("Open Debug Log", null, (_, _) => OnOpenDebugLog()));
-        strip.Items.Add(new ToolStripMenuItem("Settings…", null, (_, _) => OnSettings()));
-        strip.Items.Add(new ToolStripMenuItem("Exit", null, (_, _) => ExitRequested?.Invoke()));
-    }
 
-    private CellGridTest? _cellGridTest;
-
-    private async void OnCellGridTest()
-    {
-        if (Compositor is null) return;
-        _cellGridTest ??= new CellGridTest(_ble, Compositor);
-        if (_cellGridTest.Running)
-            _cellGridTest.Stop();
+        if (!connected)
+            strip.Items.Add(new ToolStripMenuItem("Reconectar", null, (_, _) => OnReconnect()));
         else
-            await _cellGridTest.StartAsync();
-        RebuildMenu();
+            strip.Items.Add(new ToolStripMenuItem("Desconectar", null, (_, _) => OnDisconnect()));
+
+        strip.Items.Add(new ToolStripSeparator());
+
+        strip.Items.Add(new ToolStripMenuItem("Debug Log", null, (_, _) => OnDebugLog()));
+        strip.Items.Add(new ToolStripMenuItem("Acerca de…", null, (_, _) => OnAbout()));
+        strip.Items.Add(new ToolStripMenuItem("Salir", null, (_, _) => ExitRequested?.Invoke()));
     }
 
-    private void OnOpenDebugLog()
-    {
-        try
-        {
-            if (!File.Exists(DebugLog.Path))
-            {
-                MessageBox.Show("No debug log yet.", "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-            Process.Start(new ProcessStartInfo { FileName = DebugLog.Path, UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"Couldn't open log: {ex.Message}\n\nPath: {DebugLog.Path}",
-                "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
-    }
-
-    private void OnDiagnostics()
-    {
-        string connLine = _ble.LastDisconnectAt is { } since
-            ? $"Disconnects: {_ble.DisconnectCount} (last {(DateTime.Now - since).TotalSeconds:F0}s ago" +
-              (_ble.LastDowntime is { } down ? $", was down {down.TotalSeconds:F1}s)" : ")")
-            : $"Disconnects: {_ble.DisconnectCount}";
-
-        string msg = _ble.IsConnected
-            ? $"Device: {_ble.DeviceName}\n" +
-              $"Negotiated MTU: {_ble.LastMtu} bytes\n" +
-              $"Bitmap chunks/frame: {_ble.LastChunkCount}\n" +
-              $"Write mode: {(_ble.LastWithResponse ? "with response (slower, acked)" : "without response (fast)")}\n" +
-              $"Last frame send time: {_ble.LastSendMs} ms\n" +
-              $"Last BLE error: {_ble.LastBitmapError ?? "(none)"}\n" +
-              $"Last render error: {Compositor?.LastRenderError ?? "(none)"}\n" +
-              $"Cell grid (0x1527): {(_ble.HasCellGridChar ? "available" : "not present")}" +
-              $"{(_cellGridTest?.Running == true ? " — TEST RUNNING" : "")}\n" +
-              $"Last cell-grid error: {_ble.LastCellGridError ?? "(none)"}\n" +
-              connLine
-            : $"Not connected.\n{connLine}";
-        MessageBox.Show(msg, "ZMK Companion — Diagnostics", MessageBoxButtons.OK, MessageBoxIcon.Information);
-    }
-
-    // ── Menu handlers ─────────────────────────────────────────────────────────
-
-    private void OnClock() =>
-        _ = _ble.SendAsync(Protocol.BuildClock());
-
-    private void OnWeather() =>
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                var (_, summary) = await _weather.FetchAndSendAsync(_ble, _settings.City);
-                _notify.ShowBalloonTip(3000, "Weather", summary, ToolTipIcon.Info);
-            }
-            catch (Exception ex)
-            { _notify.ShowBalloonTip(4000, "Weather error", ex.Message, ToolTipIcon.Error); }
-        });
-
-    private void OnPomodoroStart(string preset)
-    {
-        var cfg = PomodoroConfig.Parse(preset);
-        _pomodoro.Start(cfg);
-    }
-
-    private void OnPomodoroStop()
-    {
-        _pomodoro.Stop();
-        _ = _ble.SendAsync(Protocol.BuildClock());
-        RebuildMenu();
-    }
-
-    private void OnPomodoroCustom()
-    {
-        using var dlg = new TextInputDialog(
-            "Custom Pomodoro",
-            "Format: work,break,cycles[,long_break]  e.g. 25,5,4,15",
-            _settings.PomodoroPreset);
-        if (dlg.ShowDialog() != DialogResult.OK) return;
-        _settings.PomodoroPreset = dlg.Value;
-        _settings.Save();
-        OnPomodoroStart(dlg.Value);
-    }
-
-    private void OnSports(bool schedule) =>
-        _ = Task.Run(async () =>
-        {
-            _sportsCts?.Cancel();
-            _sportsCts = new CancellationTokenSource();
-            var ct      = _sportsCts.Token;
-            var leagues = _settings.SelectedLeagues.Count > 0
-                ? _settings.SelectedLeagues.Select(SportsFeature.FindOrCreate).ToList()
-                : [SportsFeature.DefaultLeague];
-
-            bool anyGames = false;
-            foreach (var lg in leagues)
-            {
-                if (ct.IsCancellationRequested) break;
-                var games = schedule
-                    ? await SportsFeature.FetchScheduleAsync(lg)
-                    : await SportsFeature.FetchResultsAsync(lg);
-                if (games.Count == 0) continue;
-                anyGames = true;
-                await _sports.CycleGamesAsync(_ble, games, ct);
-            }
-            if (!anyGames)
-                _notify.ShowBalloonTip(3000, "Sports", "No games found.", ToolTipIcon.Info);
-            else if (!ct.IsCancellationRequested)
-                await _ble.SendAsync(Protocol.BuildClock());
-        });
-
-    private void OnSportsTeam(bool schedule) =>
-        _ = Task.Run(async () =>
-        {
-            _sportsCts?.Cancel();
-            _sportsCts = new CancellationTokenSource();
-            var ct      = _sportsCts.Token;
-            var leagues = _settings.SelectedLeagues.Count > 0
-                ? _settings.SelectedLeagues.Select(SportsFeature.FindOrCreate).ToList()
-                : [SportsFeature.DefaultLeague];
-
-            bool anyGames = false;
-            foreach (var lg in leagues)
-            {
-                if (ct.IsCancellationRequested) break;
-                var games = schedule
-                    ? await SportsFeature.FetchScheduleAsync(lg, _settings.SportsTeam)
-                    : await SportsFeature.FetchResultsAsync(lg, _settings.SportsTeam);
-                if (games.Count == 0) continue;
-                anyGames = true;
-                await _sports.CycleGamesAsync(_ble, games, ct);
-            }
-            if (!anyGames)
-                _notify.ShowBalloonTip(3000, "Sports",
-                    $"No games for {_settings.SportsTeam}.", ToolTipIcon.Info);
-            else if (!ct.IsCancellationRequested)
-                await _ble.SendAsync(Protocol.BuildClock());
-        });
-
-    private void OnCycleOpen()
-    {
-        using var dlg = new CycleDialog(_settings);
-        if (dlg.ShowDialog() != DialogResult.OK) return;
-        _settings.Save();
-
-        _sportsCts?.Cancel();
-        _cycleCts?.Cancel();
-        _cycleCts = new CancellationTokenSource();
-        var cts = _cycleCts;
-        _ = Task.Run(async () =>
-        {
-            await _cycle.RunAsync(_settings, slide =>
-            {
-                string tip = $"ZMK Companion — Cycling: {slide}";
-                _notify.Text = tip.Length > 63 ? tip[..63] : tip;
-            }, cts.Token);
-            // Tooltip and menu rebuild are handled by OnCycleStop / SetDisconnected
-            // on the UI thread. Do not touch WinForms controls from here.
-        });
-        RebuildMenu();
-    }
-
-    private void OnCycleStop()
-    {
-        _cycleCts?.Cancel();
-        _notify.Text = _ble.DeviceName is { } n
-            ? $"ZMK Companion - {n}"
-            : "ZMK Companion - disconnected";
-        RebuildMenu();
-    }
-
-    private static void OnSendText()
-    {
-        // Open a CMD window pre-loaded with zkc --help so the user can
-        // type zkc commands directly from the terminal.
-        try
-        {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName        = "cmd.exe",
-                Arguments       = "/k zkc --help",
-                UseShellExecute = true,
-            });
-        }
-        catch { }
-    }
+    // ── Handlers ─────────────────────────────────────────────────────────────
 
     private void OnReconnect() =>
         _ = Task.Run(async () => await _ble.ScanAndConnectAsync());
@@ -403,19 +133,40 @@ sealed class TrayIcon : IDisposable
     private void OnDisconnect() =>
         _ = _ble.SendAsync(Protocol.BuildClear());
 
-    private void OnSettings()
+    private void OnDebugLog()
     {
-        using var dlg = new SettingsDialog(_settings);
-        if (dlg.ShowDialog() == DialogResult.OK)
+        try
         {
-            _settings.Save();
-            RebuildMenu();
+            if (!File.Exists(DebugLog.Path))
+            {
+                MessageBox.Show("Aún no hay log de debug.", "ZMK Companion",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            Process.Start(new ProcessStartInfo { FileName = DebugLog.Path, UseShellExecute = true });
         }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"No se pudo abrir el log: {ex.Message}\n\nRuta: {DebugLog.Path}",
+                "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private static void OnAbout()
+    {
+        var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        MessageBox.Show(
+            $"ZMK Companion  v{ver?.Major}.{ver?.Minor}.{ver?.Build}\n\n" +
+            "Muestra información personalizada en la pantalla OLED\n" +
+            "de tu teclado ZMK vía BLE.\n\n" +
+            "github.com/oscampo/zmk-companion",
+            "Acerca de ZMK Companion",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
     }
 
     // ── Icon generation ───────────────────────────────────────────────────────
 
-    // Creates a simple 16x16 filled circle icon in the given color.
     private static Icon MakeIcon(Color color)
     {
         using var bmp = new Bitmap(16, 16);
@@ -430,12 +181,6 @@ sealed class TrayIcon : IDisposable
 
     public void Dispose()
     {
-        _sportsCts?.Cancel();
-        _sportsCts?.Dispose();
-        _cycleCts?.Cancel();
-        _cycleCts?.Dispose();
-        _cellGridTest?.Dispose();
-        _pomodoro.Dispose();
         _notify.Visible = false;
         _notify.Dispose();
     }

@@ -28,27 +28,18 @@ sealed class AppSettings
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<WidgetPlacement>? Canvas { get; set; }
 
+    // Weather data source — city name for API queries (blank = IP geolocation).
     public string City { get; set; } = "";
-    public string NflTeam { get; set; } = "";
-    // Pomodoro preset: "classic" | "short" | "long" | "work,break,cycles[,long_break]"
-    public string PomodoroPreset { get; set; } = "classic";
     // Selected leagues as ESPN paths, e.g. ["football/nfl", "soccer/eng.1"]
     public List<string> SelectedLeagues { get; set; } = ["football/nfl"];
-    // Kept for migration from older settings; not written after migration.
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? SportEspnPath { get; set; }
     // Team abbreviation filter for sports (e.g. "KC", "FRA")
     public string SportsTeam { get; set; } = "";
 
-    // Cycle mode configuration
-    public bool   CycleClock           { get; set; } = true;
-    public bool   CycleWeather         { get; set; } = true;
-    public bool   CyclePomodoro        { get; set; } = false;
-    public bool   CycleSports          { get; set; } = true;
-    // "live" | "last" | "next"  (applies team filter for last/next)
-    public string CycleSportsMode      { get; set; } = "live";
-    public string CycleCustomText      { get; set; } = "";
-    public int    CycleIntervalSeconds { get; set; } = 10;
+    // Kept for migration from older settings; not written after migration.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? NflTeam { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SportEspnPath { get; set; }
 
     public static AppSettings Load()
     {

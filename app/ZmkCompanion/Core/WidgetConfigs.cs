@@ -55,6 +55,21 @@ sealed class LabelConfig
     public float LetterSpacing { get; set; } = 0f;
 }
 
+// Pomodoro widget: timer config + display template for the canvas LabelWidget.
+sealed class PomodoroWidgetConfig
+{
+    public int    WorkMin      { get; set; } = 25;
+    public int    BreakMin     { get; set; } = 5;
+    public int    Cycles       { get; set; } = 4;
+    public int    LongBreakMin { get; set; } = 15;
+    // Template rendered by LabelWidget using {pomodoro.*} bindings.
+    public string Template     { get; set; } = "{pomodoro.time}\n{pomodoro.icon} {pomodoro.bar}";
+    public float  Size         { get; set; } = 20f;
+    public bool   Bold         { get; set; } = false;
+    public bool   UseNerdFont  { get; set; } = true;
+    public string Align        { get; set; } = "center";
+}
+
 // Profile bar widget: 5 slots showing BLE profiles 1-5 with three visual states.
 // Connected  = the currently active BLE profile.
 // Assigned   = paired (bonded) but not currently connected.
