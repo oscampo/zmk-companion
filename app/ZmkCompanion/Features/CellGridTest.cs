@@ -145,7 +145,12 @@ sealed class CellGridTest : IDisposable
     {
         var cells = CellGridRenderer.RenderText(tier, text);
         bool allOk = true;
-        for (int col = 0; col < cells.Length && col < tier.Cols; col++)
+        int colCount = Math.Min(cells.Length, tier.Cols);
+        // Write right-to-left so any LVGL refresh between writes shows a past
+        // time rather than a future one. Without this, "11:49"→"11:50" would
+        // briefly flash "11:59" (col 3 updated, col 4 not yet); right-to-left
+        // gives "11:40" instead, which reads unambiguously as the past.
+        for (int col = colCount - 1; col >= 0; col--)
         {
             var key = (row, col);
             if (!full && _sent.TryGetValue(key, out var prev) && prev.AsSpan().SequenceEqual(cells[col]))
