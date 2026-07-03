@@ -46,10 +46,13 @@ sealed class CellGridCompositor : IDisposable
         Running    = true;
         _state.Changed += OnStateChanged;
 
-        var layoutArgs = _rows.Select(r => (r.TierId, (byte)1)).ToArray();
+        var layoutArgs = _rows.Select(r => {
+            var t = CellGridProtocol.Tiers[r.TierId];
+            return ((byte)t.W, (byte)t.H, (byte)1);
+        }).ToArray();
         bool ok = await _ble.SendCellGridAsync(CellGridProtocol.BuildClear())
-               && await _ble.SendCellGridAsync(CellGridProtocol.BuildLayout(layoutArgs));
-        DebugLog.Log($"CellGridCompositor: CLEAR+LAYOUT ok={ok} err={_ble.LastCellGridError ?? "(none)"}");
+               && await _ble.SendCellGridAsync(CellGridProtocol.BuildLayoutV2(layoutArgs));
+        DebugLog.Log($"CellGridCompositor: CLEAR+LAYOUT_v2 ok={ok} err={_ble.LastCellGridError ?? "(none)"}");
         if (!ok) return;
 
         await RenderAndSendAsync(full: true);
@@ -85,9 +88,12 @@ sealed class CellGridCompositor : IDisposable
         if (!Running) return;
 
         // Re-establish cell-grid mode: firmware bitmap buffer was overwritten.
-        var layoutArgs = _rows.Select(r => (r.TierId, (byte)1)).ToArray();
+        var layoutArgs = _rows.Select(r => {
+            var t = CellGridProtocol.Tiers[r.TierId];
+            return ((byte)t.W, (byte)t.H, (byte)1);
+        }).ToArray();
         await _ble.SendCellGridAsync(CellGridProtocol.BuildClear());
-        await _ble.SendCellGridAsync(CellGridProtocol.BuildLayout(layoutArgs));
+        await _ble.SendCellGridAsync(CellGridProtocol.BuildLayoutV2(layoutArgs));
         _sent.Clear();
         await RenderAndSendAsync(full: true);
 
