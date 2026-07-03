@@ -7,10 +7,16 @@ namespace ZmkCompanion.Features;
 
 sealed class WeatherFeature
 {
-    // UseDefaultCredentials=true: passes Windows NTLM/Kerberos credentials to
-    // corporate proxies that issue a 407 challenge before forwarding the request.
-    private static readonly HttpClient Http = new(new HttpClientHandler { UseDefaultCredentials = true })
-        { Timeout = TimeSpan.FromSeconds(10) };
+    // Use the system proxy (same source as the browser) with Windows credentials.
+    // NTLM negotiation requires multiple round-trips so 30s timeout is needed.
+    private static readonly HttpClient Http = CreateHttpClient();
+    private static HttpClient CreateHttpClient()
+    {
+        var proxy = System.Net.WebRequest.DefaultWebProxy;
+        proxy.Credentials = System.Net.CredentialCache.DefaultNetworkCredentials;
+        return new HttpClient(new HttpClientHandler { Proxy = proxy, UseProxy = true })
+            { Timeout = TimeSpan.FromSeconds(30) };
+    }
 
     // Returns (message, summary) or throws on error.
     public async Task<(string Message, string Summary)> FetchAndSendAsync(BleService ble, string city)
