@@ -128,6 +128,14 @@ sealed class LiveState
             return UsbActive ? usbG : bleG;
         }
 
+        // Profile bar — 5 glyphs: active=plain, assigned=box/circle, free=outline.
+        // NumericStyle on the row drives the variant: "circle*" → circles, else → boxes.
+        if (key == "conn.profilebar")
+        {
+            bool circle = cfg?.NumericStyle is "circle" or "circle_outline";
+            return BuildProfileBar(circle);
+        }
+
         // Pomodoro bindings
         if (key.StartsWith("pomodoro.", StringComparison.OrdinalIgnoreCase))
         {
@@ -182,6 +190,28 @@ sealed class LiveState
             }
         }
         return raw;
+    }
+
+    // Builds the 5-glyph profile bar string.
+    // active (current BLE profile) → plain digit glyph (nf-md-numeric_X)
+    // assigned (bonded, not active) → box or circle glyph
+    // free (not bonded)            → box_outline or circle_outline glyph
+    // When USB is active there is no active BLE profile, only assigned/free states.
+    private string BuildProfileBar(bool circle)
+    {
+        var sb = new StringBuilder();
+        for (int p = 0; p < 5; p++)
+        {
+            bool assigned = (BleProfileMask & (1 << p)) != 0;
+            bool active   = !UsbActive && BleProfile == p;
+
+            string style = active   ? "plain"
+                         : assigned ? (circle ? "circle"         : "box")
+                                    : (circle ? "circle_outline" : "box_outline");
+
+            sb.Append(NerdFont.NumericGlyph(p + 1, style) ?? (p + 1).ToString());
+        }
+        return sb.ToString();
     }
 
     // Parses "sports", "sports:NFL", "sports.team", "sports.team:NFL",

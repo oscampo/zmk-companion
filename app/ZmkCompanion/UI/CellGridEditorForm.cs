@@ -95,6 +95,7 @@ sealed class CellGridEditorForm : Form
             ("Conexión (icono)",     "{conn.icon}"),
             ("Tipo conexión",        "{conn.type}"),
             ("Perfil BLE",           "{conn.profile}"),
+            ("Barra perfiles (5)",   "{conn.profilebar}"),
             ("Texto externo",        "{ext.text}"),
         ]),
     ];
