@@ -68,9 +68,12 @@ sealed class CellGridEditorForm : Form
             ("Hora",                 "{time}"),
             ("Hora 24h",             "{time24}"),
             ("Hora 12h",             "{time12}"),
+            ("Hora (HH)",            "{time.hh}"),
+            ("Minutos (MM)",         "{time.mm}"),
             ("AM/PM",                "{ampm}"),
             ("Fecha",                "{date}"),
             ("Día del mes",          "{date.day}"),
+            ("Día del mes (DD)",     "{time.dd}"),
             ("Mes",                  "{date.month}"),
         ]),
         ("Clima", [

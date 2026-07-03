@@ -161,9 +161,12 @@ sealed class LiveState
             "time"            => DateTime.Now.ToString(h24 ? "HH:mm" : "h:mm"),
             "time24"          => DateTime.Now.ToString("HH:mm"),
             "time12"          => DateTime.Now.ToString("h:mm"),
+            "time.hh"         => DateTime.Now.ToString(h24 ? "HH" : "hh"),
+            "time.mm"         => DateTime.Now.ToString("mm"),
             "ampm"            => h24 ? "" : DateTime.Now.ToString("tt"),
             "date"            => DateTime.Now.ToString("ddd d").ToUpper(),
             "date.day"        => DateTime.Now.Day.ToString(),
+            "time.dd"         => DateTime.Now.ToString("dd"),
             "date.month"      => DateTime.Now.ToString("MMM").ToUpper(),
             "weather.icon"    => WeatherIcon,
             "weather.temp"    => WeatherTemp,
@@ -182,6 +185,7 @@ sealed class LiveState
             {
                 bool applyAlpha = alphaConvert && (isSports || key is "date" or "date.month" or "weather" or "weather.city");
                 bool applyNum   = numConvert   && (isSports || key is "time" or "time24" or "time12"
+                                                        or "time.hh" or "time.mm" or "time.dd"
                                                         or "date" or "date.day" or "date.month"
                                                         or "conn.profile" or "weather" or "weather.temp");
                 if (applyNum || applyAlpha)
