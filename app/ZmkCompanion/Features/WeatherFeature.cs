@@ -8,14 +8,18 @@ namespace ZmkCompanion.Features;
 sealed class WeatherFeature
 {
     // Use the system proxy (same source as the browser) with Windows credentials.
+    // User-Agent is required by some corporate proxies that block non-browser requests.
     // NTLM negotiation requires multiple round-trips so 30s timeout is needed.
     private static readonly HttpClient Http = CreateHttpClient();
     private static HttpClient CreateHttpClient()
     {
         var proxy = System.Net.WebRequest.DefaultWebProxy;
         proxy.Credentials = System.Net.CredentialCache.DefaultNetworkCredentials;
-        return new HttpClient(new HttpClientHandler { Proxy = proxy, UseProxy = true })
+        var client = new HttpClient(new HttpClientHandler { Proxy = proxy, UseProxy = true })
             { Timeout = TimeSpan.FromSeconds(30) };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ZmkCompanion/1.0");
+        return client;
     }
 
     // Returns (message, summary) or throws on error.
@@ -43,7 +47,7 @@ sealed class WeatherFeature
 
         if (!string.IsNullOrWhiteSpace(city))
         {
-            var geo = await Http.GetFromJsonAsync<JsonObject>(
+            var geo = await GetJsonAsync(
                 $"https://geocoding-api.open-meteo.com/v1/search?name={Uri.EscapeDataString(city)}&count=1&language=en&format=json");
             var results = geo?["results"]?.AsArray();
             if (results is null || results.Count == 0)
@@ -55,7 +59,7 @@ sealed class WeatherFeature
         else
         {
             // Auto-detect via ipinfo.io (free HTTPS, no key required).
-            var loc = await Http.GetFromJsonAsync<JsonObject>("https://ipinfo.io/json");
+            var loc = await GetJsonAsync("https://ipinfo.io/json");
             string? locStr = loc?["loc"]?.GetValue<string>(); // "lat,lon"
             if (locStr is null || !locStr.Contains(','))
                 throw new Exception("IP geolocation failed — specify a city in Settings.");
@@ -65,7 +69,7 @@ sealed class WeatherFeature
             resolvedCity = loc?["city"]?.GetValue<string>() ?? "?";
         }
 
-        var wx = await Http.GetFromJsonAsync<JsonObject>(
+        var wx = await GetJsonAsync(
             $"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}" +
             "&current_weather=true&temperature_unit=celsius");
         var cw = wx!["current_weather"]!;
@@ -80,6 +84,21 @@ sealed class WeatherFeature
             Icon   = WmoIcon(wmo),
             Label  = WmoLabel(wmo),
         };
+    }
+
+    // Fetches a URL and parses JSON, logging the response body on non-2xx so
+    // the debug log shows exactly what the proxy or server returned.
+    private static async Task<JsonObject?> GetJsonAsync(string url)
+    {
+        var resp = await Http.GetAsync(url);
+        if (!resp.IsSuccessStatusCode)
+        {
+            string body = await resp.Content.ReadAsStringAsync();
+            string snippet = body.Length > 120 ? body[..120] + "…" : body;
+            DebugLog.Log($"weather HTTP {(int)resp.StatusCode} from {new Uri(url).Host}: {snippet}");
+            resp.EnsureSuccessStatusCode(); // throws HttpRequestException with status code
+        }
+        return await resp.Content.ReadFromJsonAsync<JsonObject>();
     }
 
     // WMO 4501 weather code → Nerd Font icon + short label
