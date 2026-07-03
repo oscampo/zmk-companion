@@ -69,9 +69,11 @@ sealed class WeatherFeature
             resolvedCity = loc?["city"]?.GetValue<string>() ?? "?";
         }
 
+        // InvariantCulture prevents es-CO (and other comma-decimal locales) from
+        // formatting 3.43054 as "3,43054", which the API interprets as lat=43054.
         var wx = await GetJsonAsync(
-            $"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}" +
-            "&current_weather=true&temperature_unit=celsius");
+            string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true&temperature_unit=celsius"));
         var cw = wx!["current_weather"]!;
         double tempC = cw["temperature"]!.GetValue<double>();
         int wmo = cw["weathercode"]!.GetValue<int>();
