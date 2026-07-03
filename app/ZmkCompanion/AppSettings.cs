@@ -22,6 +22,12 @@ sealed class AppSettings
     public List<CellGridPage> DisplayPages      { get; set; } = [DefaultDisplayPage()];
     public bool               CycleDisplayPages { get; set; } = false;
 
+    // Pomodoro timer configuration.
+    public int PomodoroWorkMin      { get; set; } = 25;
+    public int PomodoroBreakMin     { get; set; } = 5;
+    public int PomodoroCycles       { get; set; } = 4;
+    public int PomodoroLongBreakMin { get; set; } = 15;
+
     // Weather data source — city name for API queries (blank = IP geolocation).
     public string City { get; set; } = "";
     // Selected leagues as ESPN paths, e.g. ["football/nfl", "soccer/eng.1"]

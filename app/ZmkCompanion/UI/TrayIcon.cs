@@ -18,6 +18,7 @@ sealed class TrayIcon : IDisposable
     public event Action? ExitRequested;
     public event Action? CanvasEditorRequested;
     public event Action? PomodoroToggleRequested;
+    public event Action? PomodoroConfigRequested;
 
     // Controlled by AppContext: reflects whether any page has a Pomodoro widget.
     public bool HasPomodoroWidget { get; set; }
@@ -110,6 +111,8 @@ sealed class TrayIcon : IDisposable
             : "Pomodoro — Iniciar";
         strip.Items.Add(new ToolStripMenuItem(pomText, null, (_, _) => PomodoroToggleRequested?.Invoke())
             { Enabled = connected && HasPomodoroWidget });
+        strip.Items.Add(new ToolStripMenuItem("Configurar Pomodoro…", null,
+            (_, _) => PomodoroConfigRequested?.Invoke()));
 
         strip.Items.Add(new ToolStripSeparator());
 

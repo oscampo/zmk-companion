@@ -49,9 +49,10 @@ sealed class ZmkAppContext : ApplicationContext
         _ble.Disconnected           += OnDisconnected;
         _ble.BatteryLevelChanged    += OnBatteryLevelChanged;
         _ble.StatusChanged          += OnStatusChanged;
-        _tray.ExitRequested         += OnExit;
-        _tray.CanvasEditorRequested += OnDisplayEditor;
+        _tray.ExitRequested           += OnExit;
+        _tray.CanvasEditorRequested   += OnDisplayEditor;
         _tray.PomodoroToggleRequested += OnPomodoroToggle;
+        _tray.PomodoroConfigRequested += OnPomodoroConfig;
 
         _pomodoro.StateChanged     += OnPomodoroStateChanged;
         _pomodoro.SessionCompleted += OnPomodoroCompleted;
@@ -227,6 +228,35 @@ sealed class ZmkAppContext : ApplicationContext
         }
     }
 
+    private void OnPomodoroConfig()
+    {
+        using var dlg = new PomodoroConfigDialog(
+            _settings.PomodoroWorkMin,
+            _settings.PomodoroBreakMin,
+            _settings.PomodoroCycles,
+            _settings.PomodoroLongBreakMin);
+
+        if (dlg.ShowDialog() != DialogResult.OK) return;
+
+        _settings.PomodoroWorkMin      = dlg.WorkMin;
+        _settings.PomodoroBreakMin     = dlg.BreakMin;
+        _settings.PomodoroCycles       = dlg.Cycles;
+        _settings.PomodoroLongBreakMin = dlg.LongBreakMin;
+        _settings.Save();
+
+        // If a session is in progress, restart it with the new config immediately.
+        if (_pomodoro.Phase != PomodoroPhase.Done)
+        {
+            _pomodoro.Start(new Features.PomodoroConfig
+            {
+                WorkMin      = dlg.WorkMin,
+                BreakMin     = dlg.BreakMin,
+                Cycles       = dlg.Cycles,
+                LongBreakMin = dlg.LongBreakMin,
+            });
+        }
+    }
+
     private void OnPomodoroStateChanged()
     {
         var (time, phase, bar, icon, cycle) = _pomodoro.GetDisplayState();
@@ -275,7 +305,13 @@ sealed class ZmkAppContext : ApplicationContext
         foreach (var page in _settings.DisplayPages)
             foreach (var row in page.Rows)
                 if (row.Template.Contains("{pomodoro.", StringComparison.OrdinalIgnoreCase))
-                    return new PomodoroConfig(); // default timings; editor sets them per-row
+                    return new PomodoroConfig
+                    {
+                        WorkMin      = _settings.PomodoroWorkMin,
+                        BreakMin     = _settings.PomodoroBreakMin,
+                        Cycles       = _settings.PomodoroCycles,
+                        LongBreakMin = _settings.PomodoroLongBreakMin,
+                    };
         return null;
     }
 

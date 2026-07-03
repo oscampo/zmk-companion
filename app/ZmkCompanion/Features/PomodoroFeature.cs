@@ -4,10 +4,10 @@ enum PomodoroPhase { Work, Break, LongBreak, Done }
 
 sealed class PomodoroConfig
 {
-    public int WorkMin      { get; init; } = 25;
-    public int BreakMin     { get; init; } = 5;
-    public int Cycles       { get; init; } = 4;
-    public int LongBreakMin { get; init; } = 15;
+    public int WorkMin      { get; set; } = 25;
+    public int BreakMin     { get; set; } = 5;
+    public int Cycles       { get; set; } = 4;
+    public int LongBreakMin { get; set; } = 15;
 
     private static readonly Dictionary<string, PomodoroConfig> Presets = new()
     {
