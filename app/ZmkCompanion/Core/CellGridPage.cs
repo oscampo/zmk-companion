@@ -1,12 +1,21 @@
 namespace ZmkCompanion.Core;
 
+enum SplitHalf { None = 0, Top = 1, Bottom = 2 }
+
 sealed class CellGridRow
 {
-    public byte   TierId   { get; set; } = 4; // large_impar (13×22)
-    public string Template { get; set; } = "";
-    public string Align    { get; set; } = "center"; // left | center | right
+    public byte      TierId    { get; set; } = 4; // large_impar (13×22)
+    public string    Template  { get; set; } = "";
+    public string    Align     { get; set; } = "center"; // left | center | right
+    public SplitHalf SplitHalf { get; set; } = SplitHalf.None;
 
-    public CellGridRow Clone() => new() { TierId = TierId, Template = Template, Align = Align };
+    public CellGridRow Clone() => new()
+    {
+        TierId    = TierId,
+        Template  = Template,
+        Align     = Align,
+        SplitHalf = SplitHalf,
+    };
 }
 
 // One display page: a sequence of cell-grid rows rendered top-to-bottom.

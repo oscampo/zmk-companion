@@ -173,11 +173,11 @@ sealed class CellGridCompositor : IDisposable
             var    row  = _rows[rowIdx];
             var    tier = CellGridProtocol.Tiers[row.TierId];
             string text = _state.Expand(row.Template, use24h, null);
-            await SendRowAsync(rowIdx, tier, text, row.Align, full);
+            await SendRowAsync(rowIdx, tier, text, row.Align, row.SplitHalf, full);
         }
     }
 
-    private async Task SendRowAsync(int rowIdx, CellTier tier, string text, string align, bool full)
+    private async Task SendRowAsync(int rowIdx, CellTier tier, string text, string align, SplitHalf split, bool full)
     {
         string[] glyphs   = SplitElements(text);
         int      count    = Math.Min(glyphs.Length, tier.Cols);
@@ -196,7 +196,9 @@ sealed class CellGridCompositor : IDisposable
         {
             int gi = col - start;
             byte[] cell = (gi >= 0 && gi < count)
-                ? CellGridRenderer.RenderCell(tier, glyphs[gi])
+                ? (split != SplitHalf.None
+                    ? CellGridRenderer.RenderCellSplit(tier, glyphs[gi], split)
+                    : CellGridRenderer.RenderCell(tier, glyphs[gi]))
                 : blank;
 
             var key = (rowIdx, col);
@@ -245,7 +247,9 @@ sealed class CellGridCompositor : IDisposable
             {
                 int gi = col - start;
                 byte[] cellBits = (gi >= 0 && gi < count)
-                    ? CellGridRenderer.RenderCell(tier, glyphs[gi])
+                    ? (row.SplitHalf != SplitHalf.None
+                        ? CellGridRenderer.RenderCellSplit(tier, glyphs[gi], row.SplitHalf)
+                        : CellGridRenderer.RenderCell(tier, glyphs[gi]))
                     : new byte[tier.Bytes];
 
                 // Unpack 1bpp cell into preview pixels.

@@ -39,6 +39,7 @@ sealed class CellGridEditorForm : Form
 
     // Row editor controls
     private readonly ComboBox      _cmbTier;
+    private readonly ComboBox      _cmbSplit;
     private readonly TextBox       _txtTemplate;
     private readonly RadioButton   _radLeft, _radCenter, _radRight;
     private readonly Panel         _rowEditorPanel;
@@ -225,15 +226,26 @@ sealed class CellGridEditorForm : Form
         };
         grpRows.Controls.Add(btnDown);
 
+        var btnIconPair = new Button { Text = "➕ Par de íconos", Location = new Point(248, 122), Size = new Size(110, 24) };
+        btnIconPair.Click += OnAddIconPair;
+        grpRows.Controls.Add(btnIconPair);
+
         // ── Row editor sub-panel ──────────────────────────────────────────────
         _rowEditorPanel = new Panel { Location = new Point(6, 152), Size = new Size(390, 180), Enabled = false };
 
         _rowEditorPanel.Controls.Add(new Label { Text = "Tier:", Location = new Point(0, 4), Size = new Size(30, 18) });
-        _cmbTier = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(34, 1), Size = new Size(200, 23) };
+        _cmbTier = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(34, 1), Size = new Size(160, 23) };
         foreach (var t in CellGridProtocol.Tiers)
             _cmbTier.Items.Add($"{t.Name}  {t.W}×{t.H}px  ({t.Cols} {(t.Cols == 1 ? "col" : "cols")})");
         _cmbTier.SelectedIndexChanged += OnTierChanged;
         _rowEditorPanel.Controls.Add(_cmbTier);
+
+        _rowEditorPanel.Controls.Add(new Label { Text = "Mitad:", Location = new Point(198, 4), Size = new Size(38, 18) });
+        _cmbSplit = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(238, 1), Size = new Size(148, 23) };
+        _cmbSplit.Items.AddRange(["Normal", "↑ Mitad superior", "↓ Mitad inferior"]);
+        _cmbSplit.SelectedIndex = 0;
+        _cmbSplit.SelectedIndexChanged += OnSplitChanged;
+        _rowEditorPanel.Controls.Add(_cmbSplit);
 
         _rowEditorPanel.Controls.Add(new Label { Text = "Template:", Location = new Point(0, 32), Size = new Size(62, 18) });
         _txtTemplate = new TextBox { Location = new Point(0, 50), Size = new Size(385, 60), Multiline = true };
@@ -520,7 +532,13 @@ sealed class CellGridEditorForm : Form
             foreach (var row in _pages[_pageIndex].Rows)
             {
                 var tier = CellGridProtocol.Tiers[row.TierId];
-                _lstRows.Items.Add($"{tier.Name}  {tier.W}×{tier.H}   \"{Truncate(row.Template, 28)}\"");
+                string splitMark = row.SplitHalf switch
+                {
+                    SplitHalf.Top    => "↑ ",
+                    SplitHalf.Bottom => "↓ ",
+                    _                => "",
+                };
+                _lstRows.Items.Add($"{splitMark}{tier.Name}  {tier.W}×{tier.H}   \"{Truncate(row.Template, 28)}\"");
             }
         _lstRows.SelectedIndexChanged += OnRowSelected;
         RefreshPreview();
@@ -538,8 +556,9 @@ sealed class CellGridEditorForm : Form
 
         var row = _pages[_pageIndex].Rows[index];
         _suppressRowUi = true;
-        _cmbTier.SelectedIndex = row.TierId;
-        _txtTemplate.Text      = row.Template;
+        _cmbTier.SelectedIndex  = row.TierId;
+        _cmbSplit.SelectedIndex = (int)row.SplitHalf;
+        _txtTemplate.Text       = row.Template;
         (_radLeft.Checked, _radCenter.Checked, _radRight.Checked) = row.Align switch
         {
             "left"  => (true,  false, false),
@@ -592,6 +611,36 @@ sealed class CellGridEditorForm : Form
         string align = _radLeft.Checked ? "left" : _radRight.Checked ? "right" : "center";
         _pages[_pageIndex].Rows[_rowIndex].Align = align;
         RefreshPreview();
+    }
+
+    private void OnSplitChanged(object? sender, EventArgs e)
+    {
+        if (_suppressRowUi || _rowIndex < 0 || _pageIndex < 0) return;
+        _pages[_pageIndex].Rows[_rowIndex].SplitHalf = (SplitHalf)_cmbSplit.SelectedIndex;
+        RefreshRowList();
+        SelectRow(_rowIndex);
+    }
+
+    private void OnAddIconPair(object? sender, EventArgs e)
+    {
+        if (_pageIndex < 0) return;
+        var page = _pages[_pageIndex];
+        // icon_half tier id = 14 (22×11), each half uses 11px height
+        const byte iconHalfId = 14;
+        var tier = CellGridProtocol.Tiers[iconHalfId];
+        int remaining = BitmapFrame.Height - page.TotalHeight;
+        if (remaining < tier.H * 2)
+        {
+            MessageBox.Show(
+                $"No hay espacio suficiente para un par de íconos ({tier.H * 2}px necesarios, {remaining}px libres).",
+                "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        int insertAt = _rowIndex >= 0 ? _rowIndex + 1 : page.Rows.Count;
+        page.Rows.Insert(insertAt, new CellGridRow { TierId = iconHalfId, Template = "", Align = "center", SplitHalf = SplitHalf.Bottom });
+        page.Rows.Insert(insertAt, new CellGridRow { TierId = iconHalfId, Template = "", Align = "center", SplitHalf = SplitHalf.Top });
+        RefreshRowList();
+        SelectRow(insertAt);
     }
 
     // ── Preview ───────────────────────────────────────────────────────────────

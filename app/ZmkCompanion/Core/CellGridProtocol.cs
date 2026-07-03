@@ -55,6 +55,10 @@ static class CellGridProtocol
         new(11, "large_sq_impar",   13, 13),
         new(12, "large_sq_par",     16, 16),
         new(13, "xlarge_sq_par",    17, 17),  // 4 cols × 17 = 68 px, 51 B bitmap
+        // ── Split-half (require SplitHalf != None in CellGridRow) ─────────────
+        // Two stacked icon_half rows display a full 22×22 NF icon (3 cols × 22 = 66 px).
+        // Each half: ((22+7)/8)*11 = 3*11 = 33 B bitmap, 38 B message — within ATT budget.
+        new(14, "icon_half",        22, 11),
     ];
 
     // LAYOUT v1.1: run-length entries (tier_id, repeat). Max 16 entries.

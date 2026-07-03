@@ -47,6 +47,32 @@ static class CellGridRenderer
         return Pack1bpp(bmp);
     }
 
+    // Renders element into a W×(H*2) square then crops the top or bottom H rows.
+    // Use with the icon_half tier (22×11): two stacked rows display a full 22×22 glyph.
+    public static byte[] RenderCellSplit(CellTier tier, string element, SplitHalf half)
+    {
+        int fullH = tier.H * 2;
+        using var bmp = new Bitmap(tier.W, fullH);
+        using var g   = Graphics.FromImage(bmp);
+        g.Clear(Color.Black);
+        g.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
+
+        var sf       = StringFormat.GenericTypographic;
+        float sizePx = tier.W * 0.92f; // square canvas: fill W×W
+
+        using var probe = NerdFont.CreateFont(sizePx);
+        SizeF sz = g.MeasureString(element, probe, PointF.Empty, sf);
+        if (sz.Width > tier.W) sizePx *= tier.W / sz.Width;
+
+        using var font = NerdFont.CreateFont(sizePx);
+        sz = g.MeasureString(element, font, PointF.Empty, sf);
+        g.DrawString(element, font, Brushes.White,
+            (tier.W - sz.Width) / 2f, (fullH - sz.Height) / 2f, sf);
+
+        int startY = half == SplitHalf.Top ? 0 : tier.H;
+        return PackCrop1bpp(bmp, startY, tier.H);
+    }
+
     // Packs a bitmap to 1bpp: row-major, MSB-first, rows padded to a byte
     // boundary (per the protocol spec; must match firmware's decoder).
     public static byte[] Pack1bpp(Bitmap bmp)
@@ -56,6 +82,18 @@ static class CellGridRenderer
         for (int y = 0; y < bmp.Height; y++)
             for (int x = 0; x < bmp.Width; x++)
                 if (bmp.GetPixel(x, y).R > 127)
+                    packed[y * rowBytes + x / 8] |= (byte)(0x80 >> (x % 8));
+        return packed;
+    }
+
+    // Packs [startY, startY+height) rows of bmp to 1bpp.
+    private static byte[] PackCrop1bpp(Bitmap bmp, int startY, int height)
+    {
+        int rowBytes = (bmp.Width + 7) / 8;
+        var packed = new byte[rowBytes * height];
+        for (int y = 0; y < height; y++)
+            for (int x = 0; x < bmp.Width; x++)
+                if (bmp.GetPixel(x, startY + y).R > 127)
                     packed[y * rowBytes + x / 8] |= (byte)(0x80 >> (x % 8));
         return packed;
     }
