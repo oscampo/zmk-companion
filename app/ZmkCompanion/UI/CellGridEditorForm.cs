@@ -231,7 +231,7 @@ sealed class CellGridEditorForm : Form
         _rowEditorPanel.Controls.Add(new Label { Text = "Tier:", Location = new Point(0, 4), Size = new Size(30, 18) });
         _cmbTier = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(34, 1), Size = new Size(200, 23) };
         foreach (var t in CellGridProtocol.Tiers)
-            _cmbTier.Items.Add($"{t.Name}  {t.W}×{t.H}px  ({t.Cols} cols)");
+            _cmbTier.Items.Add($"{t.Name}  {t.W}×{t.H}px  ({t.Cols} {(t.Cols == 1 ? "col" : "cols")})");
         _cmbTier.SelectedIndexChanged += OnTierChanged;
         _rowEditorPanel.Controls.Add(_cmbTier);
 

@@ -7,9 +7,17 @@ namespace ZmkCompanion.Core;
 // v1.2 — MsgLayoutV2 (0x04): (W, H, repeat) entries; firmware is
 //         dimension-agnostic — no need to keep tier tables in sync.
 //         New tiers can be added app-side without a firmware change.
-sealed record CellTier(byte Id, string Name, int W, int H)
+//
+// BLE cell-size constraint: BuildCell encodes bitmap length as uint16 LE.
+// CELL message = 5 + bitmap.Length bytes.  Practical BLE ATT limit ≈ 512 B,
+// so max bitmap = 507 bytes.  Max practical tile: 34×34 = 170 B (safe).
+// Tiles wider than 34px are not supported without chunked writes.
+sealed record CellTier(byte Id, string Name, int W, int H, int? ColsOverride = null)
 {
-    public int Cols  => BitmapFrame.Width / W;
+    // ColsOverride lets a tile behave as fewer logical columns than W implies
+    // (e.g. half_sq_single has 2 physical cols in firmware but 1 logical col
+    // in the compositor so only col 0 is ever written).
+    public int Cols  => ColsOverride ?? BitmapFrame.Width / W;
     public int Bytes => ((W + 7) / 8) * H;   // 1bpp, rows padded to byte boundary
 }
 
@@ -33,6 +41,8 @@ static class CellGridProtocol
         new(5,  "large_par",      16, 28),
         new(6,  "micro",          2,  2),
         // ── Square (require LAYOUT_v2 / firmware ≥ v1.2) ─────────────────────
+        // Bitmap sizes (bytes) at each size: 6=6, 8=8, 9=18, 11=22, 13=26,
+        // 16=32, 22=66, 34=170. All ≤ 255 and within typical BLE ATT budget.
         new(7,  "small_sq_impar",  6,  6),
         new(8,  "small_sq_par",    8,  8),
         new(9,  "medium_sq_impar", 9,  9),
@@ -41,8 +51,12 @@ static class CellGridProtocol
         new(12, "large_sq_par",    16, 16),
         new(13, "huge_sq_impar",   22, 22),
         new(14, "huge_sq_par",     34, 34),
-        new(15, "half_sq_single",  34, 34),  // semantic alias: use with 1 glyph
-        new(16, "full_sq_single",  68, 68),  // full-width square; 1 col
+        // half_sq_single: same 34×34 cell as huge_sq_par but ColsOverride=1
+        // so the compositor only renders/sends col 0 (icon left-aligned).
+        // Firmware sees (W=34,H=34) → 2 physical cols; col 1 stays blank.
+        new(15, "half_sq_single",  34, 34, ColsOverride: 1),
+        // full_sq_single (68×68) removed: 612-byte bitmap exceeds uint8 limit
+        // and BLE ATT budget.  Needs chunked-write protocol extension first.
     ];
 
     // LAYOUT v1.1: run-length entries (tier_id, repeat). Max 16 entries.
@@ -82,12 +96,16 @@ static class CellGridProtocol
 
     public static byte[] BuildCell(int rowIndex, int colIndex, byte[] bitmap)
     {
-        var msg = new byte[4 + bitmap.Length];
+        // bitmap_len is uint16 LE (bytes 3-4) to support tiles larger than 255 bytes.
+        // Firmware must read 2 bytes for the length field.
+        int len = bitmap.Length;
+        var msg = new byte[5 + len];
         msg[0] = MsgCell;
         msg[1] = (byte)rowIndex;
         msg[2] = (byte)colIndex;
-        msg[3] = (byte)bitmap.Length;
-        bitmap.CopyTo(msg, 4);
+        msg[3] = (byte)(len & 0xFF);         // length low byte
+        msg[4] = (byte)((len >> 8) & 0xFF);  // length high byte
+        bitmap.CopyTo(msg, 5);
         return msg;
     }
 
