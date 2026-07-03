@@ -477,9 +477,15 @@ sealed class CellGridEditorForm : Form
             _lblWeatherStatus.Text      = $"{data.City} {data.TempC:F0}°";
             _lblWeatherStatus.ForeColor = System.Drawing.Color.LimeGreen;
         }
+        catch (System.Net.Http.HttpRequestException ex) when (ex.StatusCode.HasValue)
+        {
+            _lblWeatherStatus.Text      = $"HTTP {(int)ex.StatusCode.Value} — red/proxy";
+            _lblWeatherStatus.ForeColor = System.Drawing.Color.OrangeRed;
+        }
         catch (Exception ex)
         {
-            _lblWeatherStatus.Text      = ex.Message.Length > 28 ? ex.Message[..28] + "…" : ex.Message;
+            string msg = ex.Message;
+            _lblWeatherStatus.Text      = msg.Length > 34 ? msg[..34] + "…" : msg;
             _lblWeatherStatus.ForeColor = System.Drawing.Color.OrangeRed;
         }
     }

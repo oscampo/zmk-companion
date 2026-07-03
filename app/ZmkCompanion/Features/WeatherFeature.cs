@@ -7,7 +7,10 @@ namespace ZmkCompanion.Features;
 
 sealed class WeatherFeature
 {
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
+    // UseDefaultCredentials=true: passes Windows NTLM/Kerberos credentials to
+    // corporate proxies that issue a 407 challenge before forwarding the request.
+    private static readonly HttpClient Http = new(new HttpClientHandler { UseDefaultCredentials = true })
+        { Timeout = TimeSpan.FromSeconds(10) };
 
     // Returns (message, summary) or throws on error.
     public async Task<(string Message, string Summary)> FetchAndSendAsync(BleService ble, string city)
