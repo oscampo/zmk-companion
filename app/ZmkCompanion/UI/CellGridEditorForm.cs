@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Drawing.Text;
+using System.Text.Json;
 using System.Windows.Forms;
 using ZmkCompanion.Core;
 using ZmkCompanion.Features;
@@ -7,7 +8,7 @@ using ZmkCompanion.Features;
 namespace ZmkCompanion.UI;
 
 // Editor for cell-grid display pages.
-// Left panel: page list, row editor, data sources.
+// Left panel: page list, row editor, data-source tabs (Sports/Weather/CLI/Library).
 // Right panel: scaled live preview of the display (68×160px @ 3×).
 sealed class CellGridEditorForm : Form
 {
@@ -52,12 +53,21 @@ sealed class CellGridEditorForm : Form
     private readonly ComboBox      _cmbBindCategory;
     private readonly ComboBox      _cmbBind;
 
-    // Data sources
+    // Data-source tabs
     private readonly TextBox       _txtCity;
     private readonly Label         _lblWeatherStatus;
+    private readonly RadioButton   _radTempC, _radTempF;
     private readonly Panel         _teamsPanel;
     private readonly Dictionary<string, TextBox> _teamBoxes = new();
     private          List<string>  _editLeagues;
+
+    // Library tab
+    private readonly TextBox  _txtLibName;
+    private readonly ListBox  _lstLibFiles;
+
+    private static string LibraryDir => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "ZmkCompanion", "library");
 
     private const int DeportesCategory = 2;
 
@@ -82,7 +92,7 @@ sealed class CellGridEditorForm : Form
             ("Temperatura",          "{weather.temp}"),
             ("Ciudad clima",         "{weather.city}"),
         ]),
-        // Index 2 = DeportesCategory — populated dynamically in PopulateBindings/BuildDeportesItems
+        // Index 2 = DeportesCategory — populated dynamically
         ("Deportes", []),
         ("Pomodoro", [
             ("Tiempo pomodoro",      "{pomodoro.time}"),
@@ -99,7 +109,11 @@ sealed class CellGridEditorForm : Form
             ("Tipo conexión",        "{conn.type}"),
             ("Perfil BLE",           "{conn.profile}"),
             ("Barra perfiles (5)",   "{conn.profilebar}"),
-            ("Texto externo",        "{ext.text}"),
+            ("Texto ext. (completo)","{ext.text}"),
+            ("Texto ext. línea 1",   "{ext.text.0}"),
+            ("Texto ext. línea 2",   "{ext.text.1}"),
+            ("Texto ext. línea 3",   "{ext.text.2}"),
+            ("Texto ext. línea 4",   "{ext.text.3}"),
         ]),
     ];
 
@@ -233,9 +247,13 @@ sealed class CellGridEditorForm : Form
         };
         grpRows.Controls.Add(btnDown);
 
-        var btnIconPair = new Button { Text = "➕ Par de íconos", Location = new Point(248, 122), Size = new Size(110, 24) };
+        var btnIconPair = new Button { Text = "+ Par íconos", Location = new Point(248, 122), Size = new Size(82, 24) };
         btnIconPair.Click += OnAddIconPair;
         grpRows.Controls.Add(btnIconPair);
+
+        var btnTextBlock = new Button { Text = "+ Texto", Location = new Point(334, 122), Size = new Size(58, 24) };
+        btnTextBlock.Click += OnAddTextBlock;
+        grpRows.Controls.Add(btnTextBlock);
 
         // ── Row editor sub-panel ──────────────────────────────────────────────
         _rowEditorPanel = new Panel { Location = new Point(6, 152), Size = new Size(390, 215), Enabled = false };
@@ -311,7 +329,7 @@ sealed class CellGridEditorForm : Form
             Location      = new Point(150, 180),
             Size          = new Size(160, 23),
         };
-        _cmbBind.SelectedIndexChanged += (_, _) => { }; // keep selection stable
+        _cmbBind.SelectedIndexChanged += (_, _) => { };
         _rowEditorPanel.Controls.Add(_cmbBind);
         PopulateBindings(0);
 
@@ -322,29 +340,17 @@ sealed class CellGridEditorForm : Form
         grpRows.Controls.Add(_rowEditorPanel);
         Controls.Add(grpRows);
 
-        // ── LEFT: Data Sources group ──────────────────────────────────────────
-        var grpData = new GroupBox { Text = "Fuentes de datos", Location = new Point(6, 481), Size = new Size(406, 138) };
-
-        grpData.Controls.Add(new Label { Text = "Ciudad (clima):", Location = new Point(6, 22), Size = new Size(90, 18) });
-        _txtCity = new TextBox { Text = settings.City, Location = new Point(100, 19), Size = new Size(100, 23) };
-        grpData.Controls.Add(_txtCity);
-
-        var btnRefreshWeather = new Button { Text = "↺", Location = new Point(206, 19), Size = new Size(26, 23) };
-        btnRefreshWeather.Click += (_, _) => _ = RefreshWeatherPreviewAsync(_txtCity.Text.Trim());
-        grpData.Controls.Add(btnRefreshWeather);
-
-        _lblWeatherStatus = new Label
+        // ── LEFT: Data Sources — TabControl ───────────────────────────────────
+        var tabData = new TabControl
         {
-            Text      = "…",
-            Location  = new Point(238, 22),
-            Size      = new Size(160, 18),
-            ForeColor = System.Drawing.Color.Gray,
-            AutoSize  = false,
+            Location = new Point(6, 481),
+            Size     = new Size(406, 138),
         };
-        grpData.Controls.Add(_lblWeatherStatus);
 
-        grpData.Controls.Add(new Label { Text = "Ligas y equipos:", Location = new Point(6, 52), Size = new Size(100, 18) });
-        var btnLeagues = new Button { Text = "Editar ligas…", Location = new Point(288, 49), Size = new Size(110, 24) };
+        // ── Tab: Deportes ─────────────────────────────────────────────────────
+        var tabSports = new TabPage("Deportes");
+        tabSports.Controls.Add(new Label { Text = "Ligas y equipos:", Location = new Point(6, 6), AutoSize = true });
+        var btnLeagues = new Button { Text = "Editar ligas…", Location = new Point(280, 3), Size = new Size(110, 23) };
         btnLeagues.Click += (_, _) =>
         {
             using var dlg = new LeaguePickerDialog(_editLeagues);
@@ -355,16 +361,105 @@ sealed class CellGridEditorForm : Form
                 PopulateBindings(_cmbBindCategory.SelectedIndex);
             }
         };
-        grpData.Controls.Add(btnLeagues);
+        tabSports.Controls.Add(btnLeagues);
 
         _teamsPanel = new Panel
         {
-            Location   = new Point(6, 72),
-            Size       = new Size(390, 60),
+            Location   = new Point(4, 28),
+            Size       = new Size(390, 68),
             AutoScroll = true,
         };
-        grpData.Controls.Add(_teamsPanel);
-        Controls.Add(grpData);
+        tabSports.Controls.Add(_teamsPanel);
+        tabData.TabPages.Add(tabSports);
+
+        // ── Tab: Clima ────────────────────────────────────────────────────────
+        var tabWeather = new TabPage("Clima");
+        tabWeather.Controls.Add(new Label { Text = "Ciudad:", Location = new Point(6, 8), AutoSize = true });
+        _txtCity = new TextBox { Text = settings.City, Location = new Point(58, 5), Size = new Size(100, 22) };
+        tabWeather.Controls.Add(_txtCity);
+
+        var btnRefreshWeather = new Button { Text = "↺", Location = new Point(162, 5), Size = new Size(26, 22) };
+        btnRefreshWeather.Click += (_, _) => _ = RefreshWeatherPreviewAsync(_txtCity.Text.Trim());
+        tabWeather.Controls.Add(btnRefreshWeather);
+
+        _lblWeatherStatus = new Label
+        {
+            Text      = "…",
+            Location  = new Point(194, 8),
+            Size      = new Size(196, 18),
+            ForeColor = Color.Gray,
+            AutoSize  = false,
+        };
+        tabWeather.Controls.Add(_lblWeatherStatus);
+
+        tabWeather.Controls.Add(new Label { Text = "Temperatura:", Location = new Point(6, 36), AutoSize = true });
+        bool isFahrenheit = settings.WeatherUnit == "fahrenheit";
+        _radTempC = new RadioButton { Text = "°C", Location = new Point(90, 34), Size = new Size(42, 20), Checked = !isFahrenheit };
+        _radTempF = new RadioButton { Text = "°F", Location = new Point(136, 34), Size = new Size(42, 20), Checked =  isFahrenheit };
+        tabWeather.Controls.AddRange([_radTempC, _radTempF]);
+        tabData.TabPages.Add(tabWeather);
+
+        // ── Tab: CLI ──────────────────────────────────────────────────────────
+        var tabCli = new TabPage("CLI");
+        string exeDir   = AppContext.BaseDirectory;
+        string zkcPath  = Path.Combine(exeDir, "zkc.exe");
+        var txtCliPath = new TextBox
+        {
+            Text      = zkcPath,
+            ReadOnly  = true,
+            Location  = new Point(4, 5),
+            Size      = new Size(312, 22),
+            BackColor = SystemColors.Control,
+        };
+        tabCli.Controls.Add(txtCliPath);
+
+        var btnCopyPath = new Button { Text = "Copiar", Location = new Point(320, 5), Size = new Size(60, 22) };
+        btnCopyPath.Click += (_, _) => Clipboard.SetText(zkcPath);
+        tabCli.Controls.Add(btnCopyPath);
+
+        var btnOpenCli = new Button { Text = "Abrir terminal con zkc -h", Location = new Point(4, 33), Size = new Size(180, 26) };
+        btnOpenCli.Click += OnOpenCli;
+        tabCli.Controls.Add(btnOpenCli);
+
+        var lblCliHint = new Label
+        {
+            Text      = "Uso: zkc \"mensaje\"  |  zkc \"línea1\\nlínea2\"",
+            Location  = new Point(4, 66),
+            Size      = new Size(390, 18),
+            ForeColor = Color.Gray,
+            Font      = new Font(SystemFonts.MessageBoxFont!.FontFamily, 7.5f),
+        };
+        tabCli.Controls.Add(lblCliHint);
+        tabData.TabPages.Add(tabCli);
+
+        // ── Tab: Biblioteca ───────────────────────────────────────────────────
+        var tabLib = new TabPage("Biblioteca");
+        tabLib.Controls.Add(new Label { Text = "Nombre:", Location = new Point(4, 8), AutoSize = true });
+        _txtLibName = new TextBox { Location = new Point(58, 5), Size = new Size(200, 22) };
+        tabLib.Controls.Add(_txtLibName);
+
+        var btnLibSave = new Button { Text = "Guardar", Location = new Point(264, 5), Size = new Size(70, 22) };
+        btnLibSave.Click += OnLibSave;
+        tabLib.Controls.Add(btnLibSave);
+
+        _lstLibFiles = new ListBox
+        {
+            Location       = new Point(4, 32),
+            Size           = new Size(274, 66),
+            IntegralHeight = false,
+        };
+        tabLib.Controls.Add(_lstLibFiles);
+
+        var btnLibLoad = new Button { Text = "Cargar", Location = new Point(284, 32), Size = new Size(106, 24) };
+        btnLibLoad.Click += OnLibLoad;
+        tabLib.Controls.Add(btnLibLoad);
+
+        var btnLibDel = new Button { Text = "Eliminar", Location = new Point(284, 60), Size = new Size(106, 24) };
+        btnLibDel.Click += OnLibDelete;
+        tabLib.Controls.Add(btnLibDel);
+
+        tabData.TabPages.Add(tabLib);
+        Controls.Add(tabData);
 
         // ── Bottom buttons ────────────────────────────────────────────────────
         var btnApply = new Button { Text = "Aplicar", Location = new Point(270, 625), Size = new Size(74, 28), DialogResult = DialogResult.OK };
@@ -380,8 +475,8 @@ sealed class CellGridEditorForm : Form
         if (_pages.Count == 0) _pages.Add(new CellGridPage());
         LoadPage(0);
         RebuildTeamInputs();
+        RefreshLibraryList();
 
-        // Refresh weather on every editor open so the preview reflects the saved city.
         _ = RefreshWeatherPreviewAsync(settings.City);
     }
 
@@ -402,9 +497,6 @@ sealed class CellGridEditorForm : Form
         if (_cmbBind.Items.Count > 0) _cmbBind.SelectedIndex = 0;
     }
 
-    // Generates the Deportes binding list dynamically based on configured leagues.
-    // Generic (default-league) entries always appear; per-league qualified entries
-    // are added when more than one league is configured.
     private (string Label, string Token)[] BuildDeportesItems()
     {
         var items = new List<(string, string)>
@@ -422,8 +514,6 @@ sealed class CellGridEditorForm : Form
             ("Próx. hora",           "{sports.next_gametime}"),
         };
 
-        // Add league-specific entries when multiple leagues are configured
-        // so the user can build pages that mix data from different sports.
         if (_editLeagues.Count > 1)
         {
             foreach (var path in _editLeagues)
@@ -444,7 +534,7 @@ sealed class CellGridEditorForm : Form
 
     private void OnInsertBinding(object? sender, EventArgs e)
     {
-        int catIdx = _cmbBindCategory.SelectedIndex;
+        int catIdx  = _cmbBindCategory.SelectedIndex;
         int bindIdx = _cmbBind.SelectedIndex;
         if (catIdx < 0 || bindIdx < 0) return;
         var items = catIdx == DeportesCategory
@@ -462,13 +552,10 @@ sealed class CellGridEditorForm : Form
 
     private void RebuildTeamInputs()
     {
-        // Preserve any values the user typed before rebuilding.
         var saved = _teamBoxes.ToDictionary(kv => kv.Key, kv => kv.Value.Text.Trim());
         _teamBoxes.Clear();
         _teamsPanel.Controls.Clear();
 
-        // Horizontal layout: up to 3 leagues per row, each slot is 130px wide.
-        // AutoScroll handles overflow if more leagues are configured.
         int col = 0, row = 0;
         const int slotW = 130, rowH = 28;
         const int colsPerRow = 3;
@@ -497,24 +584,28 @@ sealed class CellGridEditorForm : Form
     private async Task RefreshWeatherPreviewAsync(string city)
     {
         _lblWeatherStatus.Text      = "consultando…";
-        _lblWeatherStatus.ForeColor = System.Drawing.Color.Gray;
+        _lblWeatherStatus.ForeColor = Color.Gray;
         try
         {
             var data = await WeatherFeature.FetchWeatherAsync(city);
-            _liveState.UpdateWeather(data.Icon.ToString(), $"{data.TempC:F0}°", data.City);
-            _lblWeatherStatus.Text      = $"{data.City} {data.TempC:F0}°";
-            _lblWeatherStatus.ForeColor = System.Drawing.Color.LimeGreen;
+            bool fahrenheit = _radTempF.Checked;
+            string tempStr  = fahrenheit
+                ? $"{data.TempC * 9 / 5 + 32:F0}°F"
+                : $"{data.TempC:F0}°";
+            _liveState.UpdateWeather(data.Icon.ToString(), tempStr, data.City);
+            _lblWeatherStatus.Text      = $"{data.City} {tempStr}";
+            _lblWeatherStatus.ForeColor = Color.LimeGreen;
         }
         catch (System.Net.Http.HttpRequestException ex) when (ex.StatusCode.HasValue)
         {
             _lblWeatherStatus.Text      = $"HTTP {(int)ex.StatusCode.Value} — red/proxy";
-            _lblWeatherStatus.ForeColor = System.Drawing.Color.OrangeRed;
+            _lblWeatherStatus.ForeColor = Color.OrangeRed;
         }
         catch (Exception ex)
         {
             string msg = ex.Message;
             _lblWeatherStatus.Text      = msg.Length > 34 ? msg[..34] + "…" : msg;
-            _lblWeatherStatus.ForeColor = System.Drawing.Color.OrangeRed;
+            _lblWeatherStatus.ForeColor = Color.OrangeRed;
         }
     }
 
@@ -693,7 +784,6 @@ sealed class CellGridEditorForm : Form
     {
         if (_pageIndex < 0) return;
         var page = _pages[_pageIndex];
-        // icon_half tier id = 14 (22×11), each half uses 11px height
         const byte iconHalfId = 14;
         var tier = CellGridProtocol.Tiers[iconHalfId];
         int remaining = BitmapFrame.Height - page.TotalHeight;
@@ -710,6 +800,169 @@ sealed class CellGridEditorForm : Form
         RefreshRowList();
         SelectRow(insertAt);
     }
+
+    private void OnAddTextBlock(object? sender, EventArgs e)
+    {
+        if (_pageIndex < 0) return;
+
+        // Inline dialog: choose number of lines
+        using var dlg = new Form
+        {
+            Text            = "Bloque de texto",
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition   = FormStartPosition.CenterParent,
+            MinimizeBox     = false,
+            MaximizeBox     = false,
+            ClientSize      = new Size(240, 88),
+        };
+        dlg.Controls.Add(new Label { Text = "Número de líneas:", Location = new Point(8, 16), AutoSize = true });
+        var nud = new NumericUpDown { Location = new Point(134, 13), Size = new Size(50, 22), Minimum = 1, Maximum = 8, Value = 2 };
+        dlg.Controls.Add(nud);
+        var btnOk = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(60, 52), Width = 70 };
+        var btnCx = new Button { Text = "Cancelar", DialogResult = DialogResult.Cancel, Location = new Point(138, 52), Width = 76 };
+        dlg.Controls.AddRange([btnOk, btnCx]);
+        dlg.AcceptButton = btnOk;
+        dlg.CancelButton = btnCx;
+
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+        int lines = (int)nud.Value;
+
+        var page = _pages[_pageIndex];
+        byte tierId = _rowIndex >= 0 ? _pages[_pageIndex].Rows[_rowIndex].TierId : (byte)0;
+        var tier = CellGridProtocol.Tiers[tierId];
+        int remaining = BitmapFrame.Height - page.TotalHeight;
+        if (remaining < tier.H * lines)
+        {
+            MessageBox.Show(
+                $"No hay espacio suficiente ({tier.H * lines}px necesarios, {remaining}px libres).",
+                "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        int insertAt = _rowIndex >= 0 ? _rowIndex + 1 : page.Rows.Count;
+        for (int i = lines - 1; i >= 0; i--)
+            page.Rows.Insert(insertAt,
+                new CellGridRow { TierId = tierId, Template = $"{{ext.text.{i}}}", Align = "left" });
+        RefreshRowList();
+        SelectRow(insertAt);
+    }
+
+    // ── CLI ───────────────────────────────────────────────────────────────────
+
+    private void OnOpenCli(object? sender, EventArgs e)
+    {
+        string zkcPath = Path.Combine(AppContext.BaseDirectory, "zkc.exe");
+        if (!File.Exists(zkcPath))
+        {
+            MessageBox.Show($"No se encontró zkc.exe en:\n{zkcPath}",
+                "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName  = "cmd.exe",
+                Arguments = $"/K \"{zkcPath}\" -h",
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"No se pudo abrir la terminal: {ex.Message}",
+                "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    // ── Library ───────────────────────────────────────────────────────────────
+
+    private void RefreshLibraryList()
+    {
+        _lstLibFiles.Items.Clear();
+        if (!Directory.Exists(LibraryDir)) return;
+        foreach (var f in Directory.GetFiles(LibraryDir, "*.json").OrderBy(f => f))
+            _lstLibFiles.Items.Add(Path.GetFileNameWithoutExtension(f));
+    }
+
+    private void OnLibSave(object? sender, EventArgs e)
+    {
+        string name = _txtLibName.Text.Trim();
+        if (string.IsNullOrEmpty(name))
+        {
+            MessageBox.Show("Ingresa un nombre para la configuración.",
+                "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        foreach (char c in Path.GetInvalidFileNameChars())
+            name = name.Replace(c, '_');
+
+        Directory.CreateDirectory(LibraryDir);
+        var snap = BuildSnapshot();
+        var opts = new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
+        File.WriteAllText(Path.Combine(LibraryDir, name + ".json"),
+            JsonSerializer.Serialize(snap, opts));
+        RefreshLibraryList();
+        int idx = _lstLibFiles.Items.IndexOf(name);
+        if (idx >= 0) _lstLibFiles.SelectedIndex = idx;
+    }
+
+    private void OnLibLoad(object? sender, EventArgs e)
+    {
+        if (_lstLibFiles.SelectedItem is not string name) return;
+        string path = Path.Combine(LibraryDir, name + ".json");
+        if (!File.Exists(path)) { RefreshLibraryList(); return; }
+
+        try
+        {
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var snap = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path), opts) ?? new AppSettings();
+
+            _pages.Clear();
+            foreach (var p in snap.DisplayPages) _pages.Add(p.Clone());
+            if (_pages.Count == 0) _pages.Add(new CellGridPage());
+
+            _editLeagues  = snap.SelectedLeagues.ToList();
+            _chkCycle.Checked = snap.CycleDisplayPages;
+            _txtCity.Text = snap.City;
+            bool f = snap.WeatherUnit == "fahrenheit";
+            _radTempC.Checked = !f;
+            _radTempF.Checked =  f;
+
+            RebuildTeamInputs();
+            LoadPage(0);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error al cargar la configuración: {ex.Message}",
+                "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void OnLibDelete(object? sender, EventArgs e)
+    {
+        if (_lstLibFiles.SelectedItem is not string name) return;
+        if (MessageBox.Show($"¿Eliminar '{name}' de la biblioteca?", "ZMK Companion",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+        string path = Path.Combine(LibraryDir, name + ".json");
+        if (File.Exists(path)) File.Delete(path);
+        RefreshLibraryList();
+    }
+
+    private AppSettings BuildSnapshot() => new()
+    {
+        DisplayPages      = _pages.Select(p => p.Clone()).ToList(),
+        CycleDisplayPages = _chkCycle.Checked,
+        City              = _txtCity.Text.Trim(),
+        WeatherUnit       = _radTempF.Checked ? "fahrenheit" : "celsius",
+        SelectedLeagues   = _editLeagues.Count > 0 ? _editLeagues : ["football/nfl"],
+        SportsTeams       = _teamBoxes
+            .Where(kv => !string.IsNullOrWhiteSpace(kv.Value.Text))
+            .ToDictionary(kv => kv.Key, kv => kv.Value.Text.Trim().ToUpper()),
+        PomodoroWorkMin      = _settings.PomodoroWorkMin,
+        PomodoroBreakMin     = _settings.PomodoroBreakMin,
+        PomodoroCycles       = _settings.PomodoroCycles,
+        PomodoroLongBreakMin = _settings.PomodoroLongBreakMin,
+    };
 
     // ── Preview ───────────────────────────────────────────────────────────────
 
@@ -740,11 +993,12 @@ sealed class CellGridEditorForm : Form
         }
 
         _settings.City            = _txtCity.Text.Trim();
+        _settings.WeatherUnit     = _radTempF.Checked ? "fahrenheit" : "celsius";
         _settings.SelectedLeagues = _editLeagues.Count > 0 ? _editLeagues : ["football/nfl"];
         _settings.SportsTeams     = _teamBoxes
             .Where(kv => !string.IsNullOrWhiteSpace(kv.Value.Text))
             .ToDictionary(kv => kv.Key, kv => kv.Value.Text.Trim().ToUpper());
-        _settings.SportsTeam      = null; // clear legacy field
+        _settings.SportsTeam      = null;
 
         _onApply(_pages.Select(p => p.Clone()).ToList(), _chkCycle.Checked);
     }
@@ -753,5 +1007,4 @@ sealed class CellGridEditorForm : Form
 
     private static string Truncate(string s, int max) =>
         s.Length <= max ? s : s[..max] + "…";
-
 }

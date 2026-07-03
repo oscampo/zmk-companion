@@ -29,7 +29,9 @@ sealed class AppSettings
     public int PomodoroLongBreakMin { get; set; } = 15;
 
     // Weather data source — city name for API queries (blank = IP geolocation).
-    public string City { get; set; } = "";
+    // Temperature unit: "celsius" or "fahrenheit".
+    public string City        { get; set; } = "";
+    public string WeatherUnit { get; set; } = "celsius";
     // Selected leagues as ESPN paths, e.g. ["football/nfl", "soccer/eng.1"]
     public List<string> SelectedLeagues { get; set; } = ["football/nfl"];
     // Per-league team abbreviation filter keyed by ESPN path, e.g.

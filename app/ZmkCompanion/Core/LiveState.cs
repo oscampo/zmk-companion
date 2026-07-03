@@ -173,6 +173,8 @@ sealed class LiveState
             "weather.city"    => WeatherCity,
             "weather"         => $"{WeatherCity} {WeatherIcon} {WeatherTemp}".Trim(),
             "ext.text"        => ExternalText,
+            _ when key.StartsWith("ext.text.", StringComparison.OrdinalIgnoreCase)
+                              => ExtTextLine(key["ext.text.".Length..]),
             _                 => $"{{{key}}}",
         };
 
@@ -289,6 +291,14 @@ sealed class LiveState
             "gametime"  => SplitScheduled(s.Scheduled, 1), // "7:30p"
             _           => s.Summary,
         };
+    }
+
+    // Returns line i (0-indexed) of ExternalText split by '\n', or "" if out of range.
+    private string ExtTextLine(string indexStr)
+    {
+        if (!int.TryParse(indexStr, out int i)) return "";
+        var lines = ExternalText.Split('\n');
+        return i < lines.Length ? lines[i].TrimEnd('\r') : "";
     }
 
     private static string SplitScheduled(string detail, int part)
