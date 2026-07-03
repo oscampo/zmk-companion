@@ -209,9 +209,9 @@ sealed class LiveState
             bool assigned = (BleProfileMask & (1 << p)) != 0;
             bool active   = !UsbActive && BleProfile == p;
 
-            string style = active   ? "plain"
-                         : assigned ? (circle ? "circle"         : "box")
-                                    : (circle ? "circle_outline" : "box_outline");
+            string style = active   ? (circle ? "circle"         : "box")
+                         : assigned ? (circle ? "circle_outline" : "box_outline")
+                                    : "plain";
 
             sb.Append(NerdFont.NumericGlyph(p + 1, style) ?? (p + 1).ToString());
         }
