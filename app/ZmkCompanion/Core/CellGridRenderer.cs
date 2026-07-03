@@ -28,11 +28,12 @@ static class CellGridRenderer
         g.Clear(Color.Black);
         g.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
 
-        // Font sized to the cell height (~1.7× width matches FiraCode proportions).
-        // Wide Nerd Font glyphs (battery, icons) can exceed cell width at nominal
-        // size, so measure first and scale down to fit if needed.
+        // For rectangular tiers (H > W): size by H×0.78 — the scale-down check
+        // below then caps width-overflow, naturally filling the cell width.
+        // For square tiers (W == H): H×0.78 leaves 22% unused; use W×0.92
+        // instead so icons fill the square rather than leaving an empty border.
         var sf       = StringFormat.GenericTypographic;
-        float sizePx = tier.H * 0.78f;
+        float sizePx = (tier.W == tier.H) ? tier.W * 0.92f : tier.H * 0.78f;
 
         using var probe = NerdFont.CreateFont(sizePx);
         SizeF sz = g.MeasureString(element, probe, PointF.Empty, sf);

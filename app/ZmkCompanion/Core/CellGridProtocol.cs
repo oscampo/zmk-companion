@@ -45,14 +45,16 @@ static class CellGridProtocol
         // ── Square (require LAYOUT_v2 / firmware ≥ v1.2) ─────────────────────
         // Bitmap sizes (bytes): 6=6, 8=8, 9=18, 11=22, 13=26, 16=32.
         // All ≤ 57 B (ATT budget at MTU=65).
-        // Next natural size (22×22 = 66 B) exceeds the budget and is excluded.
+        // 17×17 = 51 B, 4 cols × 17 = 68 px (exact display fill — no right gap).
+        // Next size up (22×22 = 66 B) exceeds the budget and is excluded.
         // If Windows BLE ever negotiates MTU > 65, add larger tiers here.
-        new(7,  "small_sq_impar",  6,  6),
-        new(8,  "small_sq_par",    8,  8),
-        new(9,  "medium_sq_impar", 9,  9),
-        new(10, "medium_sq_par",   11, 11),
-        new(11, "large_sq_impar",  13, 13),
-        new(12, "large_sq_par",    16, 16),
+        new(7,  "small_sq_impar",   6,  6),
+        new(8,  "small_sq_par",     8,  8),
+        new(9,  "medium_sq_impar",  9,  9),
+        new(10, "medium_sq_par",    11, 11),
+        new(11, "large_sq_impar",   13, 13),
+        new(12, "large_sq_par",     16, 16),
+        new(13, "xlarge_sq_par",    17, 17),  // 4 cols × 17 = 68 px, 51 B bitmap
     ];
 
     // LAYOUT v1.1: run-length entries (tier_id, repeat). Max 16 entries.
