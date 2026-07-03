@@ -21,7 +21,8 @@ static class CellGridRenderer
     }
 
     // Renders a single text element centered in a tier-sized cell.
-    public static byte[] RenderCell(CellTier tier, string element)
+    public static byte[] RenderCell(CellTier tier, string element,
+                                    FontStyle style = FontStyle.Regular)
     {
         using var bmp = new Bitmap(tier.W, tier.H);
         using var g   = Graphics.FromImage(bmp);
@@ -35,11 +36,11 @@ static class CellGridRenderer
         var sf       = StringFormat.GenericTypographic;
         float sizePx = (tier.W == tier.H) ? tier.W * 0.92f : tier.H * 0.78f;
 
-        using var probe = NerdFont.CreateFont(sizePx);
+        using var probe = NerdFont.CreateFont(sizePx, style);
         SizeF sz = g.MeasureString(element, probe, PointF.Empty, sf);
         if (sz.Width > tier.W) sizePx *= tier.W / sz.Width;
 
-        using var font = NerdFont.CreateFont(sizePx);
+        using var font = NerdFont.CreateFont(sizePx, style);
         sz = g.MeasureString(element, font, PointF.Empty, sf);
         g.DrawString(element, font, Brushes.White,
             (tier.W - sz.Width) / 2f, (tier.H - sz.Height) / 2f, sf);
@@ -49,7 +50,8 @@ static class CellGridRenderer
 
     // Renders element into a W×(H*2) square then crops the top or bottom H rows.
     // Use with the icon_half tier (22×11): two stacked rows display a full 22×22 glyph.
-    public static byte[] RenderCellSplit(CellTier tier, string element, SplitHalf half)
+    public static byte[] RenderCellSplit(CellTier tier, string element, SplitHalf half,
+                                         FontStyle style = FontStyle.Regular)
     {
         int fullH = tier.H * 2;
         using var bmp = new Bitmap(tier.W, fullH);
@@ -60,11 +62,11 @@ static class CellGridRenderer
         var sf       = StringFormat.GenericTypographic;
         float sizePx = tier.W * 0.92f; // square canvas: fill W×W
 
-        using var probe = NerdFont.CreateFont(sizePx);
+        using var probe = NerdFont.CreateFont(sizePx, style);
         SizeF sz = g.MeasureString(element, probe, PointF.Empty, sf);
         if (sz.Width > tier.W) sizePx *= tier.W / sz.Width;
 
-        using var font = NerdFont.CreateFont(sizePx);
+        using var font = NerdFont.CreateFont(sizePx, style);
         sz = g.MeasureString(element, font, PointF.Empty, sf);
         g.DrawString(element, font, Brushes.White,
             (tier.W - sz.Width) / 2f, (fullH - sz.Height) / 2f, sf);

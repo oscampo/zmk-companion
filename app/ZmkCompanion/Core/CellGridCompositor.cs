@@ -172,12 +172,20 @@ sealed class CellGridCompositor : IDisposable
         {
             var    row  = _rows[rowIdx];
             var    tier = CellGridProtocol.Tiers[row.TierId];
-            string text = _state.Expand(row.Template, use24h, null);
-            await SendRowAsync(rowIdx, tier, text, row.Align, row.SplitHalf, full);
+            var    cfg  = MakeLabelConfig(row);
+            string text = _state.Expand(row.Template, use24h, cfg);
+            var    fs   = row.Bold ? System.Drawing.FontStyle.Bold : System.Drawing.FontStyle.Regular;
+            await SendRowAsync(rowIdx, tier, text, row.Align, row.SplitHalf, fs, full);
         }
     }
 
-    private async Task SendRowAsync(int rowIdx, CellTier tier, string text, string align, SplitHalf split, bool full)
+    private static LabelConfig? MakeLabelConfig(CellGridRow row)
+    {
+        if (row.NumericStyle == "text" && row.AlphaStyle == "text") return null;
+        return new LabelConfig { NumericStyle = row.NumericStyle, AlphaStyle = row.AlphaStyle };
+    }
+
+    private async Task SendRowAsync(int rowIdx, CellTier tier, string text, string align, SplitHalf split, System.Drawing.FontStyle fontStyle, bool full)
     {
         string[] glyphs   = SplitElements(text);
         int      count    = Math.Min(glyphs.Length, tier.Cols);
@@ -197,8 +205,8 @@ sealed class CellGridCompositor : IDisposable
             int gi = col - start;
             byte[] cell = (gi >= 0 && gi < count)
                 ? (split != SplitHalf.None
-                    ? CellGridRenderer.RenderCellSplit(tier, glyphs[gi], split)
-                    : CellGridRenderer.RenderCell(tier, glyphs[gi]))
+                    ? CellGridRenderer.RenderCellSplit(tier, glyphs[gi], split, fontStyle)
+                    : CellGridRenderer.RenderCell(tier, glyphs[gi], fontStyle))
                 : blank;
 
             var key = (rowIdx, col);
@@ -231,7 +239,9 @@ sealed class CellGridCompositor : IDisposable
         {
             var    row  = rows[rowIdx];
             var    tier = CellGridProtocol.Tiers[row.TierId];
-            string text = state.Expand(row.Template, use24h, null);
+            var    cfg  = MakeLabelConfig(row);
+            string text = state.Expand(row.Template, use24h, cfg);
+            var    fs   = row.Bold ? System.Drawing.FontStyle.Bold : System.Drawing.FontStyle.Regular;
 
             string[] glyphs = SplitElements(text);
             int count = Math.Min(glyphs.Length, tier.Cols);
@@ -248,8 +258,8 @@ sealed class CellGridCompositor : IDisposable
                 int gi = col - start;
                 byte[] cellBits = (gi >= 0 && gi < count)
                     ? (row.SplitHalf != SplitHalf.None
-                        ? CellGridRenderer.RenderCellSplit(tier, glyphs[gi], row.SplitHalf)
-                        : CellGridRenderer.RenderCell(tier, glyphs[gi]))
+                        ? CellGridRenderer.RenderCellSplit(tier, glyphs[gi], row.SplitHalf, fs)
+                        : CellGridRenderer.RenderCell(tier, glyphs[gi], fs))
                     : new byte[tier.Bytes];
 
                 // Unpack 1bpp cell into preview pixels.

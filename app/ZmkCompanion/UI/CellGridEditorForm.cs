@@ -42,6 +42,9 @@ sealed class CellGridEditorForm : Form
     private readonly ComboBox      _cmbSplit;
     private readonly TextBox       _txtTemplate;
     private readonly RadioButton   _radLeft, _radCenter, _radRight;
+    private readonly CheckBox      _chkBold;
+    private readonly ComboBox      _cmbNumericStyle;
+    private readonly ComboBox      _cmbAlphaStyle;
     private readonly Panel         _rowEditorPanel;
     private          bool          _suppressRowUi;
 
@@ -113,7 +116,7 @@ sealed class CellGridEditorForm : Form
         FormBorderStyle = FormBorderStyle.FixedSingle;
         StartPosition   = FormStartPosition.CenterScreen;
         MaximizeBox     = false;
-        ClientSize      = new Size(640, 622);
+        ClientSize      = new Size(640, 657);
 
         // ── RIGHT: preview ────────────────────────────────────────────────────
         var previewBox = new GroupBox
@@ -182,7 +185,7 @@ sealed class CellGridEditorForm : Form
         Controls.Add(grpPages);
 
         // ── LEFT: Rows group ──────────────────────────────────────────────────
-        var grpRows = new GroupBox { Text = "Filas", Location = new Point(6, 100), Size = new Size(406, 340) };
+        var grpRows = new GroupBox { Text = "Filas", Location = new Point(6, 100), Size = new Size(406, 375) };
 
         _lstRows = new ListBox { Location = new Point(6, 18), Size = new Size(390, 100), IntegralHeight = false };
         _lstRows.SelectedIndexChanged += OnRowSelected;
@@ -231,7 +234,7 @@ sealed class CellGridEditorForm : Form
         grpRows.Controls.Add(btnIconPair);
 
         // ── Row editor sub-panel ──────────────────────────────────────────────
-        _rowEditorPanel = new Panel { Location = new Point(6, 152), Size = new Size(390, 180), Enabled = false };
+        _rowEditorPanel = new Panel { Location = new Point(6, 152), Size = new Size(390, 215), Enabled = false };
 
         _rowEditorPanel.Controls.Add(new Label { Text = "Tier:", Location = new Point(0, 4), Size = new Size(30, 18) });
         _cmbTier = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(34, 1), Size = new Size(160, 23) };
@@ -263,13 +266,34 @@ sealed class CellGridEditorForm : Form
         _rowEditorPanel.Controls.Add(_radCenter);
         _rowEditorPanel.Controls.Add(_radRight);
 
+        // ── Style row (Bold + glyph styles) ──────────────────────────────────
+        _chkBold = new CheckBox { Text = "Bold", Location = new Point(0, 141), Size = new Size(52, 20) };
+        _chkBold.CheckedChanged += OnBoldChanged;
+        _rowEditorPanel.Controls.Add(_chkBold);
+
+        _rowEditorPanel.Controls.Add(new Label { Text = "Núm:", Location = new Point(56, 144), Size = new Size(32, 18) });
+        _cmbNumericStyle = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(90, 141), Size = new Size(130, 23) };
+        foreach (var s in new[] { "text", "box", "box_outline", "box_multiple", "plain", "circle", "circle_outline" })
+            _cmbNumericStyle.Items.Add(NerdFont.NumericStyleLabel(s));
+        _cmbNumericStyle.SelectedIndex = 0;
+        _cmbNumericStyle.SelectedIndexChanged += OnNumericStyleChanged;
+        _rowEditorPanel.Controls.Add(_cmbNumericStyle);
+
+        _rowEditorPanel.Controls.Add(new Label { Text = "Alfa:", Location = new Point(226, 144), Size = new Size(30, 18) });
+        _cmbAlphaStyle = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(258, 141), Size = new Size(128, 23) };
+        foreach (var s in new[] { "text", "plain", "box", "box_outline", "circle", "circle_outline" })
+            _cmbAlphaStyle.Items.Add(NerdFont.AlphaStyleLabel(s));
+        _cmbAlphaStyle.SelectedIndex = 0;
+        _cmbAlphaStyle.SelectedIndexChanged += OnAlphaStyleChanged;
+        _rowEditorPanel.Controls.Add(_cmbAlphaStyle);
+
         // ── Binding picker ────────────────────────────────────────────────────
-        _rowEditorPanel.Controls.Add(new Label { Text = "Insertar:", Location = new Point(0, 148), Size = new Size(52, 18) });
+        _rowEditorPanel.Controls.Add(new Label { Text = "Insertar:", Location = new Point(0, 183), Size = new Size(52, 18) });
 
         _cmbBindCategory = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Location      = new Point(56, 145),
+            Location      = new Point(56, 180),
             Size          = new Size(90, 23),
         };
         foreach (var cat in BindingCatalog) _cmbBindCategory.Items.Add(cat.Category);
@@ -280,14 +304,14 @@ sealed class CellGridEditorForm : Form
         _cmbBind = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Location      = new Point(150, 145),
+            Location      = new Point(150, 180),
             Size          = new Size(160, 23),
         };
         _cmbBind.SelectedIndexChanged += (_, _) => { }; // keep selection stable
         _rowEditorPanel.Controls.Add(_cmbBind);
         PopulateBindings(0);
 
-        var btnInsert = new Button { Text = "↵ Insertar", Location = new Point(314, 145), Size = new Size(74, 23) };
+        var btnInsert = new Button { Text = "↵ Insertar", Location = new Point(314, 180), Size = new Size(74, 23) };
         btnInsert.Click += OnInsertBinding;
         _rowEditorPanel.Controls.Add(btnInsert);
 
@@ -295,7 +319,7 @@ sealed class CellGridEditorForm : Form
         Controls.Add(grpRows);
 
         // ── LEFT: Data Sources group ──────────────────────────────────────────
-        var grpData = new GroupBox { Text = "Fuentes de datos", Location = new Point(6, 446), Size = new Size(406, 138) };
+        var grpData = new GroupBox { Text = "Fuentes de datos", Location = new Point(6, 481), Size = new Size(406, 138) };
 
         grpData.Controls.Add(new Label { Text = "Ciudad (clima):", Location = new Point(6, 22), Size = new Size(90, 18) });
         _txtCity = new TextBox { Text = settings.City, Location = new Point(100, 19), Size = new Size(100, 23) };
@@ -339,9 +363,9 @@ sealed class CellGridEditorForm : Form
         Controls.Add(grpData);
 
         // ── Bottom buttons ────────────────────────────────────────────────────
-        var btnApply = new Button { Text = "Aplicar", Location = new Point(270, 590), Size = new Size(74, 28), DialogResult = DialogResult.OK };
+        var btnApply = new Button { Text = "Aplicar", Location = new Point(270, 625), Size = new Size(74, 28), DialogResult = DialogResult.OK };
         btnApply.Click += OnApply;
-        var btnClose = new Button { Text = "Cerrar", Location = new Point(350, 590), Size = new Size(74, 28) };
+        var btnClose = new Button { Text = "Cerrar", Location = new Point(350, 625), Size = new Size(74, 28) };
         btnClose.Click += (_, _) => Close();
         Controls.Add(btnApply);
         Controls.Add(btnClose);
@@ -562,9 +586,12 @@ sealed class CellGridEditorForm : Form
 
         var row = _pages[_pageIndex].Rows[index];
         _suppressRowUi = true;
-        _cmbTier.SelectedIndex  = row.TierId;
-        _cmbSplit.SelectedIndex = (int)row.SplitHalf;
-        _txtTemplate.Text       = row.Template;
+        _cmbTier.SelectedIndex         = row.TierId;
+        _cmbSplit.SelectedIndex        = (int)row.SplitHalf;
+        _txtTemplate.Text              = row.Template;
+        _chkBold.Checked               = row.Bold;
+        _cmbNumericStyle.SelectedIndex = NumericStyleIndex(row.NumericStyle);
+        _cmbAlphaStyle.SelectedIndex   = AlphaStyleIndex(row.AlphaStyle);
         (_radLeft.Checked, _radCenter.Checked, _radRight.Checked) = row.Align switch
         {
             "left"  => (true,  false, false),
@@ -625,6 +652,37 @@ sealed class CellGridEditorForm : Form
         _pages[_pageIndex].Rows[_rowIndex].SplitHalf = (SplitHalf)_cmbSplit.SelectedIndex;
         RefreshRowList();
         SelectRow(_rowIndex);
+    }
+
+    private static readonly string[] _numericStyles = ["text", "box", "box_outline", "box_multiple", "plain", "circle", "circle_outline"];
+    private static readonly string[] _alphaStyles   = ["text", "plain", "box", "box_outline", "circle", "circle_outline"];
+
+    private static int NumericStyleIndex(string s) => Math.Max(0, Array.IndexOf(_numericStyles, s));
+    private static int AlphaStyleIndex  (string s) => Math.Max(0, Array.IndexOf(_alphaStyles,   s));
+
+    private void OnBoldChanged(object? sender, EventArgs e)
+    {
+        if (_suppressRowUi || _rowIndex < 0 || _pageIndex < 0) return;
+        _pages[_pageIndex].Rows[_rowIndex].Bold = _chkBold.Checked;
+        RefreshPreview();
+    }
+
+    private void OnNumericStyleChanged(object? sender, EventArgs e)
+    {
+        if (_suppressRowUi || _rowIndex < 0 || _pageIndex < 0) return;
+        int idx = _cmbNumericStyle.SelectedIndex;
+        _pages[_pageIndex].Rows[_rowIndex].NumericStyle =
+            idx >= 0 && idx < _numericStyles.Length ? _numericStyles[idx] : "text";
+        RefreshPreview();
+    }
+
+    private void OnAlphaStyleChanged(object? sender, EventArgs e)
+    {
+        if (_suppressRowUi || _rowIndex < 0 || _pageIndex < 0) return;
+        int idx = _cmbAlphaStyle.SelectedIndex;
+        _pages[_pageIndex].Rows[_rowIndex].AlphaStyle =
+            idx >= 0 && idx < _alphaStyles.Length ? _alphaStyles[idx] : "text";
+        RefreshPreview();
     }
 
     private void OnAddIconPair(object? sender, EventArgs e)

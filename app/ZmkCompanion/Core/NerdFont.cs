@@ -1,6 +1,8 @@
 using System.Drawing;
 using System.Drawing.Text;
+using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace ZmkCompanion.Core;
 
@@ -142,9 +144,11 @@ static class NerdFont
 
     // Returns the Nerd Font glyph string for letter a–z (case-insensitive) in
     // the requested style, or null if c is not an ASCII letter.
+    // Accented characters are normalized to their base letter (ñ→n, á→a, etc.).
     // Styles: plain | box | box_outline | circle | circle_outline
     public static string? AlphaGlyph(char c, string style)
     {
+        c = NormalizeAlpha(c);
         int i = char.ToLower(c) - 'a';
         if (i is < 0 or > 25) return null;
         return style switch
@@ -181,6 +185,17 @@ static class NerdFont
         "circle_outline" => "Circle outline",
         _                => "Text (default)",
     };
+
+    // Decomposes an accented character to its ASCII base letter via Unicode NFD.
+    // ñ→n, á→a, ü→u, ç→c, etc. Returns c unchanged if no ASCII base is found.
+    private static char NormalizeAlpha(char c)
+    {
+        if (char.IsAsciiLetter(c)) return c;
+        string nfd = c.ToString().Normalize(NormalizationForm.FormD);
+        foreach (char b in nfd)
+            if (char.IsAsciiLetter(b)) return b;
+        return c;
+    }
 
     // Shorthand: convert a supplementary Unicode code point to a C# string.
     private static string Md(int cp) => char.ConvertFromUtf32(cp);
