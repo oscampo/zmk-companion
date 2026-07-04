@@ -44,6 +44,7 @@ sealed class CellGridEditorForm : Form
     private readonly TextBox       _txtTemplate;
     private readonly RadioButton   _radLeft, _radCenter, _radRight;
     private readonly CheckBox      _chkBold;
+    private readonly CheckBox      _chkAntiAlias;
     private readonly ComboBox      _cmbNumericStyle;
     private readonly ComboBox      _cmbAlphaStyle;
     private readonly Panel         _rowEditorPanel;
@@ -288,21 +289,25 @@ sealed class CellGridEditorForm : Form
         _rowEditorPanel.Controls.Add(_radCenter);
         _rowEditorPanel.Controls.Add(_radRight);
 
-        // ── Style row (Bold + glyph styles) ──────────────────────────────────
+        // ── Style row (Bold + AntiAlias + glyph styles) ──────────────────────
         _chkBold = new CheckBox { Text = "Bold", Location = new Point(0, 141), Size = new Size(52, 20) };
         _chkBold.CheckedChanged += OnBoldChanged;
         _rowEditorPanel.Controls.Add(_chkBold);
 
-        _rowEditorPanel.Controls.Add(new Label { Text = "Núm:", Location = new Point(56, 144), Size = new Size(32, 18) });
-        _cmbNumericStyle = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(90, 141), Size = new Size(130, 23) };
+        _chkAntiAlias = new CheckBox { Text = "AA", Location = new Point(54, 141), Size = new Size(42, 20) };
+        _chkAntiAlias.CheckedChanged += OnAntiAliasChanged;
+        _rowEditorPanel.Controls.Add(_chkAntiAlias);
+
+        _rowEditorPanel.Controls.Add(new Label { Text = "Núm:", Location = new Point(100, 144), Size = new Size(32, 18) });
+        _cmbNumericStyle = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(134, 141), Size = new Size(116, 23) };
         foreach (var s in new[] { "text", "box", "box_outline", "box_multiple", "plain", "circle", "circle_outline" })
             _cmbNumericStyle.Items.Add(NerdFont.NumericStyleLabel(s));
         _cmbNumericStyle.SelectedIndex = 0;
         _cmbNumericStyle.SelectedIndexChanged += OnNumericStyleChanged;
         _rowEditorPanel.Controls.Add(_cmbNumericStyle);
 
-        _rowEditorPanel.Controls.Add(new Label { Text = "Alfa:", Location = new Point(226, 144), Size = new Size(30, 18) });
-        _cmbAlphaStyle = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(258, 141), Size = new Size(128, 23) };
+        _rowEditorPanel.Controls.Add(new Label { Text = "Alfa:", Location = new Point(254, 144), Size = new Size(30, 18) });
+        _cmbAlphaStyle = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(284, 141), Size = new Size(100, 23) };
         foreach (var s in new[] { "text", "plain", "box", "box_outline", "circle", "circle_outline" })
             _cmbAlphaStyle.Items.Add(NerdFont.AlphaStyleLabel(s));
         _cmbAlphaStyle.SelectedIndex = 0;
@@ -685,6 +690,7 @@ sealed class CellGridEditorForm : Form
         _cmbSplit.SelectedIndex        = (int)row.SplitHalf;
         _txtTemplate.Text              = row.Template;
         _chkBold.Checked               = row.Bold;
+        _chkAntiAlias.Checked          = row.AntiAlias;
         _cmbNumericStyle.SelectedIndex = NumericStyleIndex(row.NumericStyle);
         _cmbAlphaStyle.SelectedIndex   = AlphaStyleIndex(row.AlphaStyle);
         (_radLeft.Checked, _radCenter.Checked, _radRight.Checked) = row.Align switch
@@ -759,6 +765,13 @@ sealed class CellGridEditorForm : Form
     {
         if (_suppressRowUi || _rowIndex < 0 || _pageIndex < 0) return;
         _pages[_pageIndex].Rows[_rowIndex].Bold = _chkBold.Checked;
+        RefreshPreview();
+    }
+
+    private void OnAntiAliasChanged(object? sender, EventArgs e)
+    {
+        if (_suppressRowUi || _rowIndex < 0 || _pageIndex < 0) return;
+        _pages[_pageIndex].Rows[_rowIndex].AntiAlias = _chkAntiAlias.Checked;
         RefreshPreview();
     }
 

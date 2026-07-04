@@ -11,6 +11,7 @@ sealed class CellGridRow
     public bool      Bold         { get; set; } = false;
     public string    NumericStyle { get; set; } = "text"; // text | box | box_outline | box_multiple | plain | circle | circle_outline
     public string    AlphaStyle   { get; set; } = "text"; // text | plain | box | box_outline | circle | circle_outline
+    public bool      AntiAlias    { get; set; } = false;  // AntiAliasGridFit → threshold bitmapping
 
     public CellGridRow Clone() => new()
     {
@@ -21,6 +22,7 @@ sealed class CellGridRow
         Bold         = Bold,
         NumericStyle = NumericStyle,
         AlphaStyle   = AlphaStyle,
+        AntiAlias    = AntiAlias,
     };
 }
 

@@ -175,7 +175,7 @@ sealed class CellGridCompositor : IDisposable
             var    cfg  = MakeLabelConfig(row);
             string text = _state.Expand(row.Template, use24h, cfg);
             var    fs   = row.Bold ? System.Drawing.FontStyle.Bold : System.Drawing.FontStyle.Regular;
-            await SendRowAsync(rowIdx, tier, text, row.Align, row.SplitHalf, fs, full);
+            await SendRowAsync(rowIdx, tier, text, row.Align, row.SplitHalf, fs, row.AntiAlias, full);
         }
     }
 
@@ -185,7 +185,7 @@ sealed class CellGridCompositor : IDisposable
         return new LabelConfig { NumericStyle = row.NumericStyle, AlphaStyle = row.AlphaStyle };
     }
 
-    private async Task SendRowAsync(int rowIdx, CellTier tier, string text, string align, SplitHalf split, System.Drawing.FontStyle fontStyle, bool full)
+    private async Task SendRowAsync(int rowIdx, CellTier tier, string text, string align, SplitHalf split, System.Drawing.FontStyle fontStyle, bool antiAlias, bool full)
     {
         string[] glyphs   = SplitElements(text);
         int      count    = Math.Min(glyphs.Length, tier.Cols);
@@ -205,8 +205,8 @@ sealed class CellGridCompositor : IDisposable
             int gi = col - start;
             byte[] cell = (gi >= 0 && gi < count)
                 ? (split != SplitHalf.None
-                    ? CellGridRenderer.RenderCellSplit(tier, glyphs[gi], split, fontStyle)
-                    : CellGridRenderer.RenderCell(tier, glyphs[gi], fontStyle))
+                    ? CellGridRenderer.RenderCellSplit(tier, glyphs[gi], split, fontStyle, antiAlias)
+                    : CellGridRenderer.RenderCell(tier, glyphs[gi], fontStyle, antiAlias))
                 : blank;
 
             var key = (rowIdx, col);
@@ -258,8 +258,8 @@ sealed class CellGridCompositor : IDisposable
                 int gi = col - start;
                 byte[] cellBits = (gi >= 0 && gi < count)
                     ? (row.SplitHalf != SplitHalf.None
-                        ? CellGridRenderer.RenderCellSplit(tier, glyphs[gi], row.SplitHalf, fs)
-                        : CellGridRenderer.RenderCell(tier, glyphs[gi], fs))
+                        ? CellGridRenderer.RenderCellSplit(tier, glyphs[gi], row.SplitHalf, fs, row.AntiAlias)
+                        : CellGridRenderer.RenderCell(tier, glyphs[gi], fs, row.AntiAlias))
                     : new byte[tier.Bytes];
 
                 // Unpack 1bpp cell into preview pixels.
