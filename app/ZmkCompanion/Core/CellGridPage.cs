@@ -32,6 +32,7 @@ sealed class CellGridPage
 {
     public string Name            { get; set; } = "Page 1";
     public int    DurationSeconds { get; set; } = 10;
+    public bool   LightMode       { get; set; } = false; // false=dark (bg black, glyphs white on display)
     public List<CellGridRow> Rows { get; set; } = [];
 
     public int TotalHeight => Rows.Sum(r =>
@@ -41,6 +42,7 @@ sealed class CellGridPage
     {
         Name            = Name,
         DurationSeconds = DurationSeconds,
+        LightMode       = LightMode,
         Rows            = Rows.Select(r => r.Clone()).ToList(),
     };
 }

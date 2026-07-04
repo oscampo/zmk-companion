@@ -13,9 +13,10 @@ sealed class CellGridCompositor : IDisposable
     private readonly BleService _ble;
     private readonly LiveState  _state;
 
-    private List<CellGridRow>                        _rows    = [];
-    private readonly Dictionary<(int, int), byte[]> _sent    = new();
+    private List<CellGridRow>                        _rows      = [];
+    private readonly Dictionary<(int, int), byte[]> _sent      = new();
     private System.Windows.Forms.Timer?              _clockTimer;
+    private bool _lightMode;
     private int  _tickCount;
     private bool _sendInFlight;
     private bool _sendQueued;
@@ -41,6 +42,7 @@ sealed class CellGridCompositor : IDisposable
         }
 
         _rows      = page.Rows.Select(r => r.Clone()).ToList();
+        _lightMode = page.LightMode;
         _sent.Clear();
         _tickCount = 0;
         Running    = true;
@@ -212,8 +214,18 @@ sealed class CellGridCompositor : IDisposable
             var key = (rowIdx, col);
             if (!full && _sent.TryGetValue(key, out var prev) && prev.AsSpan().SequenceEqual(cell))
                 continue;
-            if (await _ble.SendCellGridAsync(CellGridProtocol.BuildCell(rowIdx, col, cell)))
-                _sent[key] = cell;
+
+            // Dark mode: physical OLED has inverted polarity (bit=1 → pixel OFF).
+            // XOR inverts so rendered glyphs (bit=1) appear bright on the display.
+            byte[] wire = cell;
+            if (!_lightMode)
+            {
+                wire = new byte[cell.Length];
+                for (int b = 0; b < cell.Length; b++) wire[b] = (byte)(cell[b] ^ 0xFF);
+            }
+
+            if (await _ble.SendCellGridAsync(CellGridProtocol.BuildCell(rowIdx, col, wire)))
+                _sent[key] = cell; // cache pre-XOR bytes for diff
         }
     }
 
@@ -221,13 +233,13 @@ sealed class CellGridCompositor : IDisposable
 
     // Renders the page at `scale` × native size into a Bitmap. Draws cell
     // grid lines and tier-boundary lines. The bitmap is owned by the caller.
-    public static Bitmap RenderPreview(IReadOnlyList<CellGridRow> rows, LiveState state, int scale = 3)
+    public static Bitmap RenderPreview(IReadOnlyList<CellGridRow> rows, LiveState state, int scale = 3, bool lightMode = false)
     {
         int W = BitmapFrame.Width  * scale;
         int H = BitmapFrame.Height * scale;
         var bmp = new Bitmap(W, H);
         using var g = Graphics.FromImage(bmp);
-        g.Clear(Color.Black);
+        g.Clear(lightMode ? Color.White : Color.Black);
         g.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
 
         bool use24h = !Protocol.Detect12h();
@@ -271,12 +283,13 @@ sealed class CellGridCompositor : IDisposable
                     {
                         bool lit = (cellBits[py * rowBytes + px / 8] & (0x80 >> (px % 8))) != 0;
                         if (!lit) continue;
+                        var pixColor = lightMode ? Color.Black : Color.White;
                         for (int sy = 0; sy < scale; sy++)
                             for (int sx = 0; sx < scale; sx++)
                             {
                                 int bx = cellX + px * scale + sx;
                                 int by = cellY + py * scale + sy;
-                                if (bx < W && by < H) bmp.SetPixel(bx, by, Color.White);
+                                if (bx < W && by < H) bmp.SetPixel(bx, by, pixColor);
                             }
                     }
 
