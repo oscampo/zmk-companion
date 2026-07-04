@@ -45,7 +45,6 @@ sealed class CellGridEditorForm : Form
     private readonly RadioButton   _radLeft, _radCenter, _radRight;
     private readonly CheckBox      _chkBold;
     private readonly CheckBox      _chkAntiAlias;
-    private readonly CheckBox      _chkLightMode;
     private readonly ComboBox      _cmbNumericStyle;
     private readonly ComboBox      _cmbAlphaStyle;
     private readonly Panel         _rowEditorPanel;
@@ -202,11 +201,6 @@ sealed class CellGridEditorForm : Form
         };
         grpPages.Controls.Add(_nudDuration);
         grpPages.Controls.Add(new Label { Text = "s", Location = new Point(284, 48), Size = new Size(12, 18) });
-
-        _chkLightMode = new CheckBox { Text = "Modo claro", Location = new Point(300, 45), Size = new Size(98, 22) };
-        _chkLightMode.CheckedChanged += OnLightModeChanged;
-        grpPages.Controls.Add(_chkLightMode);
-
         Controls.Add(grpPages);
 
         // ── LEFT: Rows group ──────────────────────────────────────────────────
@@ -632,11 +626,9 @@ sealed class CellGridEditorForm : Form
 
         _suppressPageUi = true;
         RefreshPageCombo();
-        _txtPageName.Text      = _pages[index].Name;
-        _nudDuration.Value     = Math.Clamp(_pages[index].DurationSeconds, 2, 3600);
-        _chkLightMode.Checked  = _pages[index].LightMode;
-        _previewPanel.BackColor = _pages[index].LightMode ? Color.White : Color.Black;
-        _suppressPageUi        = false;
+        _txtPageName.Text    = _pages[index].Name;
+        _nudDuration.Value   = Math.Clamp(_pages[index].DurationSeconds, 2, 3600);
+        _suppressPageUi      = false;
 
         RefreshRowList();
         SelectRow(_pages[index].Rows.Count > 0 ? 0 : -1);
@@ -659,14 +651,6 @@ sealed class CellGridEditorForm : Form
     }
 
     private void SyncCurrentPage() { }
-
-    private void OnLightModeChanged(object? sender, EventArgs e)
-    {
-        if (_suppressPageUi || _pageIndex < 0) return;
-        _pages[_pageIndex].LightMode = _chkLightMode.Checked;
-        _previewPanel.BackColor = _chkLightMode.Checked ? Color.White : Color.Black;
-        RefreshPreview();
-    }
 
     // ── Row management ────────────────────────────────────────────────────────
 
@@ -1000,8 +984,7 @@ sealed class CellGridEditorForm : Form
     private void OnPreviewPaint(object? sender, PaintEventArgs e)
     {
         if (_pageIndex < 0 || _pageIndex >= _pages.Count) return;
-        var page = _pages[_pageIndex];
-        using var bmp = CellGridCompositor.RenderPreview(page.Rows, _liveState, PreviewScale, page.LightMode);
+        using var bmp = CellGridCompositor.RenderPreview(_pages[_pageIndex].Rows, _liveState, PreviewScale);
         e.Graphics.DrawImage(bmp, 0, 0);
     }
 
