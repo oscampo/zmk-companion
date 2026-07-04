@@ -215,10 +215,10 @@ sealed class CellGridCompositor : IDisposable
             if (!full && _sent.TryGetValue(key, out var prev) && prev.AsSpan().SequenceEqual(cell))
                 continue;
 
-            // Dark mode: physical OLED has inverted polarity (bit=1 → pixel OFF).
-            // XOR inverts so rendered glyphs (bit=1) appear bright on the display.
+            // Light mode: firmware renders bit=1 as bright; XOR flips so glyphs appear dark
+            // on a bright background. Dark mode sends as-is — no inversion needed.
             byte[] wire = cell;
-            if (!_lightMode)
+            if (_lightMode)
             {
                 wire = new byte[cell.Length];
                 for (int b = 0; b < cell.Length; b++) wire[b] = (byte)(cell[b] ^ 0xFF);
