@@ -58,9 +58,30 @@ internal static class CliRunner
             string? ready = await reader.ReadLineAsync();
             if (ready != "READY") return 1;
 
-            string? line;
-            while ((line = Console.ReadLine()) != null)
-                await writer.WriteLineAsync($"LINE\t{line}");
+            // Read char-by-char so \r (carriage return) also acts as a line separator.
+            // This supports scripts that use \r to overwrite the terminal line in-place
+            // (e.g. print(f"\r{now}", end="", flush=True)).
+            var sb = new System.Text.StringBuilder();
+            int ch;
+            while ((ch = Console.In.Read()) >= 0)
+            {
+                if (ch is '\n' or '\r')
+                {
+                    if (ch == '\r' && Console.In.Peek() == '\n')
+                        Console.In.Read(); // consume the \n in a \r\n pair
+                    string line = sb.ToString();
+                    sb.Clear();
+                    if (line.Length > 0)
+                        await writer.WriteLineAsync($"LINE\t{line}");
+                }
+                else
+                {
+                    sb.Append((char)ch);
+                }
+            }
+            // Flush any trailing content that had no line terminator (e.g. killed mid-line)
+            if (sb.Length > 0)
+                await writer.WriteLineAsync($"LINE\t{sb}");
 
             return 0;
         }
@@ -96,19 +117,22 @@ internal static class CliRunner
         zkc — ZMK Keyboard Companion CLI
 
         Usage:
-          zkc "text"        Send text to the keyboard display
-          zkc --watch       Read lines from stdin and send each one
+          zkc "text"        Send text to the keyboard display (persists until next update)
+          zkc ""            Clear the text display and restore the canvas page
+          zkc --watch       Read lines from stdin and send each one live
           zkc -w            Alias for --watch
           zkc --help        Show this help
 
         Examples:
           zkc "Hola mundo"
           zkc "Line1\nLine2\nLine3"
-          echo "ARG 1-0 FRA" | zkc --watch
-          curl -s api.example.com/score | zkc --watch
+          echo "score: 3-1" | zkc --watch
+          python reloj.py | zkc --watch
 
         Notes:
-          Use \n for line breaks (max 3 lines, 64 bytes UTF-8 total).
+          Use \n in quoted strings for multi-line text.
+          --watch accepts both \n and \r as line separators, so scripts that
+          use carriage-return to overwrite a terminal line work out of the box.
           The ZMK Companion tray app must be running.
         """);
 }

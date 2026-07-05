@@ -21,6 +21,7 @@ sealed class ZmkAppContext : ApplicationContext
     // Pipe callbacks run on the thread pool; compositor/WinForms timers need STA.
     private readonly ConcurrentQueue<string> _textQueue = new();
     private System.Windows.Forms.Timer? _drainTimer;
+    private bool _overrideInFlight; // guard: only one bitmap send at a time
 
     // Display page cycling.
     private int _activePage;
@@ -68,23 +69,27 @@ sealed class ZmkAppContext : ApplicationContext
         _drainTimer = new System.Windows.Forms.Timer { Interval = 50 };
         _drainTimer.Tick += async (_, _) =>
         {
-            while (_textQueue.TryDequeue(out string? text))
+            if (_overrideInFlight) return; // previous BLE send still in progress — skip
+
+            // Keep only the latest queued item; discard older ones (stale clock frames, etc.)
+            string? latest = null;
+            while (_textQueue.TryDequeue(out string? t)) latest = t;
+            if (latest is null) return;
+
+            _overrideInFlight = true;
+            try
             {
-                try
+                if (string.IsNullOrEmpty(latest))
+                    await _compositor.ClearTextOverrideAsync();
+                else
                 {
-                    if (string.IsNullOrEmpty(text))
-                    {
-                        await _compositor.ClearTextOverrideAsync();
-                    }
-                    else
-                    {
-                        using var bmp = BitmapTextRenderer.Render(text!);
-                        byte[] frame  = BitmapFrame.Pack(bmp);
-                        await _compositor.ShowPersistentTextAsync(frame);
-                    }
+                    using var bmp = BitmapTextRenderer.Render(latest);
+                    byte[] frame  = BitmapFrame.Pack(bmp);
+                    await _compositor.ShowPersistentTextAsync(frame);
                 }
-                catch { }
             }
+            catch { }
+            finally { _overrideInFlight = false; }
         };
         _drainTimer.Start();
 
