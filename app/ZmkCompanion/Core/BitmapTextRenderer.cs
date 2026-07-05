@@ -8,6 +8,7 @@ namespace ZmkCompanion.Core;
 static class BitmapTextRenderer
 {
     private const float FontSizePx = 12f;
+    private const float Padding    = 1f;
 
     public static Bitmap Render(string text)
     {
@@ -20,16 +21,12 @@ static class BitmapTextRenderer
         using var font = new Font("Consolas", FontSizePx, FontStyle.Regular, GraphicsUnit.Pixel);
 
         float lineHeight = font.GetHeight(g);
-        float totalH     = lines.Length * lineHeight;
-        float y          = (BitmapFrame.Height - totalH) / 2f;
+        float y = Padding; // top-left, like a terminal
 
         foreach (string line in lines)
         {
             if (line.Length > 0)
-            {
-                SizeF sz = g.MeasureString(line, font);
-                g.DrawString(line, font, Brushes.White, (BitmapFrame.Width - sz.Width) / 2f, y);
-            }
+                g.DrawString(line, font, Brushes.White, Padding, y);
             y += lineHeight;
         }
 

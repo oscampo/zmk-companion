@@ -72,9 +72,16 @@ sealed class ZmkAppContext : ApplicationContext
             {
                 try
                 {
-                    using var bmp = BitmapTextRenderer.Render(text!);
-                    byte[] frame  = BitmapFrame.Pack(bmp);
-                    await _compositor.ShowTemporaryAsync(frame, TimeSpan.FromSeconds(30));
+                    if (string.IsNullOrEmpty(text))
+                    {
+                        await _compositor.ClearTextOverrideAsync();
+                    }
+                    else
+                    {
+                        using var bmp = BitmapTextRenderer.Render(text!);
+                        byte[] frame  = BitmapFrame.Pack(bmp);
+                        await _compositor.ShowPersistentTextAsync(frame);
+                    }
                 }
                 catch { }
             }

@@ -16,6 +16,8 @@ sealed class CellGridCompositor : IDisposable
     private List<CellGridRow>                        _rows    = [];
     private readonly Dictionary<(int, int), byte[]> _sent    = new();
     private System.Windows.Forms.Timer?              _clockTimer;
+    private bool   _textOverride;       // persistent CLI text is displayed; cell-grid suspended
+    private byte[] _textOverrideFrame  = [];
     private int  _tickCount;
     private bool _sendInFlight;
     private bool _sendQueued;
@@ -40,7 +42,9 @@ sealed class CellGridCompositor : IDisposable
             return;
         }
 
-        _rows      = page.Rows.Select(r => r.Clone()).ToList();
+        _rows          = page.Rows.Select(r => r.Clone()).ToList();
+        _textOverride  = false;
+        _textOverrideFrame = [];
         _sent.Clear();
         _tickCount = 0;
         Running    = true;
@@ -104,10 +108,39 @@ sealed class CellGridCompositor : IDisposable
         }
     }
 
+    // Shows a full-frame bitmap and keeps it until new text or page change.
+    // Suspends cell-grid updates for the duration of the override.
+    public async Task ShowPersistentTextAsync(byte[] frame)
+    {
+        _clockTimer?.Stop();
+        _textOverride      = true;
+        _textOverrideFrame = frame;
+        await _ble.SendBitmapAsync(frame);
+    }
+
+    // Restores cell-grid after a persistent text override.
+    public async Task ClearTextOverrideAsync()
+    {
+        if (!_textOverride || !Running) { _textOverride = false; return; }
+        _textOverride      = false;
+        _textOverrideFrame = [];
+
+        var layoutArgs = _rows.Select(r => {
+            var t = CellGridProtocol.Tiers[r.TierId];
+            return ((byte)t.W, (byte)t.H, (byte)1);
+        }).ToArray();
+        await _ble.SendCellGridAsync(CellGridProtocol.BuildClear());
+        await _ble.SendCellGridAsync(CellGridProtocol.BuildLayoutV2(layoutArgs));
+        _sent.Clear();
+        await RenderAndSendAsync(full: true);
+        if (_clockTimer != null) { ScheduleNextClockTick(DateTime.Now); _clockTimer.Start(); }
+    }
+
     // Forces a full re-render of all cells (safety net for silent BLE failures).
     public async Task ForceRedrawAsync()
     {
         if (!Running) return;
+        if (_textOverride) { await _ble.SendBitmapAsync(_textOverrideFrame); return; }
         _sent.Clear();
         await RenderAndSendAsync(full: true);
     }
@@ -145,6 +178,7 @@ sealed class CellGridCompositor : IDisposable
 
     private void OnStateChanged()
     {
+        if (_textOverride) return; // persistent CLI text is displayed; ignore state changes
         if (_sendInFlight) { _sendQueued = true; return; }
         _sendInFlight = true;
         _ = DrainAsync();
