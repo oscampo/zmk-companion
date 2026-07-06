@@ -61,14 +61,39 @@ internal static class CliRunner
             // Read char-by-char so \r (carriage return) also acts as a line separator.
             // This supports scripts that use \r to overwrite the terminal line in-place
             // (e.g. print(f"\r{now}", end="", flush=True)).
+            //
+            // Scripts like that never send a trailing terminator for their LAST value
+            // before sleeping — the \r that would flush it only arrives with the NEXT
+            // print, one tick later. That makes every value appear one full tick late.
+            // To avoid it, flush the buffered line early once the input goes quiet for
+            // idleFlushMs: with nothing new arriving, what's buffered is the finished
+            // value for this tick, not a partial write still being typed out.
+            const int idleFlushMs = 150;
             var sb = new System.Text.StringBuilder();
-            int ch;
-            while ((ch = Console.In.Read()) >= 0)
+            var charBuf = new char[1];
+            Task<int> pendingRead = Console.In.ReadAsync(charBuf, 0, 1);
+
+            while (true)
             {
+                if (sb.Length > 0)
+                {
+                    var timeout = Task.Delay(idleFlushMs);
+                    if (await Task.WhenAny(pendingRead, timeout) == timeout)
+                    {
+                        string idleLine = sb.ToString();
+                        sb.Clear();
+                        await writer.WriteLineAsync($"LINE\t{idleLine}");
+                        continue;
+                    }
+                }
+
+                int n = await pendingRead;
+                if (n == 0) break; // EOF
+                char ch = charBuf[0];
+                pendingRead = Console.In.ReadAsync(charBuf, 0, 1);
+
                 if (ch is '\n' or '\r')
                 {
-                    if (ch == '\r' && Console.In.Peek() == '\n')
-                        Console.In.Read(); // consume the \n in a \r\n pair
                     string line = sb.ToString();
                     sb.Clear();
                     if (line.Length > 0)
@@ -76,7 +101,7 @@ internal static class CliRunner
                 }
                 else
                 {
-                    sb.Append((char)ch);
+                    sb.Append(ch);
                 }
             }
             // Flush any trailing content that had no line terminator (e.g. killed mid-line)
