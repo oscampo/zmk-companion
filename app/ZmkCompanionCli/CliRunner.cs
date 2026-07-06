@@ -58,20 +58,26 @@ internal static class CliRunner
             string? ready = await reader.ReadLineAsync();
             if (ready != "READY") return 1;
 
-            // Read char-by-char so \r (carriage return) also acts as a line separator.
-            // This supports scripts that use \r to overwrite the terminal line in-place
-            // (e.g. print(f"\r{now}", end="", flush=True)).
+            // Read raw bytes from stdin (not Console.In) so the read is genuinely
+            // overlapped I/O: Console.In is a SyncTextReader whose ReadAsync can
+            // complete synchronously under the hood, which starves the Task.Delay
+            // race below and silently degrades this back to \r-only flushing.
             //
-            // Scripts like that never send a trailing terminator for their LAST value
-            // before sleeping — the \r that would flush it only arrives with the NEXT
-            // print, one tick later. That makes every value appear one full tick late.
-            // To avoid it, flush the buffered line early once the input goes quiet for
-            // idleFlushMs: with nothing new arriving, what's buffered is the finished
-            // value for this tick, not a partial write still being typed out.
+            // \r acts as a line separator too, for scripts that overwrite the
+            // terminal line in-place (e.g. print(f"\r{now}", end="", flush=True)).
+            // Those scripts never send a trailing terminator for their LAST value
+            // before sleeping — the \r that would flush it only arrives with the
+            // NEXT print, one tick later, making every value appear one tick late.
+            // To avoid it, flush the buffered line early once input goes quiet for
+            // idleFlushMs: with nothing new arriving, what's buffered is the
+            // finished value for this tick, not a partial write still in progress.
             const int idleFlushMs = 150;
-            var sb = new System.Text.StringBuilder();
-            var charBuf = new char[1];
-            Task<int> pendingRead = Console.In.ReadAsync(charBuf, 0, 1);
+            using var stdin   = Console.OpenStandardInput();
+            var decoder       = Utf8NoBom.GetDecoder();
+            var byteBuf       = new byte[1];
+            var charOut       = new char[2];
+            var sb            = new System.Text.StringBuilder();
+            Task<int> pendingRead = stdin.ReadAsync(byteBuf, 0, 1);
 
             while (true)
             {
@@ -89,19 +95,23 @@ internal static class CliRunner
 
                 int n = await pendingRead;
                 if (n == 0) break; // EOF
-                char ch = charBuf[0];
-                pendingRead = Console.In.ReadAsync(charBuf, 0, 1);
+                int produced = decoder.GetChars(byteBuf, 0, 1, charOut, 0);
+                pendingRead = stdin.ReadAsync(byteBuf, 0, 1);
 
-                if (ch is '\n' or '\r')
+                for (int i = 0; i < produced; i++)
                 {
-                    string line = sb.ToString();
-                    sb.Clear();
-                    if (line.Length > 0)
-                        await writer.WriteLineAsync($"LINE\t{line}");
-                }
-                else
-                {
-                    sb.Append(ch);
+                    char ch = charOut[i];
+                    if (ch is '\n' or '\r')
+                    {
+                        string line = sb.ToString();
+                        sb.Clear();
+                        if (line.Length > 0)
+                            await writer.WriteLineAsync($"LINE\t{line}");
+                    }
+                    else
+                    {
+                        sb.Append(ch);
+                    }
                 }
             }
             // Flush any trailing content that had no line terminator (e.g. killed mid-line)
