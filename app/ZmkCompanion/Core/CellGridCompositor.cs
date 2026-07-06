@@ -116,6 +116,9 @@ sealed class CellGridCompositor : IDisposable
         _clockTimer?.Stop();
         _textOverride      = true;
         _textOverrideFrame = frame;
+        // Clear cell-grid LVGL objects so the firmware stops rendering them over the bitmap.
+        if (_ble.HasCellGridChar)
+            await _ble.SendCellGridAsync(CellGridProtocol.BuildClear());
         await _ble.SendBitmapAsync(frame, preferSpeed);
     }
 
@@ -141,7 +144,12 @@ sealed class CellGridCompositor : IDisposable
     public async Task ForceRedrawAsync()
     {
         if (!Running) return;
-        if (_textOverride) { await _ble.SendBitmapAsync(_textOverrideFrame); return; }
+        if (_textOverride)
+        {
+            if (_ble.HasCellGridChar) await _ble.SendCellGridAsync(CellGridProtocol.BuildClear());
+            await _ble.SendBitmapAsync(_textOverrideFrame);
+            return;
+        }
         _sent.Clear();
         await RenderAndSendAsync(full: true);
     }
