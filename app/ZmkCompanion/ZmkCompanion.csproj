@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- Windows 10 2004+ required for WinRT BLE APIs -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>ZmkCompanion</AssemblyName>
+    <RootNamespace>ZmkCompanion</RootNamespace>
+    <Version>1.0.0</Version>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\FiraCodeNerdFont-Regular.ttf" />
+  </ItemGroup>
+
+  <!-- Publish: framework-dependent single-file .exe (requires .NET 8 Desktop Runtime). -->
+  <!-- RollForward=LatestPatch: use highest available 8.0.x patch, even if minimum patch is -->
+  <!-- absent/corrupted. Ensures the app finds 8.0.28+ when 8.0.27 exists but is broken.   -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <RollForward>LatestPatch</RollForward>
+  </PropertyGroup>
+
+</Project>

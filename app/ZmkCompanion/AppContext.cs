@@ -1,0 +1,501 @@
+using System.Collections.Concurrent;
+using System.Windows.Forms;
+using ZmkCompanion.Core;
+using ZmkCompanion.Features;
+using ZmkCompanion.UI;
+
+namespace ZmkCompanion;
+
+sealed class ZmkAppContext : ApplicationContext
+{
+    private readonly AppSettings          _settings;
+    private readonly BleService           _ble;
+    private readonly TrayIcon             _tray;
+    private readonly CellGridCompositor   _compositor;
+    private readonly PipeServer           _pipe;
+    private readonly LiveState            _liveState = new();
+    private readonly PomodoroFeature      _pomodoro  = new();
+
+    private readonly CancellationTokenSource _cts = new();
+
+    // Pipe callbacks run on the thread pool; compositor/WinForms timers need STA.
+    private readonly ConcurrentQueue<string> _textQueue = new();
+    private System.Windows.Forms.Timer? _drainTimer;
+    private bool _overrideInFlight; // guard: only one bitmap send at a time
+
+    // Display page cycling.
+    private int _activePage;
+    private CancellationTokenSource? _pageCycleCts;
+
+    // Background pollers feeding LiveState bindings.
+    private System.Windows.Forms.Timer? _weatherTimer;
+    private System.Windows.Forms.Timer? _sportsTimer;
+    private System.Windows.Forms.Timer? _heartbeatTimer;
+    private System.Windows.Forms.Timer? _connectionWatchdog;
+
+    // Tracks last pomodoro phase so tray only rebuilds on phase change, not every second.
+    private PomodoroPhase _lastTrayPhase = PomodoroPhase.Done;
+
+    public ZmkAppContext()
+    {
+        DebugLog.Reset();
+        _settings   = AppSettings.Load();
+        _ble        = new BleService();
+        _tray       = new TrayIcon(_ble);
+        _compositor = new CellGridCompositor(_ble, _liveState);
+
+        _pipe = new PipeServer();
+
+        _ble.Connected              += OnConnected;
+        _ble.Disconnected           += OnDisconnected;
+        _ble.BatteryLevelChanged    += OnBatteryLevelChanged;
+        _ble.StatusChanged          += OnStatusChanged;
+        _tray.ExitRequested           += OnExit;
+        _tray.CanvasEditorRequested   += OnDisplayEditor;
+        _tray.PomodoroToggleRequested += OnPomodoroToggle;
+        _tray.PomodoroConfigRequested += OnPomodoroConfig;
+
+        _pomodoro.StateChanged     += OnPomodoroStateChanged;
+        _pomodoro.SessionCompleted += OnPomodoroCompleted;
+
+        Application.Idle += OnFirstIdle;
+    }
+
+    private void OnFirstIdle(object? sender, EventArgs e)
+    {
+        Application.Idle -= OnFirstIdle;
+        _ble.SetUiContext(SynchronizationContext.Current!);
+
+        _drainTimer = new System.Windows.Forms.Timer { Interval = 50 };
+        _drainTimer.Tick += async (_, _) =>
+        {
+            if (_overrideInFlight) return; // previous BLE send still in progress — skip
+
+            // Keep only the latest queued item; discard older ones (stale clock frames, etc.)
+            string? latest = null;
+            int skipped = -1;
+            while (_textQueue.TryDequeue(out string? t)) { latest = t; skipped++; }
+            if (latest is null) return;
+
+            _overrideInFlight = true;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                if (string.IsNullOrEmpty(latest))
+                {
+                    _liveState.UpdateExternalText(""); // clear before restore so cell-grid renders fresh state
+                    DebugLog.Log($"drain: CLEAR (skipped={skipped})");
+                    await _compositor.ClearTextOverrideAsync();
+                    DebugLog.Log($"drain: CLEAR done in {sw.ElapsedMilliseconds}ms err={_ble.LastBitmapError ?? "(none)"}");
+                }
+                else
+                {
+                    DebugLog.Log($"drain: SEND len={latest.Length} skipped={skipped}");
+                    using var bmp = BitmapTextRenderer.Render(latest);
+                    byte[] frame  = BitmapFrame.Pack(bmp);
+                    await _compositor.ShowPersistentTextAsync(frame, preferSpeed: true);
+                    _liveState.UpdateExternalText(latest); // after _textOverride=true: Changed fires on UI thread, OnStateChanged exits early
+                    DebugLog.Log($"drain: SEND done in {sw.ElapsedMilliseconds}ms " +
+                        $"bleMs={_ble.LastSendMs} chunks={_ble.LastChunkCount} " +
+                        $"mtu={_ble.LastMtu} withResp={_ble.LastWithResponse} " +
+                        $"err={_ble.LastBitmapError ?? "(none)"}");
+                }
+            }
+            catch (Exception ex) { DebugLog.Log($"drain: exception {ex.Message}"); }
+            finally { _overrideInFlight = false; }
+        };
+        _drainTimer.Start();
+
+        _pipe.Start(text =>
+        {
+            // UpdateExternalText is called on the UI thread inside the drain timer (after
+            // _textOverride=true) to avoid triggering cell-grid DrainAsync concurrently with
+            // the bitmap send, which would saturate the BLE queue on the first streaming frame.
+            //
+            // SignalTextIncoming, in contrast, runs right here on the pipe thread — ahead of
+            // the drain timer's own WM_TIMER tick, which a busy heartbeat redraw can starve for
+            // seconds. It lets an in-progress cell-grid render abort immediately.
+            if (!string.IsNullOrEmpty(text)) _compositor.SignalTextIncoming();
+            _textQueue.Enqueue(text);
+            return Task.FromResult(true);
+        });
+
+        _weatherTimer = new System.Windows.Forms.Timer { Interval = 10 * 60_000 };
+        _weatherTimer.Tick += async (_, _) => await RefreshWeatherAsync();
+        _weatherTimer.Start();
+        _ = RefreshWeatherAsync();
+
+        _sportsTimer = new System.Windows.Forms.Timer { Interval = 60_000 };
+        _sportsTimer.Tick += async (_, _) => await RefreshSportsAsync();
+        _sportsTimer.Start();
+        _ = RefreshSportsAsync();
+
+        _heartbeatTimer = new System.Windows.Forms.Timer { Interval = 15_000 };
+        _heartbeatTimer.Tick += (_, _) =>
+        {
+            if (!_ble.IsConnected) return;
+            _ = _compositor.ForceRedrawAsync();
+        };
+        _heartbeatTimer.Start();
+
+        _connectionWatchdog = new System.Windows.Forms.Timer { Interval = 10_000 };
+        _connectionWatchdog.Tick += (_, _) =>
+        {
+            bool healthy = _ble.IsConnected && _ble.HasCellGridChar;
+            if (healthy || _reconnecting) return;
+            DebugLog.Log($"watchdog: unhealthy link (IsConnected={_ble.IsConnected} HasCellGridChar={_ble.HasCellGridChar}) — forcing reconnect");
+            _reconnecting = true;
+            _ = ReconnectAsync();
+        };
+        _connectionWatchdog.Start();
+
+        _ = ConnectLoopAsync(_cts.Token);
+    }
+
+    // ── Live data pollers ─────────────────────────────────────────────────────
+
+    private async Task RefreshWeatherAsync()
+    {
+        try
+        {
+            var data = await WeatherFeature.FetchWeatherAsync(_settings.City);
+            string tempStr = _settings.WeatherUnit == "fahrenheit"
+                ? $"{data.TempC * 9 / 5 + 32:F0}°F"
+                : $"{data.TempC:F0}°";
+            _liveState.UpdateWeather(data.Icon.ToString(), tempStr, data.City);
+            DebugLog.Log($"weather: {data.City} {tempStr} wmo={data.Icon}");
+        }
+        catch (Exception ex) { DebugLog.Log($"weather error: {ex.Message}"); }
+    }
+
+    private async Task RefreshSportsAsync()
+    {
+        var leagues = _settings.SelectedLeagues.Count > 0
+            ? _settings.SelectedLeagues.Select(SportsFeature.FindOrCreate).ToList()
+            : [SportsFeature.DefaultLeague];
+
+        bool first = true;
+        foreach (var lg in leagues)
+        {
+            try
+            {
+                string team = _settings.SportsTeams.TryGetValue(lg.EspnPath, out var t) ? t : "";
+                var live = await SportsFeature.FetchLiveAsync(lg, team);
+                var next = await SportsFeature.FetchScheduleAsync(lg, team);
+                var last = await SportsFeature.FetchResultsAsync(lg, team);
+
+                // Primary: live > next scheduled > last result.
+                SportsGame? primary = live.Count > 0 ? live[0] : next.Count > 0 ? next[0] : last.Count > 0 ? last[0] : null;
+                var snap     = BuildSportsSnapshot(lg, primary,                          team);
+                var snapNext = BuildSportsSnapshot(lg, next.Count > 0 ? next[0] : null, team);
+                var snapLast = BuildSportsSnapshot(lg, last.Count > 0 ? last[0] : null, team);
+
+                _liveState.UpdateSports(lg.ShortName,           snap);
+                _liveState.UpdateSports(lg.ShortName + "_next", snapNext);
+                _liveState.UpdateSports(lg.ShortName + "_last", snapLast);
+
+                // Always update "default*" for the first league so switching leagues
+                // never leaves stale data from the previous league in the live state.
+                if (first)
+                {
+                    _liveState.UpdateSports("default",      snap);
+                    _liveState.UpdateSports("default_next", snapNext);
+                    _liveState.UpdateSports("default_last", snapLast);
+                    first = false;
+                }
+            }
+            catch { }
+        }
+    }
+
+    private static SportsSnapshot BuildSportsSnapshot(SportsLeague league, SportsGame? g, string team = "")
+    {
+        if (g is null)
+            return new SportsSnapshot
+            {
+                Sport   = league.Sport.ToString(),
+                League  = league.ShortName,
+                Team    = team,
+                Game    = "No games",
+                Summary = "No games",
+            };
+
+        string game = g.StatusState == "pre"
+            ? $"{g.Away} @ {g.Home}"
+            : $"{g.Away} {g.AwayScore}-{g.HomeScore} {g.Home}";
+
+        string marker = g.StatusState switch
+        {
+            "in"   => "", // nf-fa-bolt (live)
+            "post" => "", // nf-fa-trophy (final)
+            _      => "",
+        };
+
+        return new SportsSnapshot
+        {
+            Sport     = g.Sport.ToString(),
+            League    = league.ShortName,
+            Team      = string.IsNullOrWhiteSpace(team) ? g.Home : team,
+            Away      = g.Away,
+            Home      = g.Home,
+            Score     = g.StatusState == "post" ? $"{g.AwayScore}-{g.HomeScore}" : "",
+            Game      = game,
+            Marker    = marker,
+            Time      = g.StatusState == "in"  ? g.StatusDetail : "",
+            Scheduled = g.StatusState == "pre" ? g.StatusDetail : "",
+            Summary   = SportsFeature.FormatGame(g),
+        };
+    }
+
+    // ── Pomodoro ──────────────────────────────────────────────────────────────
+
+    private void OnPomodoroToggle()
+    {
+        if (_pomodoro.Phase != PomodoroPhase.Done)
+        {
+            _pomodoro.Stop();
+        }
+        else
+        {
+            var wcfg = FindPomodoroConfig();
+            if (wcfg == null) return;
+            _pomodoro.Start(wcfg);
+        }
+    }
+
+    private void OnPomodoroConfig()
+    {
+        using var dlg = new PomodoroConfigDialog(
+            _settings.PomodoroWorkMin,
+            _settings.PomodoroBreakMin,
+            _settings.PomodoroCycles,
+            _settings.PomodoroLongBreakMin);
+
+        if (dlg.ShowDialog() != DialogResult.OK) return;
+
+        _settings.PomodoroWorkMin      = dlg.WorkMin;
+        _settings.PomodoroBreakMin     = dlg.BreakMin;
+        _settings.PomodoroCycles       = dlg.Cycles;
+        _settings.PomodoroLongBreakMin = dlg.LongBreakMin;
+        _settings.Save();
+
+        // If a session is in progress, restart it with the new config immediately.
+        if (_pomodoro.Phase != PomodoroPhase.Done)
+        {
+            _pomodoro.Start(new Features.PomodoroConfig
+            {
+                WorkMin      = dlg.WorkMin,
+                BreakMin     = dlg.BreakMin,
+                Cycles       = dlg.Cycles,
+                LongBreakMin = dlg.LongBreakMin,
+            });
+        }
+    }
+
+    private void OnPomodoroStateChanged()
+    {
+        var (time, phase, bar, icon, cycle) = _pomodoro.GetDisplayState();
+        _liveState.UpdatePomodoro(time, phase, bar, icon, cycle);
+
+        if (_pomodoro.Phase != _lastTrayPhase)
+        {
+            _lastTrayPhase = _pomodoro.Phase;
+            UpdateTrayPomodoro();
+        }
+    }
+
+    private void OnPomodoroCompleted()
+    {
+        _lastTrayPhase = PomodoroPhase.Done;
+        UpdateTrayPomodoro();
+        _tray.ShowBalloonTip(3000, "ZMK Companion", "¡Sesión Pomodoro completada!", ToolTipIcon.Info);
+    }
+
+    private void UpdateTrayPomodoro()
+    {
+        bool hasPomodoro = _settings.DisplayPages.Any(p =>
+            p.Rows.Any(r => r.Template.Contains("{pomodoro.", StringComparison.OrdinalIgnoreCase)));
+        _tray.HasPomodoroWidget = hasPomodoro;
+
+        if (_pomodoro.Phase != PomodoroPhase.Done)
+        {
+            string phaseLabel = _pomodoro.Phase switch
+            {
+                PomodoroPhase.Work      => "Work",
+                PomodoroPhase.Break     => "Break",
+                PomodoroPhase.LongBreak => "Long Break",
+                _                       => "",
+            };
+            int m = _pomodoro.SecondsRemaining / 60, s = _pomodoro.SecondsRemaining % 60;
+            _tray.SetPomodoroState(true, $"Pomodoro  [{phaseLabel} {m:D2}:{s:D2}]");
+        }
+        else
+        {
+            _tray.SetPomodoroState(false, null);
+        }
+    }
+
+    private PomodoroConfig? FindPomodoroConfig()
+    {
+        foreach (var page in _settings.DisplayPages)
+            foreach (var row in page.Rows)
+                if (row.Template.Contains("{pomodoro.", StringComparison.OrdinalIgnoreCase))
+                    return new PomodoroConfig
+                    {
+                        WorkMin      = _settings.PomodoroWorkMin,
+                        BreakMin     = _settings.PomodoroBreakMin,
+                        Cycles       = _settings.PomodoroCycles,
+                        LongBreakMin = _settings.PomodoroLongBreakMin,
+                    };
+        return null;
+    }
+
+    // ── Display pages ─────────────────────────────────────────────────────────
+
+    private void LoadPage(int index)
+    {
+        if (_settings.DisplayPages.Count == 0)
+            _settings.DisplayPages.Add(new CellGridPage());
+        _activePage = Math.Clamp(index, 0, _settings.DisplayPages.Count - 1);
+        var page = _settings.DisplayPages[_activePage];
+        DebugLog.Log($"LoadPage({_activePage}) name='{page.Name}' rows={page.Rows.Count} " +
+                     $"connected={_ble.IsConnected} now={DateTime.Now:HH:mm:ss.fff}");
+        if (_ble.IsConnected)
+            _ = _compositor.LoadPageAsync(page);
+        UpdateTrayPomodoro();
+    }
+
+    private void RestartPageCycle()
+    {
+        _pageCycleCts?.Cancel();
+        _pageCycleCts?.Dispose();
+        _pageCycleCts = null;
+        DebugLog.Log($"RestartPageCycle: CycleDisplayPages={_settings.CycleDisplayPages} pageCount={_settings.DisplayPages.Count}");
+        if (!_settings.CycleDisplayPages || _settings.DisplayPages.Count < 2) return;
+
+        _pageCycleCts = new CancellationTokenSource();
+        _ = RunPageCycleAsync(_pageCycleCts.Token);
+    }
+
+    private async Task RunPageCycleAsync(CancellationToken ct)
+    {
+        DebugLog.Log("RunPageCycleAsync: started");
+        while (!ct.IsCancellationRequested)
+        {
+            int durationMs = Math.Max(2, _settings.DisplayPages[_activePage].DurationSeconds) * 1000;
+            DebugLog.Log($"cycle: page {_activePage} dwelling {durationMs}ms");
+            try   { await Task.Delay(durationMs, ct); }
+            catch (OperationCanceledException) { break; }
+            if (ct.IsCancellationRequested) break;
+            int next = (_activePage + 1) % _settings.DisplayPages.Count;
+            DebugLog.Log($"cycle: switching page {_activePage} -> {next}");
+            LoadPage(next);
+        }
+        DebugLog.Log("RunPageCycleAsync: stopped");
+    }
+
+    // ── BLE status events ─────────────────────────────────────────────────────
+
+    private void OnBatteryLevelChanged(byte level) => _liveState.UpdateBattery(level, false);
+
+    private void OnStatusChanged(byte status, byte bonds)
+    {
+        bool usb      = (status & 0x01) != 0;
+        int  profile  = (status >> 1) & 0x07;
+        int  bondMask = bonds & 0x1F;
+        _liveState.UpdateConnection(usb, profile, bondMask);
+    }
+
+    // ── Display editor ────────────────────────────────────────────────────────
+
+    private void OnDisplayEditor()
+    {
+        var form = new CellGridEditorForm(_settings, _liveState, ApplyDisplayPages);
+        form.Show();
+    }
+
+    internal void ApplyDisplayPages(List<CellGridPage> pages, bool cycle)
+    {
+        _settings.DisplayPages      = pages;
+        _settings.CycleDisplayPages = cycle;
+        _settings.Save();
+        LoadPage(_activePage < pages.Count ? _activePage : 0);
+        RestartPageCycle();
+        _ = RefreshWeatherAsync();
+        _ = RefreshSportsAsync();
+    }
+
+    // ── Connection lifecycle ──────────────────────────────────────────────────
+
+    private async Task ConnectLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            bool found = await _ble.ScanAndConnectAsync(ct);
+            if (found || ct.IsCancellationRequested) break;
+            await Task.Delay(15_000, ct).ContinueWith(_ => { });
+        }
+    }
+
+    private void OnConnected(string deviceName)
+    {
+        DebugLog.Log($"OnConnected: {deviceName} now={DateTime.Now:HH:mm:ss.fff}");
+        _tray.SetConnected(deviceName);
+        _ = _ble.SendAsync(Protocol.BuildClock());
+        LoadPage(_activePage);
+        RestartPageCycle();
+    }
+
+    private bool _reconnecting;
+
+    private void OnDisconnected()
+    {
+        DebugLog.Log($"OnDisconnected now={DateTime.Now:HH:mm:ss.fff}");
+        _compositor.Stop();
+        _pomodoro.Stop();
+        _tray.SetDisconnected();
+
+        if (_reconnecting) return;
+        _reconnecting = true;
+        _ = ReconnectAsync();
+    }
+
+    private async Task ReconnectAsync()
+    {
+        try   { await ConnectLoopAsync(_cts.Token); }
+        finally { _reconnecting = false; }
+    }
+
+    private void OnExit()
+    {
+        _cts.Cancel();
+        Application.Exit();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _cts.Cancel();
+            _cts.Dispose();
+            _drainTimer?.Stop();
+            _drainTimer?.Dispose();
+            _pageCycleCts?.Cancel();
+            _pageCycleCts?.Dispose();
+            _weatherTimer?.Stop();
+            _weatherTimer?.Dispose();
+            _sportsTimer?.Stop();
+            _sportsTimer?.Dispose();
+            _heartbeatTimer?.Stop();
+            _heartbeatTimer?.Dispose();
+            _connectionWatchdog?.Stop();
+            _connectionWatchdog?.Dispose();
+            _pipe.Dispose();
+            _pomodoro.Dispose();
+            _compositor.Dispose();
+            _tray.Dispose();
+            _ble.Dispose();
+        }
+        base.Dispose(disposing);
+    }
+}

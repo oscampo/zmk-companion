@@ -1,0 +1,65 @@
+name: Build
+
+on:
+  push:
+    branches: ["main", "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('app/**/*.csproj') }}
+          restore-keys: nuget-
+
+      - name: Test
+        run: dotnet test app/ZmkCompanion.sln --configuration Release --logger "console;verbosity=normal"
+
+      - name: Publish tray app
+        run: >
+          dotnet publish app/ZmkCompanion/ZmkCompanion.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained false
+          -p:PublishSingleFile=true
+          -p:RollForward=LatestPatch
+
+      - name: Publish CLI
+        run: >
+          dotnet publish app/ZmkCompanionCli/ZmkCompanionCli.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained false
+          -p:PublishSingleFile=true
+          -p:RollForward=LatestPatch
+
+      - name: Install Inno Setup 6
+        run: choco install innosetup --no-progress --yes
+
+      - name: Build installer
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          New-Item -ItemType Directory -Force -Path installer\output | Out-Null
+          & $iscc installer\ZmkCompanion.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        shell: pwsh
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZmkCompanion-Setup
+          path: installer/output/ZmkCompanion-Setup-*.exe
+          retention-days: 30

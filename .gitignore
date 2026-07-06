@@ -1,0 +1,13 @@
+# .NET build artifacts
+app/**/bin/
+app/**/obj/
+
+# Inno Setup output
+installer/output/
+
+# User secrets / local overrides
+*.user
+.vs/
+
+# macOS
+.DS_Store
