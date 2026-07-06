@@ -114,10 +114,13 @@ sealed class CellGridCompositor : IDisposable
     public async Task ShowPersistentTextAsync(byte[] frame, bool preferSpeed = false)
     {
         _clockTimer?.Stop();
+        bool entering = !_textOverride; // true on first call: transitioning from cell-grid to bitmap
         _textOverride      = true;
         _textOverrideFrame = frame;
-        // Clear cell-grid LVGL objects so the firmware stops rendering them over the bitmap.
-        if (_ble.HasCellGridChar)
+        // On first entry: clear LVGL cell objects so they stop rendering over the bitmap.
+        // Subsequent streaming updates skip CLEAR (no new cell objects arrive once _textOverride
+        // is set, and sending CLEAR+bitmap every second adds unnecessary ~150ms overhead).
+        if (entering && _ble.HasCellGridChar)
             await _ble.SendCellGridAsync(CellGridProtocol.BuildClear());
         await _ble.SendBitmapAsync(frame, preferSpeed);
     }
@@ -213,6 +216,7 @@ sealed class CellGridCompositor : IDisposable
         bool use24h = !Protocol.Detect12h();
         for (int rowIdx = 0; rowIdx < _rows.Count; rowIdx++)
         {
+            if (_textOverride) return; // bitmap override activated — abort cell sends
             var    row  = _rows[rowIdx];
             var    tier = CellGridProtocol.Tiers[row.TierId];
             var    cfg  = MakeLabelConfig(row);
@@ -245,6 +249,7 @@ sealed class CellGridCompositor : IDisposable
         // a reader sees the past time ("11:40") rather than a future one ("11:59").
         for (int col = tier.Cols - 1; col >= 0; col--)
         {
+            if (_textOverride) return; // bitmap override activated mid-row — abort
             int gi = col - start;
             byte[] cell = (gi >= 0 && gi < count)
                 ? (split != SplitHalf.None

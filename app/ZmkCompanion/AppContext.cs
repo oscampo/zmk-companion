@@ -107,17 +107,7 @@ sealed class ZmkAppContext : ApplicationContext
         _pipe.Start(text =>
         {
             _liveState.UpdateExternalText(text);
-            // If the active page has a {ext.text} row, the cell-grid compositor
-            // handles the update naturally via LiveState.Changed → OnStateChanged.
-            // Using the bitmap overlay here would conflict: ShowPersistentTextAsync
-            // sets _textOverride=true, which then blocks all subsequent cell-grid
-            // updates and freezes the display at the first value ever sent.
-            bool pageUsesExtText =
-                _activePage < _settings.DisplayPages.Count &&
-                _settings.DisplayPages[_activePage].Rows.Any(r =>
-                    r.Template.Contains("{ext.text}", StringComparison.OrdinalIgnoreCase));
-            if (!pageUsesExtText)
-                _textQueue.Enqueue(text);
+            _textQueue.Enqueue(text);
             return Task.FromResult(true);
         });
 
