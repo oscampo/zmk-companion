@@ -17,6 +17,13 @@ sealed class CellGridCompositor : IDisposable
     private readonly Dictionary<(int, int), byte[]> _sent    = new();
     private System.Windows.Forms.Timer?              _clockTimer;
     private bool   _textOverride;       // persistent CLI text is displayed; cell-grid suspended
+    // Set eagerly from the pipe thread the instant text arrives, before the drain timer's own
+    // tick runs. WinForms timers fire via WM_TIMER, which Windows only synthesizes once the
+    // message queue is empty — a heartbeat redraw chaining many awaited BLE writes keeps the
+    // queue busy and can starve the drain timer for its whole duration. Checking this volatile
+    // flag (instead of only _textOverride) lets an in-progress cell-grid render loop abort on
+    // its very next iteration, independent of whether the drain timer gets to run at all.
+    private volatile bool _overridePending;
     private byte[] _textOverrideFrame  = [];
     private int  _tickCount;
     private bool _sendInFlight;
@@ -74,8 +81,14 @@ sealed class CellGridCompositor : IDisposable
         _clockTimer?.Dispose();
         _clockTimer = null;
         _rows.Clear();
+        _overridePending = false;
         DebugLog.Log("CellGridCompositor: stopped");
     }
+
+    // Called from the pipe thread the moment text arrives, ahead of the drain timer's own
+    // tick, so any in-progress cell-grid render (e.g. the heartbeat's periodic full redraw)
+    // aborts immediately instead of running to completion first.
+    public void SignalTextIncoming() => _overridePending = true;
 
     // ── Temporary full-frame display (pipe text) ──────────────────────────────
 
@@ -116,6 +129,7 @@ sealed class CellGridCompositor : IDisposable
         _clockTimer?.Stop();
         bool entering = !_textOverride; // true on first call: transitioning from cell-grid to bitmap
         _textOverride      = true;
+        _overridePending   = false;
         _textOverrideFrame = frame;
         // On first entry: clear LVGL cell objects so they stop rendering over the bitmap.
         // Subsequent streaming updates skip CLEAR (no new cell objects arrive once _textOverride
@@ -128,8 +142,9 @@ sealed class CellGridCompositor : IDisposable
     // Restores cell-grid after a persistent text override.
     public async Task ClearTextOverrideAsync()
     {
-        if (!_textOverride || !Running) { _textOverride = false; return; }
+        if (!_textOverride || !Running) { _textOverride = false; _overridePending = false; return; }
         _textOverride      = false;
+        _overridePending   = false;
         _textOverrideFrame = [];
 
         var layoutArgs = _rows.Select(r => {
@@ -217,7 +232,7 @@ sealed class CellGridCompositor : IDisposable
         bool use24h = !Protocol.Detect12h();
         for (int rowIdx = 0; rowIdx < _rows.Count; rowIdx++)
         {
-            if (_textOverride) return; // bitmap override activated — abort cell sends
+            if (_textOverride || _overridePending) return; // bitmap override activated (or about to) — abort cell sends
             var    row  = _rows[rowIdx];
             var    tier = CellGridProtocol.Tiers[row.TierId];
             var    cfg  = MakeLabelConfig(row);
@@ -250,7 +265,7 @@ sealed class CellGridCompositor : IDisposable
         // a reader sees the past time ("11:40") rather than a future one ("11:59").
         for (int col = tier.Cols - 1; col >= 0; col--)
         {
-            if (_textOverride) return; // bitmap override activated mid-row — abort
+            if (_textOverride || _overridePending) return; // bitmap override activated (or about to) mid-row — abort
             int gi = col - start;
             byte[] cell = (gi >= 0 && gi < count)
                 ? (split != SplitHalf.None

@@ -111,6 +111,11 @@ sealed class ZmkAppContext : ApplicationContext
             // UpdateExternalText is called on the UI thread inside the drain timer (after
             // _textOverride=true) to avoid triggering cell-grid DrainAsync concurrently with
             // the bitmap send, which would saturate the BLE queue on the first streaming frame.
+            //
+            // SignalTextIncoming, in contrast, runs right here on the pipe thread — ahead of
+            // the drain timer's own WM_TIMER tick, which a busy heartbeat redraw can starve for
+            // seconds. It lets an in-progress cell-grid render abort immediately.
+            if (!string.IsNullOrEmpty(text)) _compositor.SignalTextIncoming();
             _textQueue.Enqueue(text);
             return Task.FromResult(true);
         });
