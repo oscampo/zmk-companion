@@ -88,7 +88,18 @@ sealed class ZmkAppContext : ApplicationContext
                     await _compositor.ClearTextOverrideAsync();
                     DebugLog.Log($"drain: CLEAR done in {sw.ElapsedMilliseconds}ms err={_ble.LastBitmapError ?? "(none)"}");
                 }
-                else if (_compositor.UsesIndexedExternalText)
+                else if (_compositor.TextMode == ExternalTextMode.None)
+                {
+                    // Active page references neither {ext.text} nor {ext.text.N}:
+                    // it doesn't want CLI text at all. Drop it, leave the page's
+                    // own content (weather, sports, whatever) untouched. Deliberately
+                    // not calling UpdateExternalText here either, so a later page
+                    // that does use {ext.text.N} shows the last value that was
+                    // actually displayed somewhere, not whatever arrived while it
+                    // was being ignored.
+                    DebugLog.Log($"drain: SEND ignored (active page has no ext.text token) len={latest.Length} skipped={skipped}");
+                }
+                else if (_compositor.TextMode == ExternalTextMode.CellGrid)
                 {
                     // Active page has an {ext.text.N} row: route straight to the
                     // cell-grid (positioned), never the full-frame bitmap override.
@@ -99,7 +110,7 @@ sealed class ZmkAppContext : ApplicationContext
                     _liveState.UpdateExternalText(text);
                     DebugLog.Log($"drain: SEND done in {sw.ElapsedMilliseconds}ms (cell-grid path)");
                 }
-                else
+                else // ExternalTextMode.FullScreen
                 {
                     string text = _liveState.ExpandEscaped(latest);
                     DebugLog.Log($"drain: SEND len={latest.Length} skipped={skipped}");
@@ -129,10 +140,10 @@ sealed class ZmkAppContext : ApplicationContext
             // seconds. It lets an in-progress cell-grid render abort immediately.
             //
             // Only signal when the drain timer will actually take the bitmap-override
-            // branch: when the active page routes to the cell-grid instead ({ext.text.N}),
-            // setting _overridePending here would abort the very render we want, and
-            // nothing downstream would ever clear it back to false.
-            if (!string.IsNullOrEmpty(text) && !_compositor.UsesIndexedExternalText)
+            // branch (TextMode.FullScreen). For CellGrid, setting _overridePending
+            // here would abort the very render we want. For None, the text is
+            // dropped entirely and nothing would ever clear the flag back to false.
+            if (!string.IsNullOrEmpty(text) && _compositor.TextMode == ExternalTextMode.FullScreen)
                 _compositor.SignalTextIncoming();
             _textQueue.Enqueue(text);
             return Task.FromResult(true);

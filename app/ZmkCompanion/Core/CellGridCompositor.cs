@@ -3,6 +3,10 @@ using System.Drawing.Text;
 
 namespace ZmkCompanion.Core;
 
+// Which of the {ext.text} family of tokens (if any) the active page's rows
+// reference, decided once per LoadPageAsync. See CellGridCompositor.TextMode.
+enum ExternalTextMode { None, FullScreen, CellGrid }
+
 // Primary display compositor using the cell-grid protocol (0x1527).
 // Renders each row's template to per-glyph bitmaps, diffs against the
 // last-sent state, and only transmits cells that actually changed.
@@ -31,10 +35,16 @@ sealed class CellGridCompositor : IDisposable
 
     public bool Running { get; private set; }
 
-    // True when the active page has an {ext.text.N} row: piped/CLI text should
-    // update ExternalText and go through the normal cell-grid render (positioned),
-    // never the full-frame bitmap override reserved for bare {ext.text}.
-    public bool UsesIndexedExternalText { get; private set; }
+    // How the active page wants piped/CLI text (zkc) displayed, decided purely
+    // by which token(s) its rows reference:
+    //   CellGrid   - has {ext.text.N}: goes through the normal positioned render.
+    //   FullScreen - has bare {ext.text} (no CellGrid row on the same page,
+    //                CellGrid takes priority if both appear): full-frame bitmap
+    //                override, replacing the whole page for as long as text keeps
+    //                arriving.
+    //   None       - neither token present: page doesn't want CLI text at all,
+    //                incoming text is dropped, page's own content is untouched.
+    public ExternalTextMode TextMode { get; private set; }
 
     public CellGridCompositor(BleService ble, LiveState state)
     {
@@ -58,9 +68,15 @@ sealed class CellGridCompositor : IDisposable
         _textOverride  = false;
         _textOverrideFrame = [];
         // Bare {ext.text} has no trailing dot; {ext.text.N} does, this substring
-        // check alone is enough to tell the two token forms apart.
-        UsesIndexedExternalText = _rows.Any(r =>
+        // check alone is enough to tell the two token forms apart. CellGrid wins
+        // if a page somehow has both (unlikely, undefined by design otherwise).
+        bool hasIndexed = _rows.Any(r =>
             r.Template.Contains("ext.text.", StringComparison.OrdinalIgnoreCase));
+        bool hasBare = _rows.Any(r =>
+            r.Template.Contains("{ext.text}", StringComparison.OrdinalIgnoreCase));
+        TextMode = hasIndexed ? ExternalTextMode.CellGrid
+                 : hasBare    ? ExternalTextMode.FullScreen
+                              : ExternalTextMode.None;
         _sent.Clear();
         _tickCount = 0;
         Running    = true;
@@ -90,7 +106,7 @@ sealed class CellGridCompositor : IDisposable
         _clockTimer?.Dispose();
         _clockTimer = null;
         _rows.Clear();
-        UsesIndexedExternalText = false;
+        TextMode = ExternalTextMode.None;
         _overridePending = false;
         DebugLog.Log("CellGridCompositor: stopped");
     }
