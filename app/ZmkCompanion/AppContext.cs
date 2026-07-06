@@ -88,6 +88,16 @@ sealed class ZmkAppContext : ApplicationContext
                     await _compositor.ClearTextOverrideAsync();
                     DebugLog.Log($"drain: CLEAR done in {sw.ElapsedMilliseconds}ms err={_ble.LastBitmapError ?? "(none)"}");
                 }
+                else if (_compositor.UsesIndexedExternalText)
+                {
+                    // Active page has an {ext.text.N} row: route straight to the
+                    // cell-grid (positioned), never the full-frame bitmap override.
+                    // UpdateExternalText raises Changed, which OnStateChanged picks
+                    // up normally since _textOverride was never set for this path.
+                    DebugLog.Log($"drain: SEND (cell-grid ext.text.N) len={latest.Length} skipped={skipped}");
+                    _liveState.UpdateExternalText(latest);
+                    DebugLog.Log($"drain: SEND done in {sw.ElapsedMilliseconds}ms (cell-grid path)");
+                }
                 else
                 {
                     DebugLog.Log($"drain: SEND len={latest.Length} skipped={skipped}");
@@ -115,7 +125,13 @@ sealed class ZmkAppContext : ApplicationContext
             // SignalTextIncoming, in contrast, runs right here on the pipe thread — ahead of
             // the drain timer's own WM_TIMER tick, which a busy heartbeat redraw can starve for
             // seconds. It lets an in-progress cell-grid render abort immediately.
-            if (!string.IsNullOrEmpty(text)) _compositor.SignalTextIncoming();
+            //
+            // Only signal when the drain timer will actually take the bitmap-override
+            // branch: when the active page routes to the cell-grid instead ({ext.text.N}),
+            // setting _overridePending here would abort the very render we want, and
+            // nothing downstream would ever clear it back to false.
+            if (!string.IsNullOrEmpty(text) && !_compositor.UsesIndexedExternalText)
+                _compositor.SignalTextIncoming();
             _textQueue.Enqueue(text);
             return Task.FromResult(true);
         });

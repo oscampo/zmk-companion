@@ -31,6 +31,11 @@ sealed class CellGridCompositor : IDisposable
 
     public bool Running { get; private set; }
 
+    // True when the active page has an {ext.text.N} row: piped/CLI text should
+    // update ExternalText and go through the normal cell-grid render (positioned),
+    // never the full-frame bitmap override reserved for bare {ext.text}.
+    public bool UsesIndexedExternalText { get; private set; }
+
     public CellGridCompositor(BleService ble, LiveState state)
     {
         _ble   = ble;
@@ -52,6 +57,10 @@ sealed class CellGridCompositor : IDisposable
         _rows          = page.Rows.Select(r => r.Clone()).ToList();
         _textOverride  = false;
         _textOverrideFrame = [];
+        // Bare {ext.text} has no trailing dot; {ext.text.N} does, this substring
+        // check alone is enough to tell the two token forms apart.
+        UsesIndexedExternalText = _rows.Any(r =>
+            r.Template.Contains("ext.text.", StringComparison.OrdinalIgnoreCase));
         _sent.Clear();
         _tickCount = 0;
         Running    = true;
@@ -81,6 +90,7 @@ sealed class CellGridCompositor : IDisposable
         _clockTimer?.Dispose();
         _clockTimer = null;
         _rows.Clear();
+        UsesIndexedExternalText = false;
         _overridePending = false;
         DebugLog.Log("CellGridCompositor: stopped");
     }
