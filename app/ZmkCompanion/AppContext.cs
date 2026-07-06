@@ -83,6 +83,7 @@ sealed class ZmkAppContext : ApplicationContext
             {
                 if (string.IsNullOrEmpty(latest))
                 {
+                    _liveState.UpdateExternalText(""); // clear before restore so cell-grid renders fresh state
                     DebugLog.Log($"drain: CLEAR (skipped={skipped})");
                     await _compositor.ClearTextOverrideAsync();
                     DebugLog.Log($"drain: CLEAR done in {sw.ElapsedMilliseconds}ms err={_ble.LastBitmapError ?? "(none)"}");
@@ -93,6 +94,7 @@ sealed class ZmkAppContext : ApplicationContext
                     using var bmp = BitmapTextRenderer.Render(latest);
                     byte[] frame  = BitmapFrame.Pack(bmp);
                     await _compositor.ShowPersistentTextAsync(frame, preferSpeed: true);
+                    _liveState.UpdateExternalText(latest); // after _textOverride=true: Changed fires on UI thread, OnStateChanged exits early
                     DebugLog.Log($"drain: SEND done in {sw.ElapsedMilliseconds}ms " +
                         $"bleMs={_ble.LastSendMs} chunks={_ble.LastChunkCount} " +
                         $"mtu={_ble.LastMtu} withResp={_ble.LastWithResponse} " +
@@ -106,7 +108,9 @@ sealed class ZmkAppContext : ApplicationContext
 
         _pipe.Start(text =>
         {
-            _liveState.UpdateExternalText(text);
+            // UpdateExternalText is called on the UI thread inside the drain timer (after
+            // _textOverride=true) to avoid triggering cell-grid DrainAsync concurrently with
+            // the bitmap send, which would saturate the BLE queue on the first streaming frame.
             _textQueue.Enqueue(text);
             return Task.FromResult(true);
         });
