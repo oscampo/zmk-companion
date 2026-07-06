@@ -149,8 +149,9 @@ sealed class CellGridCompositor : IDisposable
         if (!Running) return;
         if (_textOverride)
         {
-            if (_ble.HasCellGridChar) await _ble.SendCellGridAsync(CellGridProtocol.BuildClear());
-            await _ble.SendBitmapAsync(_textOverrideFrame);
+            // Use WriteWithoutResponse: WriteWithResponse here blocks the BLE queue for 5-7s,
+            // blanking the display during the send and serializing streaming frames behind it.
+            await _ble.SendBitmapAsync(_textOverrideFrame, preferSpeed: true);
             return;
         }
         _sent.Clear();
