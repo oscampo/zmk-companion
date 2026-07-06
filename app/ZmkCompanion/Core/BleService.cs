@@ -259,33 +259,20 @@ sealed class BleService : IDisposable
 
     // Sends a 1,440-byte bitmap frame via characteristic 0x1525 in 240-byte chunks.
     // Header per chunk: [2B offset LE][2B total LE][data].
+    // preferSpeed=true uses WriteWithoutResponse (fire-and-forget, ~30-50ms total)
+    // for latency-sensitive streaming; false (default) uses WriteWithResponse for
+    // reliable delivery where a dropped chunk would be worse than extra latency.
     // Must be called from the UI (STA) thread.
-    public async Task<bool> SendBitmapAsync(byte[] frame)
+    public async Task<bool> SendBitmapAsync(byte[] frame, bool preferSpeed = false)
     {
         var ch = _bitmapCharacteristic;
         if (ch is null) { LastBitmapError = "char is null"; return false; }
 
-        // Choose write type based on what the characteristic actually declares.
-        // Prefer WriteWithResponse when available: WriteWithoutResponse is a fire-
-        // and-forget GATT "Write Command" with no ATT-level acknowledgment, so a
-        // chunk silently dropped over the air (marginal radio conditions, range,
-        // interference) looks IDENTICAL to a successful send from here — the local
-        // stack reports Success because the packet was queued/transmitted locally,
-        // regardless of whether the peripheral actually got it. If firmware only
-        // swaps its displayed framebuffer once a complete frame has been
-        // reassembled, one dropped chunk silently discards the whole update and
-        // the display just keeps showing whatever it had before — with nothing
-        // wrong visible anywhere in this app's logs, which is exactly what two
-        // extensive debug-log captures showed: flawless render/send on the app
-        // side while the physical display fell further behind. WriteWithResponse
-        // gets an ATT-level ack per chunk, so a real delivery failure surfaces as
-        // an actual failure our existing retry logic can catch, instead of a
-        // silent no-op. Diagnostics already confirmed full-frame timing is cheap
-        // either way (30-50ms with WriteWithoutResponse), so there's no real
-        // speed cost to trading for reliability here.
         var props = ch.CharacteristicProperties;
         GattWriteOption writeOpt;
-        if (props.HasFlag(GattCharacteristicProperties.Write))
+        if (preferSpeed && props.HasFlag(GattCharacteristicProperties.WriteWithoutResponse))
+            writeOpt = GattWriteOption.WriteWithoutResponse;
+        else if (props.HasFlag(GattCharacteristicProperties.Write))
             writeOpt = GattWriteOption.WriteWithResponse;
         else if (props.HasFlag(GattCharacteristicProperties.WriteWithoutResponse))
             writeOpt = GattWriteOption.WriteWithoutResponse;

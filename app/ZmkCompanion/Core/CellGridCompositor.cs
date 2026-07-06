@@ -110,12 +110,13 @@ sealed class CellGridCompositor : IDisposable
 
     // Shows a full-frame bitmap and keeps it until new text or page change.
     // Suspends cell-grid updates for the duration of the override.
-    public async Task ShowPersistentTextAsync(byte[] frame)
+    // preferSpeed=true uses WriteWithoutResponse (~30-50ms) for live streaming.
+    public async Task ShowPersistentTextAsync(byte[] frame, bool preferSpeed = false)
     {
         _clockTimer?.Stop();
         _textOverride      = true;
         _textOverrideFrame = frame;
-        await _ble.SendBitmapAsync(frame);
+        await _ble.SendBitmapAsync(frame, preferSpeed);
     }
 
     // Restores cell-grid after a persistent text override.

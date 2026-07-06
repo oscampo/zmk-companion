@@ -85,7 +85,7 @@ sealed class ZmkAppContext : ApplicationContext
                 {
                     using var bmp = BitmapTextRenderer.Render(latest);
                     byte[] frame  = BitmapFrame.Pack(bmp);
-                    await _compositor.ShowPersistentTextAsync(frame);
+                    await _compositor.ShowPersistentTextAsync(frame, preferSpeed: true);
                 }
             }
             catch { }
