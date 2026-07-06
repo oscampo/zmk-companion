@@ -67,7 +67,11 @@ internal sealed class PipeServer : IDisposable
                 string? line;
                 while ((line = await reader.ReadLineAsync(ct)) != null)
                     if (line.StartsWith("LINE\t"))
-                        await Send(line[5..].Replace("\\n", "\n"));
+                    {
+                        string text = line[5..].Replace("\\n", "\n");
+                        DebugLog.Log($"pipe: LINE received len={text.Length} preview='{text.Replace("\n","\\n")[..Math.Min(40,text.Length)]}'");
+                        await Send(text);
+                    }
             }
             else if (cmd == "PING")
             {

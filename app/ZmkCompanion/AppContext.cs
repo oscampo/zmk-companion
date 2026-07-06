@@ -73,22 +73,33 @@ sealed class ZmkAppContext : ApplicationContext
 
             // Keep only the latest queued item; discard older ones (stale clock frames, etc.)
             string? latest = null;
-            while (_textQueue.TryDequeue(out string? t)) latest = t;
+            int skipped = -1;
+            while (_textQueue.TryDequeue(out string? t)) { latest = t; skipped++; }
             if (latest is null) return;
 
             _overrideInFlight = true;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 if (string.IsNullOrEmpty(latest))
+                {
+                    DebugLog.Log($"drain: CLEAR (skipped={skipped})");
                     await _compositor.ClearTextOverrideAsync();
+                    DebugLog.Log($"drain: CLEAR done in {sw.ElapsedMilliseconds}ms err={_ble.LastBitmapError ?? "(none)"}");
+                }
                 else
                 {
+                    DebugLog.Log($"drain: SEND len={latest.Length} skipped={skipped}");
                     using var bmp = BitmapTextRenderer.Render(latest);
                     byte[] frame  = BitmapFrame.Pack(bmp);
                     await _compositor.ShowPersistentTextAsync(frame, preferSpeed: true);
+                    DebugLog.Log($"drain: SEND done in {sw.ElapsedMilliseconds}ms " +
+                        $"bleMs={_ble.LastSendMs} chunks={_ble.LastChunkCount} " +
+                        $"mtu={_ble.LastMtu} withResp={_ble.LastWithResponse} " +
+                        $"err={_ble.LastBitmapError ?? "(none)"}");
                 }
             }
-            catch { }
+            catch (Exception ex) { DebugLog.Log($"drain: exception {ex.Message}"); }
             finally { _overrideInFlight = false; }
         };
         _drainTimer.Start();
