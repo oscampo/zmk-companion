@@ -57,7 +57,7 @@ internal sealed class PipeServer : IDisposable
 
             if (cmd.StartsWith("SEND\t"))
             {
-                string text = cmd[5..].Replace("\\n", "\n");
+                string text = UnescapeNewlines(cmd[5..]);
                 bool ok = await Send(text);
                 await writer.WriteLineAsync(ok ? "OK" : "ERR not connected or send failed");
             }
@@ -68,7 +68,7 @@ internal sealed class PipeServer : IDisposable
                 while ((line = await reader.ReadLineAsync(ct)) != null)
                     if (line.StartsWith("LINE\t"))
                     {
-                        string text = line[5..].Replace("\\n", "\n");
+                        string text = UnescapeNewlines(line[5..]);
                         DebugLog.Log($"pipe: LINE received len={text.Length} preview='{text.Replace("\n","\\n")[..Math.Min(40,text.Length)]}'");
                         await Send(text);
                     }
@@ -83,6 +83,48 @@ internal sealed class PipeServer : IDisposable
 
     private Task<bool> Send(string text) =>
         _sendText is not null ? _sendText(text) : Task.FromResult(false);
+
+    // "\n" -> real newline, "\\n" -> literal "\n" text (2 chars). A plain
+    // .Replace("\\n", "\n") can't tell them apart, "\n" is a substring of "\\n"
+    // starting at its second backslash, so "\\n" would silently become "\" plus
+    // a real newline instead of the literal text "\n".
+    //
+    // Deliberately does NOT have a generic "any \\ collapses to \" rule: this
+    // text is passed through LiveState.ExpandEscaped() later (in AppContext's
+    // drain timer), which has its own "\\{ -> literal \{" unescaping for
+    // \{token\}. A generic rule here would consume one layer of that escaping
+    // before ExpandEscaped ever saw it, e.g. "\\{battery.percent\}" (meant as
+    // literal text) would get collapsed to "\{battery.percent\}" by this method
+    // first, which ExpandEscaped would then wrongly resolve as a live token.
+    // Only "\n"/"\\n" are this method's concern; every other backslash sequence,
+    // including "\\{", passes through untouched for the next stage to interpret.
+    private static string UnescapeNewlines(string text)
+    {
+        if (string.IsNullOrEmpty(text) || !text.Contains('\\'))
+            return text;
+
+        var sb = new StringBuilder(text.Length);
+        int i = 0;
+        while (i < text.Length)
+        {
+            if (text[i] == '\\' && i + 1 < text.Length)
+            {
+                if (text[i + 1] == 'n') { sb.Append('\n'); i += 2; continue; }
+                if (text[i + 1] == '\\' && i + 2 < text.Length && text[i + 2] == 'n')
+                {
+                    sb.Append("\\n"); // literal 2-char text, not a real newline
+                    i += 3;
+                    continue;
+                }
+                sb.Append('\\'); // not our escape form, leave untouched for later stages
+                i += 1;
+                continue;
+            }
+            sb.Append(text[i]);
+            i += 1;
+        }
+        return sb.ToString();
+    }
 
     public void Dispose() { _cts.Cancel(); _cts.Dispose(); }
 }
