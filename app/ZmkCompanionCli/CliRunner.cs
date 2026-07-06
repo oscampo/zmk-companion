@@ -163,11 +163,16 @@ internal static class CliRunner
           zkc "Line1\nLine2\nLine3"
           echo "score: 3-1" | zkc --watch
           python reloj.py | zkc --watch
+          zkc "Bateria: \{battery.percent\}"
 
         Notes:
           Use \n in quoted strings for multi-line text.
           --watch accepts both \n and \r as line separators, so scripts that
           use carriage-return to overwrite a terminal line work out of the box.
+          Escaped tokens like \{battery.percent\} or \{weather.temp\} are resolved
+          to their current live value before display; unescaped {like this} is
+          shown as literal text. An unknown token is left as "{key}" unresolved,
+          as a visible sign of a typo rather than being silently dropped.
           The ZMK Companion tray app must be running.
         """);
 }

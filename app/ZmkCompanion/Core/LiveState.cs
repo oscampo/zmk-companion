@@ -332,6 +332,32 @@ sealed class LiveState
         return sb.ToString();
     }
 
+    // Expands \{binding\} tokens for CLI/scripting use (zkc), leaving bare {text}
+    // alone so literal braces in piped text still show as-is, same as before this
+    // existed. An unknown/malformed key resolves to "{key}" (Resolve's existing
+    // fallback) as a visible signal that it didn't match, by design, not silently
+    // dropped or blanked.
+    public string ExpandEscaped(string text, bool use24h = false)
+    {
+        if (string.IsNullOrEmpty(text) || !text.Contains("\\{", StringComparison.Ordinal))
+            return text;
+
+        var sb = new StringBuilder(text.Length);
+        int i = 0;
+        while (i < text.Length)
+        {
+            int open = text.IndexOf("\\{", i, StringComparison.Ordinal);
+            if (open < 0) { sb.Append(text[i..]); break; }
+            sb.Append(text[i..open]);
+            int close = text.IndexOf("\\}", open + 2, StringComparison.Ordinal);
+            if (close < 0) { sb.Append(text[open..]); break; }
+            string key = text[(open + 2)..close];
+            sb.Append(Resolve(key, use24h));
+            i = close + 2;
+        }
+        return sb.ToString();
+    }
+
     // Expands all {binding} tokens in a template string (no glyph styling).
     public string Expand(string template, bool use24h = false) => Expand(template, use24h, null);
 

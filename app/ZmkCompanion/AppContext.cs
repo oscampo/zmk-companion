@@ -94,17 +94,19 @@ sealed class ZmkAppContext : ApplicationContext
                     // cell-grid (positioned), never the full-frame bitmap override.
                     // UpdateExternalText raises Changed, which OnStateChanged picks
                     // up normally since _textOverride was never set for this path.
+                    string text = _liveState.ExpandEscaped(latest);
                     DebugLog.Log($"drain: SEND (cell-grid ext.text.N) len={latest.Length} skipped={skipped}");
-                    _liveState.UpdateExternalText(latest);
+                    _liveState.UpdateExternalText(text);
                     DebugLog.Log($"drain: SEND done in {sw.ElapsedMilliseconds}ms (cell-grid path)");
                 }
                 else
                 {
+                    string text = _liveState.ExpandEscaped(latest);
                     DebugLog.Log($"drain: SEND len={latest.Length} skipped={skipped}");
-                    using var bmp = BitmapTextRenderer.Render(latest);
+                    using var bmp = BitmapTextRenderer.Render(text);
                     byte[] frame  = BitmapFrame.Pack(bmp);
                     await _compositor.ShowPersistentTextAsync(frame, preferSpeed: true);
-                    _liveState.UpdateExternalText(latest); // after _textOverride=true: Changed fires on UI thread, OnStateChanged exits early
+                    _liveState.UpdateExternalText(text); // after _textOverride=true: Changed fires on UI thread, OnStateChanged exits early
                     DebugLog.Log($"drain: SEND done in {sw.ElapsedMilliseconds}ms " +
                         $"bleMs={_ble.LastSendMs} chunks={_ble.LastChunkCount} " +
                         $"mtu={_ble.LastMtu} withResp={_ble.LastWithResponse} " +
