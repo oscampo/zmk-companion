@@ -337,23 +337,41 @@ sealed class LiveState
     // existed. An unknown/malformed key resolves to "{key}" (Resolve's existing
     // fallback) as a visible signal that it didn't match, by design, not silently
     // dropped or blanked.
+    //
+    // Character-by-character (not IndexOf-based): "\\" must be checked first and
+    // consumed as its own escape, otherwise a literal "\\{" would have its second
+    // backslash+brace mistaken for a token opener (IndexOf("\{") matches inside
+    // "\\{" too, since it only looks at the last backslash before the brace).
     public string ExpandEscaped(string text, bool use24h = false)
     {
-        if (string.IsNullOrEmpty(text) || !text.Contains("\\{", StringComparison.Ordinal))
+        if (string.IsNullOrEmpty(text) || !text.Contains('\\'))
             return text;
 
         var sb = new StringBuilder(text.Length);
         int i = 0;
         while (i < text.Length)
         {
-            int open = text.IndexOf("\\{", i, StringComparison.Ordinal);
-            if (open < 0) { sb.Append(text[i..]); break; }
-            sb.Append(text[i..open]);
-            int close = text.IndexOf("\\}", open + 2, StringComparison.Ordinal);
-            if (close < 0) { sb.Append(text[open..]); break; }
-            string key = text[(open + 2)..close];
-            sb.Append(Resolve(key, use24h));
-            i = close + 2;
+            if (text[i] == '\\' && i + 1 < text.Length)
+            {
+                char next = text[i + 1];
+                if (next == '\\') { sb.Append('\\'); i += 2; continue; }
+                if (next == '{')
+                {
+                    int close = text.IndexOf("\\}", i + 2, StringComparison.Ordinal);
+                    if (close < 0) { sb.Append(text[i..]); break; } // unterminated: rest is literal
+                    string key = text[(i + 2)..close];
+                    sb.Append(Resolve(key, use24h));
+                    i = close + 2;
+                    continue;
+                }
+                // Backslash not followed by '\' or '{': literal, unconsumed next char
+                // handled by the next loop iteration.
+                sb.Append('\\');
+                i += 1;
+                continue;
+            }
+            sb.Append(text[i]);
+            i += 1;
         }
         return sb.ToString();
     }
