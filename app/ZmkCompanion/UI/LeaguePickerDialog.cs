@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Windows.Forms;
+using ZmkCompanion.Core;
 using ZmkCompanion.Features;
 
 namespace ZmkCompanion.UI;
@@ -25,7 +26,7 @@ sealed class LeaguePickerDialog : Form
 
     public LeaguePickerDialog(List<string> currentPaths)
     {
-        Text            = "ZMK Companion - Configure Leagues";
+        Text            = Strings.LeaguePickerTitle;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition   = FormStartPosition.CenterScreen;
         MinimizeBox     = false;
@@ -33,29 +34,29 @@ sealed class LeaguePickerDialog : Form
         ClientSize      = new Size(400, 430);
 
         int y = 12;
-        Controls.Add(MakeLabel("Sport:", y));
+        Controls.Add(MakeLabel(Strings.SportLabel, y));
         _sportBox = new ComboBox
         {
             Location      = new Point(12, y + 20),
             Size          = new Size(376, 23),
             DropDownStyle = ComboBoxStyle.DropDownList,
         };
-        _sportBox.Items.AddRange(["Football", "Soccer", "Basketball", "Hockey"]);
+        _sportBox.Items.AddRange(Strings.SportNames);
         _sportBox.SelectedIndex = 0;
         Controls.Add(_sportBox);
 
         y += 54;
-        Controls.Add(MakeLabel("Search leagues:", y));
+        Controls.Add(MakeLabel(Strings.SearchLeaguesLabel, y));
         _searchBox = new TextBox
         {
             Location        = new Point(12, y + 20),
             Size            = new Size(376, 23),
-            PlaceholderText = "Type to filter…",
+            PlaceholderText = Strings.SearchLeaguesPlaceholder,
         };
         Controls.Add(_searchBox);
 
         y += 54;
-        Controls.Add(MakeLabel("Available  (double-click or Enter to add):", y));
+        Controls.Add(MakeLabel(Strings.AvailableLeaguesLabel, y));
         _listBox = new ListBox
         {
             Location      = new Point(12, y + 20),
@@ -65,7 +66,7 @@ sealed class LeaguePickerDialog : Form
         Controls.Add(_listBox);
 
         y += 140;
-        Controls.Add(MakeLabel("Selected  (click chip to remove):", y));
+        Controls.Add(MakeLabel(Strings.SelectedLeaguesLabel, y));
         _chipsPanel = new FlowLayoutPanel
         {
             Location     = new Point(12, y + 20),
@@ -81,7 +82,7 @@ sealed class LeaguePickerDialog : Form
         {
             Location  = new Point(12, y + 4),
             Size      = new Size(200, 18),
-            Text      = "Loading…",
+            Text      = Strings.Loading,
         };
         _progressBar = new ProgressBar
         {
@@ -95,7 +96,7 @@ sealed class LeaguePickerDialog : Form
         y += 38;
         _btnOk = new Button
         {
-            Text         = "OK",
+            Text         = Strings.Ok,
             DialogResult = DialogResult.OK,
             Location     = new Point(208, y),
             Size         = new Size(80, 26),
@@ -103,7 +104,7 @@ sealed class LeaguePickerDialog : Form
         };
         var btnCancel = new Button
         {
-            Text         = "Cancel",
+            Text         = Strings.Cancel,
             DialogResult = DialogResult.Cancel,
             Location     = new Point(296, y),
             Size         = new Size(92, 26),
@@ -150,13 +151,13 @@ sealed class LeaguePickerDialog : Form
         _listBox.Enabled  = false;
         _btnOk.Enabled    = false;
         _progressBar.Value = 0;
-        _statusLabel.Text = "Loading…";
+        _statusLabel.Text = Strings.Loading;
 
         var prog = new Progress<int>(v =>
         {
             if (IsDisposed) return;
             _progressBar.Value = Math.Min(100, v);
-            _statusLabel.Text  = v >= 100 ? "" : $"Loading… {v}%";
+            _statusLabel.Text  = v >= 100 ? "" : Strings.LoadingPercent(v);
         });
 
         _ = Task.Run(async () =>
@@ -168,7 +169,7 @@ sealed class LeaguePickerDialog : Form
                 _available       = leagues;
                 _listBox.Enabled = true;
                 _btnOk.Enabled   = true;
-                _statusLabel.Text = $"{leagues.Count} leagues available";
+                _statusLabel.Text = Strings.LeaguesAvailable(leagues.Count);
                 ApplyFilter();
             });
         }, ct);

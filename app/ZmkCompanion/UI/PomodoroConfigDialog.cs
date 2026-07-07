@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Windows.Forms;
+using ZmkCompanion.Core;
 
 namespace ZmkCompanion.UI;
 
@@ -19,7 +20,7 @@ sealed class PomodoroConfigDialog : Form
 
     public PomodoroConfigDialog(int workMin, int breakMin, int cycles, int longBreakMin)
     {
-        Text            = "Configurar Pomodoro";
+        Text            = Strings.PomodoroConfigTitle;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition   = FormStartPosition.CenterScreen;
         MinimizeBox     = false;
@@ -29,24 +30,24 @@ sealed class PomodoroConfigDialog : Form
 
         // ── Field rows ────────────────────────────────────────────────────────
         int y = 16;
-        (_nudWork,   y) = AddRow("Trabajo (min):",     workMin,      1, 120, y);
-        (_nudBreak,  y) = AddRow("Pausa corta (min):", breakMin,     1,  60, y);
-        (_nudCycles, y) = AddRow("Ciclos:",             cycles,       1,  20, y);
-        (_nudLong,   y) = AddRow("Pausa larga (min):", longBreakMin, 0,  90, y);
+        (_nudWork,   y) = AddRow(Strings.PomodoroWorkLabel,  workMin,      1, 120, y);
+        (_nudBreak,  y) = AddRow(Strings.PomodoroBreakLabel, breakMin,     1,  60, y);
+        (_nudCycles, y) = AddRow(Strings.PomodoroCyclesLabel, cycles,      1,  20, y);
+        (_nudLong,   y) = AddRow(Strings.PomodoroLongLabel,  longBreakMin, 0,  90, y);
 
         // ── Preset buttons ────────────────────────────────────────────────────
-        var lblPresets = new Label { Text = "Presets:", Left = 12, Top = y + 4, AutoSize = true };
+        var lblPresets = new Label { Text = Strings.PomodoroPresetsLabel, Left = 12, Top = y + 4, AutoSize = true };
         Controls.Add(lblPresets);
 
-        AddPreset("Clásico",  25, 5, 4, 15, left: 70,  top: y);
-        AddPreset("Corto",    15, 3, 4, 10, left: 140, top: y);
-        AddPreset("Largo",    50, 10, 3, 20, left: 200, top: y);
+        AddPreset(Strings.PomodoroPresetClassic, 25, 5, 4, 15, left: 70,  top: y);
+        AddPreset(Strings.PomodoroPresetShort,   15, 3, 4, 10, left: 140, top: y);
+        AddPreset(Strings.PomodoroPresetLong,    50, 10, 3, 20, left: 200, top: y);
         y += 30;
 
         // ── OK / Cancelar ─────────────────────────────────────────────────────
         var btnOk = new Button
         {
-            Text         = "Aceptar",
+            Text         = Strings.Ok,
             DialogResult = DialogResult.OK,
             Left         = ClientSize.Width - 170,
             Top          = ClientSize.Height - 36,
@@ -54,7 +55,7 @@ sealed class PomodoroConfigDialog : Form
         };
         var btnCancel = new Button
         {
-            Text         = "Cancelar",
+            Text         = Strings.Cancel,
             DialogResult = DialogResult.Cancel,
             Left         = ClientSize.Width - 88,
             Top          = ClientSize.Height - 36,

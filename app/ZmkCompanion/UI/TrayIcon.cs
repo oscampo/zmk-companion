@@ -37,7 +37,7 @@ sealed class TrayIcon : IDisposable
         _notify = new NotifyIcon
         {
             Visible = true,
-            Text    = "ZMK Companion — searching…",
+            Text    = Strings.Searching,
             Icon    = MakeIcon(Color.OrangeRed),
         };
         _notify.ContextMenuStrip = BuildMenu();
@@ -66,16 +66,16 @@ sealed class TrayIcon : IDisposable
     public void SetConnected(string deviceName)
     {
         _notify.Icon = MakeIcon(Color.LimeGreen);
-        _notify.Text = $"ZMK Companion — {deviceName}";
-        _notify.ShowBalloonTip(2000, "ZMK Companion", $"Conectado a {deviceName}", ToolTipIcon.Info);
+        _notify.Text = Strings.ConnectedTo(deviceName);
+        _notify.ShowBalloonTip(2000, "ZMK Companion", Strings.ConnectedBalloon(deviceName), ToolTipIcon.Info);
         RebuildMenu();
     }
 
     public void SetDisconnected()
     {
         _notify.Icon = MakeIcon(Color.OrangeRed);
-        _notify.Text = "ZMK Companion — desconectado";
-        _notify.ShowBalloonTip(2000, "ZMK Companion", "Teclado desconectado", ToolTipIcon.Warning);
+        _notify.Text = Strings.DisconnectedTray;
+        _notify.ShowBalloonTip(2000, "ZMK Companion", Strings.KeyboardDisconnected, ToolTipIcon.Warning);
         RebuildMenu();
     }
 
@@ -101,26 +101,26 @@ sealed class TrayIcon : IDisposable
 
         var header = new ToolStripLabel(_ble.DeviceName is { } name
             ? $"  {name}"
-            : "  No conectado")
+            : Strings.NotConnected)
         { Font = new Font(SystemFonts.MenuFont!, FontStyle.Bold) };
         strip.Items.Add(header);
         strip.Items.Add(new ToolStripSeparator());
 
-        strip.Items.Add(new ToolStripMenuItem("Canvas…", null, (_, _) => CanvasEditorRequested?.Invoke())
+        strip.Items.Add(new ToolStripMenuItem(Strings.CanvasMenu, null, (_, _) => CanvasEditorRequested?.Invoke())
             { Enabled = connected });
         // No BLE connection needed - this just declares names/categories for the
         // {custom.NAME} picker, values only ever come from `zkc --set` later.
-        strip.Items.Add(new ToolStripMenuItem("Tokens personalizados…", null,
+        strip.Items.Add(new ToolStripMenuItem(Strings.CustomTokensMenu, null,
             (_, _) => CustomTokensRequested?.Invoke()));
 
         strip.Items.Add(new ToolStripSeparator());
 
         string pomText = _pomodoroRunning
-            ? (_pomodoroLabel ?? "Pomodoro — Detener")
-            : "Pomodoro — Iniciar";
+            ? (_pomodoroLabel ?? Strings.PomodoroStop)
+            : Strings.PomodoroStart;
         strip.Items.Add(new ToolStripMenuItem(pomText, null, (_, _) => PomodoroToggleRequested?.Invoke())
             { Enabled = connected && HasPomodoroWidget });
-        strip.Items.Add(new ToolStripMenuItem("Configurar Pomodoro…", null,
+        strip.Items.Add(new ToolStripMenuItem(Strings.PomodoroConfigMenu, null,
             (_, _) => PomodoroConfigRequested?.Invoke()));
 
         strip.Items.Add(new ToolStripSeparator());
@@ -141,9 +141,9 @@ sealed class TrayIcon : IDisposable
 
         strip.Items.Add(new ToolStripSeparator());
 
-        strip.Items.Add(new ToolStripMenuItem("Debug Log", null, (_, _) => OnDebugLog()));
-        strip.Items.Add(new ToolStripMenuItem("Acerca de…", null, (_, _) => OnAbout()));
-        strip.Items.Add(new ToolStripMenuItem("Salir", null, (_, _) => ExitRequested?.Invoke()));
+        strip.Items.Add(new ToolStripMenuItem(Strings.DebugLogMenu, null, (_, _) => OnDebugLog()));
+        strip.Items.Add(new ToolStripMenuItem(Strings.AboutMenu, null, (_, _) => OnAbout()));
+        strip.Items.Add(new ToolStripMenuItem(Strings.ExitMenu, null, (_, _) => ExitRequested?.Invoke()));
     }
 
     private void OnLanguageSelected(AppLanguage lang)
@@ -160,7 +160,7 @@ sealed class TrayIcon : IDisposable
         {
             if (!File.Exists(DebugLog.Path))
             {
-                MessageBox.Show("Aún no hay log de debug.", "ZMK Companion",
+                MessageBox.Show(Strings.NoDebugLogYet, "ZMK Companion",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
@@ -168,7 +168,7 @@ sealed class TrayIcon : IDisposable
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"No se pudo abrir el log: {ex.Message}\n\nRuta: {DebugLog.Path}",
+            MessageBox.Show(Strings.CouldNotOpenLog(ex.Message, DebugLog.Path),
                 "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -177,11 +177,8 @@ sealed class TrayIcon : IDisposable
     {
         var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         MessageBox.Show(
-            $"ZMK Companion  v{ver?.Major}.{ver?.Minor}.{ver?.Build}\n\n" +
-            "Muestra información personalizada en la pantalla OLED\n" +
-            "de tu teclado ZMK vía BLE.\n\n" +
-            "github.com/oscampo/zmk-companion",
-            "Acerca de ZMK Companion",
+            Strings.AboutBody(ver?.Major ?? 0, ver?.Minor ?? 0, ver?.Build ?? 0),
+            Strings.AboutTitle,
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
     }

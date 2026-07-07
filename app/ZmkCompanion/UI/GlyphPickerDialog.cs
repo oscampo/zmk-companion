@@ -13,19 +13,24 @@ sealed class GlyphPickerDialog : Form
 {
     public string? SelectedGlyph { get; private set; }
 
-    // NF range categories (predicates are inclusive, can overlap for "All")
-    private static readonly (string Name, Func<int, bool> Match)[] Categories =
+    // NF range categories (predicates are inclusive, can overlap for "All").
+    // Built per-instance (not static) so the localized names reflect the
+    // language active when the dialog is opened, not whatever it was at
+    // first class load.
+    private static (string Name, Func<int, bool> Match)[] BuildCategories() =>
     [
-        ("All icons",       cp => cp >= 0xE000),
+        (Strings.AllIconsCategory, cp => cp >= 0xE000),
         ("Material Design", cp => cp is >= 0xF0001 and <= 0xF1AF0),
         ("Font Awesome",    cp => cp is >= 0xF000  and <= 0xF2FF),
         ("Octicons",        cp => cp is >= 0xF400  and <= 0xF67F),
         ("Devicons",        cp => cp is >= 0xE700  and <= 0xE8EF),
         ("Powerline",       cp => cp is >= 0xE0A0  and <= 0xE0FF),
-        ("BMP other",       cp => cp is >= 0xE000  and <= 0xEFFF
+        (Strings.OtherBmpCategory, cp => cp is >= 0xE000  and <= 0xEFFF
                                   && !(cp is >= 0xE0A0 and <= 0xE0FF)
                                   && !(cp is >= 0xE700 and <= 0xE8EF)),
     ];
+
+    private readonly (string Name, Func<int, bool> Match)[] Categories = BuildCategories();
 
     private readonly GlyphGrid _grid;
     private readonly Label     _status;
@@ -39,7 +44,7 @@ sealed class GlyphPickerDialog : Form
 
     public GlyphPickerDialog()
     {
-        Text            = "Glyph Picker — click to select";
+        Text            = Strings.GlyphPickerTitle;
         FormBorderStyle = FormBorderStyle.Sizable;
         StartPosition   = FormStartPosition.CenterParent;
         MinimumSize     = new Size(420, 360);
@@ -73,7 +78,7 @@ sealed class GlyphPickerDialog : Form
 
         var lblCat = new Label
         {
-            Text      = "Category:",
+            Text      = Strings.CategoryLabel,
             Location  = new Point(6, 8),
             Size      = new Size(64, 18),
             ForeColor = Color.White,
@@ -90,7 +95,7 @@ sealed class GlyphPickerDialog : Form
 
         var lblSrc = new Label
         {
-            Text      = "Search:",
+            Text      = Strings.SearchLabel,
             Location  = new Point(240, 8),
             Size      = new Size(52, 18),
             ForeColor = Color.White,
@@ -102,7 +107,7 @@ sealed class GlyphPickerDialog : Form
             Size        = new Size(120, 23),
             BackColor   = Color.FromArgb(50, 50, 50),
             ForeColor   = Color.White,
-            PlaceholderText = "nombre o hex…",
+            PlaceholderText = Strings.SearchGlyphPlaceholder,
         };
 
         toolbar.Controls.AddRange([lblCat, cmbCat, lblSrc, txtSearch]);
@@ -117,7 +122,7 @@ sealed class GlyphPickerDialog : Form
             ForeColor = Color.Gray,
             TextAlign = System.Drawing.ContentAlignment.MiddleLeft,
             Padding   = new Padding(6, 0, 0, 0),
-            Text      = $"{_allNfCps.Length} glyphs loaded",
+            Text      = Strings.GlyphsLoaded(_allNfCps.Length),
         };
         Controls.Add(_status);
 
@@ -142,7 +147,7 @@ sealed class GlyphPickerDialog : Form
             }
             else
             {
-                _status.Text = $"{_grid.Count} glyphs";
+                _status.Text = Strings.GlyphsCount(_grid.Count);
             }
             _status.ForeColor = cp >= 0 ? Color.Silver : Color.Gray;
         };
@@ -167,7 +172,7 @@ sealed class GlyphPickerDialog : Form
 
             var filtered = matched.Distinct().OrderBy(cp => cp).ToArray();
             _grid.SetCodepoints(filtered);
-            _status.Text      = $"{filtered.Length} glyphs";
+            _status.Text      = Strings.GlyphsCount(filtered.Length);
             _status.ForeColor = Color.Gray;
         }
 

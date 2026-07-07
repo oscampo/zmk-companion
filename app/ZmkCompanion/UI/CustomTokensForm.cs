@@ -28,7 +28,7 @@ sealed class CustomTokensForm : Form
             .Select(t => new CustomTokenDef { Name = t.Name, Category = t.Category, StaleAfterSeconds = t.StaleAfterSeconds })
             .ToList();
 
-        Text            = "Tokens personalizados";
+        Text            = Strings.CustomTokensTitle;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition   = FormStartPosition.CenterScreen;
         MinimizeBox     = false;
@@ -38,9 +38,7 @@ sealed class CustomTokensForm : Form
 
         var lblHelp = new Label
         {
-            Text     = "Declara nombres aquí para que aparezcan en el selector de\n" +
-                       "tokens del editor. El valor real solo llega con\n" +
-                       "\"zkc --set NOMBRE valor\" desde un script.",
+            Text     = Strings.CustomTokensHelp,
             Left     = 12,
             Top      = 10,
             Width    = 336,
@@ -52,7 +50,7 @@ sealed class CustomTokensForm : Form
         Controls.Add(_list);
         RefreshList();
 
-        var btnRemove = new Button { Text = "Quitar", Left = 12, Top = 208, Width = 80, Height = 24 };
+        var btnRemove = new Button { Text = Strings.Remove, Left = 12, Top = 208, Width = 80, Height = 24 };
         btnRemove.Click += (_, _) =>
         {
             if (_list.SelectedIndex < 0) return;
@@ -61,19 +59,19 @@ sealed class CustomTokensForm : Form
         };
         Controls.Add(btnRemove);
 
-        var lblName = new Label { Text = "Nombre:", Left = 12, Top = 246, Width = 60, AutoSize = false };
+        var lblName = new Label { Text = Strings.NameLabel, Left = 12, Top = 246, Width = 60, AutoSize = false };
         Controls.Add(lblName);
         _txtName = new TextBox { Left = 76, Top = 243, Width = 100 };
         Controls.Add(_txtName);
 
-        var lblCategory = new Label { Text = "Categoría:", Left = 182, Top = 246, Width = 62, AutoSize = false };
+        var lblCategory = new Label { Text = Strings.CategoryLabel, Left = 182, Top = 246, Width = 62, AutoSize = false };
         Controls.Add(lblCategory);
         _txtCategory = new TextBox { Left = 246, Top = 243, Width = 102, Text = "Personalizado" };
         Controls.Add(_txtCategory);
 
         var lblStale = new Label
         {
-            Text     = "Avisar si no se actualiza en (segundos, 0 = nunca):",
+            Text     = Strings.StaleAfterLabel,
             Left     = 12,
             Top      = 276,
             Width    = 246,
@@ -91,13 +89,13 @@ sealed class CustomTokensForm : Form
         };
         Controls.Add(_nudStaleSeconds);
 
-        var btnAdd = new Button { Text = "+ Agregar", Left = 12, Top = 306, Width = 100, Height = 24 };
+        var btnAdd = new Button { Text = Strings.AddToken, Left = 12, Top = 306, Width = 100, Height = 24 };
         btnAdd.Click += (_, _) => OnAdd();
         Controls.Add(btnAdd);
 
         var btnOk = new Button
         {
-            Text         = "Aceptar",
+            Text         = Strings.Ok,
             DialogResult = DialogResult.OK,
             Left         = ClientSize.Width - 170,
             Top          = ClientSize.Height - 36,
@@ -106,7 +104,7 @@ sealed class CustomTokensForm : Form
         };
         var btnCancel = new Button
         {
-            Text         = "Cancelar",
+            Text         = Strings.Cancel,
             DialogResult = DialogResult.Cancel,
             Left         = ClientSize.Width - 88,
             Top          = ClientSize.Height - 36,
@@ -127,14 +125,14 @@ sealed class CustomTokensForm : Form
 
         if (!ValidName.IsMatch(name))
         {
-            MessageBox.Show(this, "El nombre solo puede usar minúsculas, dígitos y guion bajo (a-z, 0-9, _).",
-                "Nombre inválido", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, Strings.InvalidNameBody,
+                Strings.InvalidNameTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
         if (_tokens.Any(t => t.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
         {
-            MessageBox.Show(this, $"Ya existe un token llamado \"{name}\".",
-                "Nombre duplicado", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, Strings.DuplicateNameBody(name),
+                Strings.DuplicateNameTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -149,7 +147,7 @@ sealed class CustomTokensForm : Form
         _list.Items.Clear();
         foreach (var t in _tokens)
         {
-            string stale = t.StaleAfterSeconds > 0 ? $"  stale>{t.StaleAfterSeconds}s" : "";
+            string stale = t.StaleAfterSeconds > 0 ? Strings.StaleSuffix(t.StaleAfterSeconds) : "";
             _list.Items.Add($"{{custom.{t.Name}}}  [{t.Category}]{stale}");
         }
     }
