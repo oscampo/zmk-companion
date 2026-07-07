@@ -77,54 +77,100 @@ sealed class CellGridEditorForm : Form
 
     private const int DeportesCategory = 2;
 
-    // Binding catalog — category → list of (label, token)
-    private static readonly (string Category, (string Label, string Token)[] Items)[] BindingCatalog =
-    [
-        ("Hora", [
-            ("Hora",                 "{time}"),
-            ("Hora 24h",             "{time24}"),
-            ("Hora 12h",             "{time12}"),
-            ("Hora (HH)",            "{time.hh}"),
-            ("Minutos (MM)",         "{time.mm}"),
-            ("AM/PM",                "{ampm}"),
-            ("Fecha",                "{date}"),
-            ("Día del mes",          "{date.day}"),
-            ("Día del mes (DD)",     "{time.dd}"),
-            ("Mes",                  "{date.month}"),
-        ]),
-        ("Clima", [
-            ("Clima (resumen)",      "{weather}"),
-            ("Icono clima",          "{weather.icon}"),
-            ("Temperatura",          "{weather.temp}"),
-            ("Ciudad clima",         "{weather.city}"),
-        ]),
-        // Index 2 = DeportesCategory — populated dynamically
-        ("Deportes", []),
-        ("Pomodoro", [
-            ("Tiempo pomodoro",      "{pomodoro.time}"),
-            ("Fase",                 "{pomodoro.phase}"),
-            ("Barra progreso",       "{pomodoro.bar}"),
-            ("Icono fase",           "{pomodoro.icon}"),
-            ("Ciclo #",              "{pomodoro.cycle}"),
-        ]),
-        ("Sistema", [
-            ("Batería (icono)",      "{battery.icon}"),
-            ("Batería (%)",          "{battery.percent}"),
-            ("Batería (nivel)",      "{battery.level}"),
-            ("Conexión (icono)",     "{conn.icon}"),
-            ("Tipo conexión",        "{conn.type}"),
-            ("Perfil BLE",           "{conn.profile}"),
-            ("Barra perfiles (5)",   "{conn.profilebar}"),
-            ("Layer (número)",       "{layer.number}"),
-            ("Layer (nombre)",       "{layer.name}"),
-            ("WPM",                  "{wpm}"),
-            ("Texto ext. (completo)","{ext.text}"),
-            ("Texto ext. línea 1",   "{ext.text.0}"),
-            ("Texto ext. línea 2",   "{ext.text.1}"),
-            ("Texto ext. línea 3",   "{ext.text.2}"),
-            ("Texto ext. línea 4",   "{ext.text.3}"),
-        ]),
-    ];
+    // Binding catalog — category → list of (label, token). Built per-instance
+    // (not static readonly) so it reflects the language active when the
+    // editor is opened, same reasoning as GlyphPickerDialog.Categories.
+    private readonly (string Category, (string Label, string Token)[] Items)[] BindingCatalog = BuildBindingCatalog();
+
+    private static (string Category, (string Label, string Token)[] Items)[] BuildBindingCatalog()
+    {
+        bool es = Strings.Current == AppLanguage.Es;
+        return
+        [
+            (es ? "Hora" : "Time", es ? [
+                ("Hora",                 "{time}"),
+                ("Hora 24h",             "{time24}"),
+                ("Hora 12h",             "{time12}"),
+                ("Hora (HH)",            "{time.hh}"),
+                ("Minutos (MM)",         "{time.mm}"),
+                ("AM/PM",                "{ampm}"),
+                ("Fecha",                "{date}"),
+                ("Día del mes",          "{date.day}"),
+                ("Día del mes (DD)",     "{time.dd}"),
+                ("Mes",                  "{date.month}"),
+            ] : [
+                ("Time",                 "{time}"),
+                ("Time 24h",             "{time24}"),
+                ("Time 12h",             "{time12}"),
+                ("Hour (HH)",            "{time.hh}"),
+                ("Minutes (MM)",         "{time.mm}"),
+                ("AM/PM",                "{ampm}"),
+                ("Date",                 "{date}"),
+                ("Day of month",         "{date.day}"),
+                ("Day of month (DD)",    "{time.dd}"),
+                ("Month",                "{date.month}"),
+            ]),
+            (es ? "Clima" : "Weather", es ? [
+                ("Clima (resumen)",      "{weather}"),
+                ("Icono clima",          "{weather.icon}"),
+                ("Temperatura",          "{weather.temp}"),
+                ("Ciudad clima",         "{weather.city}"),
+            ] : [
+                ("Weather (summary)",    "{weather}"),
+                ("Weather icon",         "{weather.icon}"),
+                ("Temperature",          "{weather.temp}"),
+                ("Weather city",         "{weather.city}"),
+            ]),
+            // Index 2 = DeportesCategory — populated dynamically
+            (es ? "Deportes" : "Sports", []),
+            ("Pomodoro", es ? [
+                ("Tiempo pomodoro",      "{pomodoro.time}"),
+                ("Fase",                 "{pomodoro.phase}"),
+                ("Barra progreso",       "{pomodoro.bar}"),
+                ("Icono fase",           "{pomodoro.icon}"),
+                ("Ciclo #",              "{pomodoro.cycle}"),
+            ] : [
+                ("Pomodoro time",        "{pomodoro.time}"),
+                ("Phase",                "{pomodoro.phase}"),
+                ("Progress bar",         "{pomodoro.bar}"),
+                ("Phase icon",           "{pomodoro.icon}"),
+                ("Cycle #",              "{pomodoro.cycle}"),
+            ]),
+            (es ? "Sistema" : "System", es ? [
+                ("Batería (icono)",      "{battery.icon}"),
+                ("Batería (%)",          "{battery.percent}"),
+                ("Batería (nivel)",      "{battery.level}"),
+                ("Conexión (icono)",     "{conn.icon}"),
+                ("Tipo conexión",        "{conn.type}"),
+                ("Perfil BLE",           "{conn.profile}"),
+                ("Barra perfiles (5)",   "{conn.profilebar}"),
+                ("Layer (número)",       "{layer.number}"),
+                ("Layer (nombre)",       "{layer.name}"),
+                ("WPM",                  "{wpm}"),
+                ("Texto ext. (completo)","{ext.text}"),
+                ("Texto ext. línea 1",   "{ext.text.0}"),
+                ("Texto ext. línea 2",   "{ext.text.1}"),
+                ("Texto ext. línea 3",   "{ext.text.2}"),
+                ("Texto ext. línea 4",   "{ext.text.3}"),
+            ] : [
+                ("Battery (icon)",       "{battery.icon}"),
+                ("Battery (%)",          "{battery.percent}"),
+                ("Battery (level)",      "{battery.level}"),
+                ("Connection (icon)",    "{conn.icon}"),
+                ("Connection type",      "{conn.type}"),
+                ("BLE profile",          "{conn.profile}"),
+                ("Profile bar (5)",      "{conn.profilebar}"),
+                ("Layer (number)",       "{layer.number}"),
+                ("Layer (name)",         "{layer.name}"),
+                ("WPM",                  "{wpm}"),
+                ("Ext. text (full)",     "{ext.text}"),
+                ("Ext. text line 1",     "{ext.text.0}"),
+                ("Ext. text line 2",     "{ext.text.1}"),
+                ("Ext. text line 3",     "{ext.text.2}"),
+                ("Ext. text line 4",     "{ext.text.3}"),
+            ]),
+        ];
+    }
 
     // ── Construction ─────────────────────────────────────────────────────────
 
@@ -144,7 +190,7 @@ sealed class CellGridEditorForm : Form
 
         liveState.Changed += OnLiveStateChanged;
 
-        Text            = "ZMK Companion — Display Editor";
+        Text            = Strings.EditorTitle;
         FormBorderStyle = FormBorderStyle.FixedSingle;
         StartPosition   = FormStartPosition.CenterScreen;
         MaximizeBox     = false;
@@ -153,7 +199,7 @@ sealed class CellGridEditorForm : Form
         // ── RIGHT: preview ────────────────────────────────────────────────────
         var previewBox = new GroupBox
         {
-            Text     = "Vista previa  (3×)",
+            Text     = Strings.PreviewGroupTitle,
             Location = new Point(420, 6),
             Size     = new Size(PreviewW + 18, PreviewH + 22),
         };
@@ -168,7 +214,7 @@ sealed class CellGridEditorForm : Form
         Controls.Add(previewBox);
 
         // ── LEFT: Pages group (top) ───────────────────────────────────────────
-        var grpPages = new GroupBox { Text = "Páginas", Location = new Point(6, 6), Size = new Size(406, 90) };
+        var grpPages = new GroupBox { Text = Strings.PagesGroupTitle, Location = new Point(6, 6), Size = new Size(406, 90) };
 
         _cmbPages = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(6, 18), Size = new Size(130, 23) };
         _cmbPages.SelectedIndexChanged += OnPageComboChanged;
@@ -178,7 +224,7 @@ sealed class CellGridEditorForm : Form
         btnAddPage.Click += (_, _) =>
         {
             SyncCurrentPage();
-            _pages.Add(new CellGridPage { Name = $"Page {_pages.Count + 1}" });
+            _pages.Add(new CellGridPage { Name = Strings.DefaultPageName(_pages.Count + 1) });
             LoadPage(_pages.Count - 1);
         };
         grpPages.Controls.Add(btnAddPage);
@@ -192,7 +238,7 @@ sealed class CellGridEditorForm : Form
         };
         grpPages.Controls.Add(btnRemPage);
 
-        grpPages.Controls.Add(new Label { Text = "Nombre:", Location = new Point(6, 48), Size = new Size(52, 18) });
+        grpPages.Controls.Add(new Label { Text = Strings.NameLabel, Location = new Point(6, 48), Size = new Size(52, 18) });
         _txtPageName = new TextBox { Location = new Point(62, 45), Size = new Size(120, 22) };
         _txtPageName.TextChanged += (_, _) =>
         {
@@ -202,10 +248,10 @@ sealed class CellGridEditorForm : Form
         };
         grpPages.Controls.Add(_txtPageName);
 
-        _chkCycle = new CheckBox { Text = "Ciclar páginas", Checked = settings.CycleDisplayPages, Location = new Point(196, 18), Size = new Size(110, 22) };
+        _chkCycle = new CheckBox { Text = Strings.CyclePagesCheck, Checked = settings.CycleDisplayPages, Location = new Point(196, 18), Size = new Size(110, 22) };
         grpPages.Controls.Add(_chkCycle);
 
-        grpPages.Controls.Add(new Label { Text = "Dur.:", Location = new Point(196, 48), Size = new Size(34, 18) });
+        grpPages.Controls.Add(new Label { Text = Strings.DurationLabel, Location = new Point(196, 48), Size = new Size(34, 18) });
         _nudDuration = new NumericUpDown { Location = new Point(232, 45), Size = new Size(50, 22), Minimum = 2, Maximum = 3600, Value = 10 };
         _nudDuration.ValueChanged += (_, _) =>
         {
@@ -217,18 +263,18 @@ sealed class CellGridEditorForm : Form
         Controls.Add(grpPages);
 
         // ── LEFT: Rows group ──────────────────────────────────────────────────
-        var grpRows = new GroupBox { Text = "Filas", Location = new Point(6, 100), Size = new Size(406, 375) };
+        var grpRows = new GroupBox { Text = Strings.RowsGroupTitle, Location = new Point(6, 100), Size = new Size(406, 375) };
 
         _lstRows = new ListBox { Location = new Point(6, 18), Size = new Size(390, 100), IntegralHeight = false };
         _lstRows.SelectedIndexChanged += OnRowSelected;
         grpRows.Controls.Add(_lstRows);
 
         // Row action buttons
-        var btnAddRow = new Button { Text = "+ Agregar fila", Location = new Point(6, 122), Size = new Size(90, 24) };
+        var btnAddRow = new Button { Text = Strings.AddRowButton, Location = new Point(6, 122), Size = new Size(90, 24) };
         btnAddRow.Click += OnAddRow;
         grpRows.Controls.Add(btnAddRow);
 
-        var btnRemRow = new Button { Text = "Eliminar", Location = new Point(100, 122), Size = new Size(70, 24) };
+        var btnRemRow = new Button { Text = Strings.DeleteButton, Location = new Point(100, 122), Size = new Size(70, 24) };
         btnRemRow.Click += (_, _) =>
         {
             if (_rowIndex < 0 || _pageIndex < 0) return;
@@ -261,32 +307,32 @@ sealed class CellGridEditorForm : Form
         };
         grpRows.Controls.Add(btnDown);
 
-        var btnIconPair = new Button { Text = "+ Par íconos", Location = new Point(248, 122), Size = new Size(82, 24) };
+        var btnIconPair = new Button { Text = Strings.AddIconPairButton, Location = new Point(248, 122), Size = new Size(82, 24) };
         btnIconPair.Click += OnAddIconPair;
         grpRows.Controls.Add(btnIconPair);
 
-        var btnTextBlock = new Button { Text = "+ Texto", Location = new Point(334, 122), Size = new Size(58, 24) };
+        var btnTextBlock = new Button { Text = Strings.AddTextBlockButton, Location = new Point(334, 122), Size = new Size(58, 24) };
         btnTextBlock.Click += OnAddTextBlock;
         grpRows.Controls.Add(btnTextBlock);
 
         // ── Row editor sub-panel ──────────────────────────────────────────────
         _rowEditorPanel = new Panel { Location = new Point(6, 152), Size = new Size(390, 215), Enabled = false };
 
-        _rowEditorPanel.Controls.Add(new Label { Text = "Tier:", Location = new Point(0, 4), Size = new Size(30, 18) });
+        _rowEditorPanel.Controls.Add(new Label { Text = Strings.TierLabel, Location = new Point(0, 4), Size = new Size(30, 18) });
         _cmbTier = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(34, 1), Size = new Size(160, 23) };
         foreach (var t in CellGridProtocol.Tiers)
             _cmbTier.Items.Add($"{t.Name}  {t.W}×{t.H}px  ({t.Cols} {(t.Cols == 1 ? "col" : "cols")})");
         _cmbTier.SelectedIndexChanged += OnTierChanged;
         _rowEditorPanel.Controls.Add(_cmbTier);
 
-        _rowEditorPanel.Controls.Add(new Label { Text = "Mitad:", Location = new Point(198, 4), Size = new Size(38, 18) });
+        _rowEditorPanel.Controls.Add(new Label { Text = Strings.HalfLabel, Location = new Point(198, 4), Size = new Size(38, 18) });
         _cmbSplit = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(238, 1), Size = new Size(148, 23) };
-        _cmbSplit.Items.AddRange(["Normal", "↑ Mitad superior", "↓ Mitad inferior"]);
+        _cmbSplit.Items.AddRange(Strings.SplitOptions);
         _cmbSplit.SelectedIndex = 0;
         _cmbSplit.SelectedIndexChanged += OnSplitChanged;
         _rowEditorPanel.Controls.Add(_cmbSplit);
 
-        _rowEditorPanel.Controls.Add(new Label { Text = "Template:", Location = new Point(0, 32), Size = new Size(62, 18) });
+        _rowEditorPanel.Controls.Add(new Label { Text = Strings.TemplateLabel, Location = new Point(0, 32), Size = new Size(62, 18) });
         // NerdFont, not the inherited UI font: without this, any inserted glyph
         // (from the "NF..." picker or a {token}'s icon) has no matching glyph in
         // the default font, so Windows silently font-fallbacks to some other
@@ -302,10 +348,10 @@ sealed class CellGridEditorForm : Form
         _txtTemplate.TextChanged += OnTemplateChanged;
         _rowEditorPanel.Controls.Add(_txtTemplate);
 
-        _rowEditorPanel.Controls.Add(new Label { Text = "Align:", Location = new Point(0, 117), Size = new Size(40, 18) });
-        _radLeft   = new RadioButton { Text = "Izq",    Location = new Point(44,  115), Size = new Size(50, 20) };
-        _radCenter = new RadioButton { Text = "Centro", Location = new Point(96,  115), Size = new Size(62, 20), Checked = true };
-        _radRight  = new RadioButton { Text = "Der",    Location = new Point(162, 115), Size = new Size(50, 20) };
+        _rowEditorPanel.Controls.Add(new Label { Text = Strings.AlignLabel, Location = new Point(0, 117), Size = new Size(40, 18) });
+        _radLeft   = new RadioButton { Text = Strings.AlignLeft,   Location = new Point(44,  115), Size = new Size(50, 20) };
+        _radCenter = new RadioButton { Text = Strings.AlignCenter, Location = new Point(96,  115), Size = new Size(62, 20), Checked = true };
+        _radRight  = new RadioButton { Text = Strings.AlignRight,  Location = new Point(162, 115), Size = new Size(50, 20) };
         _radLeft.CheckedChanged   += OnAlignChanged;
         _radCenter.CheckedChanged += OnAlignChanged;
         _radRight.CheckedChanged  += OnAlignChanged;
@@ -314,7 +360,7 @@ sealed class CellGridEditorForm : Form
         _rowEditorPanel.Controls.Add(_radRight);
 
         // ── Style row (Bold + AntiAlias + glyph styles) ──────────────────────
-        _chkBold = new CheckBox { Text = "Bold", Location = new Point(0, 141), Size = new Size(52, 20) };
+        _chkBold = new CheckBox { Text = Strings.BoldCheck, Location = new Point(0, 141), Size = new Size(52, 20) };
         _chkBold.CheckedChanged += OnBoldChanged;
         _rowEditorPanel.Controls.Add(_chkBold);
 
@@ -322,7 +368,7 @@ sealed class CellGridEditorForm : Form
         _chkAntiAlias.CheckedChanged += OnAntiAliasChanged;
         _rowEditorPanel.Controls.Add(_chkAntiAlias);
 
-        _rowEditorPanel.Controls.Add(new Label { Text = "Núm:", Location = new Point(100, 144), Size = new Size(32, 18) });
+        _rowEditorPanel.Controls.Add(new Label { Text = Strings.NumericLabel, Location = new Point(100, 144), Size = new Size(32, 18) });
         _cmbNumericStyle = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(134, 141), Size = new Size(116, 23) };
         foreach (var s in new[] { "text", "box", "box_outline", "box_multiple", "plain", "circle", "circle_outline" })
             _cmbNumericStyle.Items.Add(NerdFont.NumericStyleLabel(s));
@@ -330,7 +376,7 @@ sealed class CellGridEditorForm : Form
         _cmbNumericStyle.SelectedIndexChanged += OnNumericStyleChanged;
         _rowEditorPanel.Controls.Add(_cmbNumericStyle);
 
-        _rowEditorPanel.Controls.Add(new Label { Text = "Alfa:", Location = new Point(254, 144), Size = new Size(30, 18) });
+        _rowEditorPanel.Controls.Add(new Label { Text = Strings.AlphaLabel, Location = new Point(254, 144), Size = new Size(30, 18) });
         _cmbAlphaStyle = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(284, 141), Size = new Size(100, 23) };
         foreach (var s in new[] { "text", "plain", "box", "box_outline", "circle", "circle_outline" })
             _cmbAlphaStyle.Items.Add(NerdFont.AlphaStyleLabel(s));
@@ -339,7 +385,7 @@ sealed class CellGridEditorForm : Form
         _rowEditorPanel.Controls.Add(_cmbAlphaStyle);
 
         // ── Binding picker ────────────────────────────────────────────────────
-        _rowEditorPanel.Controls.Add(new Label { Text = "Insertar:", Location = new Point(0, 183), Size = new Size(52, 18) });
+        _rowEditorPanel.Controls.Add(new Label { Text = Strings.InsertLabel, Location = new Point(0, 183), Size = new Size(52, 18) });
 
         _cmbBindCategory = new ComboBox
         {
@@ -363,7 +409,7 @@ sealed class CellGridEditorForm : Form
         _rowEditorPanel.Controls.Add(_cmbBind);
         PopulateBindings(0);
 
-        var btnInsert = new Button { Text = "↵ Insertar", Location = new Point(272, 180), Size = new Size(70, 23) };
+        var btnInsert = new Button { Text = Strings.InsertButton, Location = new Point(272, 180), Size = new Size(70, 23) };
         btnInsert.Click += OnInsertBinding;
         _rowEditorPanel.Controls.Add(btnInsert);
 
@@ -383,9 +429,9 @@ sealed class CellGridEditorForm : Form
         };
 
         // ── Tab: Deportes ─────────────────────────────────────────────────────
-        var tabSports = new TabPage("Deportes");
-        tabSports.Controls.Add(new Label { Text = "Ligas y equipos:", Location = new Point(6, 6), AutoSize = true });
-        var btnLeagues = new Button { Text = "Editar ligas…", Location = new Point(280, 3), Size = new Size(110, 23) };
+        var tabSports = new TabPage(Strings.SportsTab);
+        tabSports.Controls.Add(new Label { Text = Strings.LeaguesTeamsLabel, Location = new Point(6, 6), AutoSize = true });
+        var btnLeagues = new Button { Text = Strings.EditLeaguesButton, Location = new Point(280, 3), Size = new Size(110, 23) };
         btnLeagues.Click += (_, _) =>
         {
             using var dlg = new LeaguePickerDialog(_editLeagues);
@@ -408,8 +454,8 @@ sealed class CellGridEditorForm : Form
         tabData.TabPages.Add(tabSports);
 
         // ── Tab: Clima ────────────────────────────────────────────────────────
-        var tabWeather = new TabPage("Clima");
-        tabWeather.Controls.Add(new Label { Text = "Ciudad:", Location = new Point(6, 8), AutoSize = true });
+        var tabWeather = new TabPage(Strings.WeatherTab);
+        tabWeather.Controls.Add(new Label { Text = Strings.CityLabel, Location = new Point(6, 8), AutoSize = true });
         _txtCity = new TextBox { Text = settings.City, Location = new Point(58, 5), Size = new Size(100, 22) };
         tabWeather.Controls.Add(_txtCity);
 
@@ -427,7 +473,7 @@ sealed class CellGridEditorForm : Form
         };
         tabWeather.Controls.Add(_lblWeatherStatus);
 
-        tabWeather.Controls.Add(new Label { Text = "Temperatura:", Location = new Point(6, 36), AutoSize = true });
+        tabWeather.Controls.Add(new Label { Text = Strings.TemperatureLabel, Location = new Point(6, 36), AutoSize = true });
         bool isFahrenheit = settings.WeatherUnit == "fahrenheit";
         _radTempC = new RadioButton { Text = "°C", Location = new Point(90, 34), Size = new Size(42, 20), Checked = !isFahrenheit };
         _radTempF = new RadioButton { Text = "°F", Location = new Point(136, 34), Size = new Size(42, 20), Checked =  isFahrenheit };
@@ -435,7 +481,7 @@ sealed class CellGridEditorForm : Form
         tabData.TabPages.Add(tabWeather);
 
         // ── Tab: CLI ──────────────────────────────────────────────────────────
-        var tabCli = new TabPage("CLI");
+        var tabCli = new TabPage("CLI"); // "CLI" is an acronym, invariant across languages
         string exeDir   = AppContext.BaseDirectory;
         string zkcPath  = Path.Combine(exeDir, "zkc.exe");
         var txtCliPath = new TextBox
@@ -448,17 +494,17 @@ sealed class CellGridEditorForm : Form
         };
         tabCli.Controls.Add(txtCliPath);
 
-        var btnCopyPath = new Button { Text = "Copiar", Location = new Point(320, 5), Size = new Size(60, 22) };
+        var btnCopyPath = new Button { Text = Strings.CopyButton, Location = new Point(320, 5), Size = new Size(60, 22) };
         btnCopyPath.Click += (_, _) => Clipboard.SetText(zkcPath);
         tabCli.Controls.Add(btnCopyPath);
 
-        var btnOpenCli = new Button { Text = "Abrir terminal con zkc -h", Location = new Point(4, 33), Size = new Size(180, 26) };
+        var btnOpenCli = new Button { Text = Strings.OpenCliTerminalButton, Location = new Point(4, 33), Size = new Size(180, 26) };
         btnOpenCli.Click += OnOpenCli;
         tabCli.Controls.Add(btnOpenCli);
 
         var lblCliHint = new Label
         {
-            Text      = "Uso: zkc \"mensaje\"  |  zkc \"línea1\\nlínea2\"",
+            Text      = Strings.CliHint,
             Location  = new Point(4, 66),
             Size      = new Size(390, 18),
             ForeColor = Color.Gray,
@@ -468,12 +514,12 @@ sealed class CellGridEditorForm : Form
         tabData.TabPages.Add(tabCli);
 
         // ── Tab: Biblioteca ───────────────────────────────────────────────────
-        var tabLib = new TabPage("Biblioteca");
-        tabLib.Controls.Add(new Label { Text = "Nombre:", Location = new Point(4, 8), AutoSize = true });
+        var tabLib = new TabPage(Strings.LibraryTab);
+        tabLib.Controls.Add(new Label { Text = Strings.NameLabel, Location = new Point(4, 8), AutoSize = true });
         _txtLibName = new TextBox { Location = new Point(58, 5), Size = new Size(200, 22) };
         tabLib.Controls.Add(_txtLibName);
 
-        var btnLibSave = new Button { Text = "Guardar", Location = new Point(264, 5), Size = new Size(70, 22) };
+        var btnLibSave = new Button { Text = Strings.SaveButton, Location = new Point(264, 5), Size = new Size(70, 22) };
         btnLibSave.Click += OnLibSave;
         tabLib.Controls.Add(btnLibSave);
 
@@ -485,11 +531,11 @@ sealed class CellGridEditorForm : Form
         };
         tabLib.Controls.Add(_lstLibFiles);
 
-        var btnLibLoad = new Button { Text = "Cargar", Location = new Point(284, 32), Size = new Size(106, 24) };
+        var btnLibLoad = new Button { Text = Strings.LoadButton, Location = new Point(284, 32), Size = new Size(106, 24) };
         btnLibLoad.Click += OnLibLoad;
         tabLib.Controls.Add(btnLibLoad);
 
-        var btnLibDel = new Button { Text = "Eliminar", Location = new Point(284, 60), Size = new Size(106, 24) };
+        var btnLibDel = new Button { Text = Strings.DeleteButton, Location = new Point(284, 60), Size = new Size(106, 24) };
         btnLibDel.Click += OnLibDelete;
         tabLib.Controls.Add(btnLibDel);
 
@@ -497,9 +543,9 @@ sealed class CellGridEditorForm : Form
         Controls.Add(tabData);
 
         // ── Bottom buttons ────────────────────────────────────────────────────
-        var btnApply = new Button { Text = "Aplicar", Location = new Point(270, 625), Size = new Size(74, 28), DialogResult = DialogResult.OK };
+        var btnApply = new Button { Text = Strings.ApplyButton, Location = new Point(270, 625), Size = new Size(74, 28), DialogResult = DialogResult.OK };
         btnApply.Click += OnApply;
-        var btnClose = new Button { Text = "Cerrar", Location = new Point(350, 625), Size = new Size(74, 28) };
+        var btnClose = new Button { Text = Strings.Close, Location = new Point(350, 625), Size = new Size(74, 28) };
         btnClose.Click += (_, _) => Close();
         Controls.Add(btnApply);
         Controls.Add(btnClose);
@@ -550,7 +596,8 @@ sealed class CellGridEditorForm : Form
 
     private (string Label, string Token)[] BuildDeportesItems()
     {
-        var items = new List<(string, string)>
+        bool es = Strings.Current == AppLanguage.Es;
+        var items = es ? new List<(string, string)>
         {
             ("Partido (resumen)",    "{sports}"),
             ("Equipo",               "{sports.team}"),
@@ -564,6 +611,20 @@ sealed class CellGridEditorForm : Form
             ("Próx. partido",        "{sports.next_game}"),
             ("Próx. fecha",          "{sports.next_date}"),
             ("Próx. hora",           "{sports.next_gametime}"),
+        } : new List<(string, string)>
+        {
+            ("Game (summary)",       "{sports}"),
+            ("Team",                 "{sports.team}"),
+            ("Live teams",           "{sports.live_game}"),
+            ("Live score",           "{sports.live_marker}"),
+            ("Status (icon)",        "{sports.marker}"),
+            ("Live time",            "{sports.live_time}"),
+            ("League",               "{sports.league}"),
+            ("Last game",            "{sports.last_game}"),
+            ("Last score",           "{sports.last_marker}"),
+            ("Next game",            "{sports.next_game}"),
+            ("Next date",            "{sports.next_date}"),
+            ("Next time",            "{sports.next_gametime}"),
         };
 
         if (_editLeagues.Count > 1)
@@ -572,13 +633,26 @@ sealed class CellGridEditorForm : Form
             {
                 var lg = SportsFeature.FindOrCreate(path);
                 string q = ":" + lg.ShortName;
-                items.Add(($"[{lg.ShortName}] Últ. partido",   $"{{sports.last_game{q}}}"));
-                items.Add(($"[{lg.ShortName}] Últ. marcador",  $"{{sports.last_marker{q}}}"));
-                items.Add(($"[{lg.ShortName}] Próx. partido",  $"{{sports.next_game{q}}}"));
-                items.Add(($"[{lg.ShortName}] Próx. fecha",    $"{{sports.next_date{q}}}"));
-                items.Add(($"[{lg.ShortName}] Próx. hora",     $"{{sports.next_gametime{q}}}"));
-                items.Add(($"[{lg.ShortName}] Liga",           $"{{sports.league{q}}}"));
-                items.Add(($"[{lg.ShortName}] Equipo",         $"{{sports.team{q}}}"));
+                if (es)
+                {
+                    items.Add(($"[{lg.ShortName}] Últ. partido",   $"{{sports.last_game{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Últ. marcador",  $"{{sports.last_marker{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Próx. partido",  $"{{sports.next_game{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Próx. fecha",    $"{{sports.next_date{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Próx. hora",     $"{{sports.next_gametime{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Liga",           $"{{sports.league{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Equipo",         $"{{sports.team{q}}}"));
+                }
+                else
+                {
+                    items.Add(($"[{lg.ShortName}] Last game",   $"{{sports.last_game{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Last score",  $"{{sports.last_marker{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Next game",   $"{{sports.next_game{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Next date",   $"{{sports.next_date{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Next time",   $"{{sports.next_gametime{q}}}"));
+                    items.Add(($"[{lg.ShortName}] League",      $"{{sports.league{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Team",        $"{{sports.team{q}}}"));
+                }
             }
         }
         return items.ToArray();
@@ -633,7 +707,7 @@ sealed class CellGridEditorForm : Form
             int py = row * rowH;
 
             var lbl = new Label { Text = lg.ShortName + ":", Location = new Point(px, py + 4), Size = new Size(54, 18), AutoSize = false };
-            var tb  = new TextBox { Text = team, Location = new Point(px + 56, py), Size = new Size(68, 22), PlaceholderText = "equipo" };
+            var tb  = new TextBox { Text = team, Location = new Point(px + 56, py), Size = new Size(68, 22), PlaceholderText = Strings.TeamPlaceholder };
             _teamBoxes[path] = tb;
             _teamsPanel.Controls.AddRange([lbl, tb]);
 
@@ -646,7 +720,7 @@ sealed class CellGridEditorForm : Form
 
     private async Task RefreshWeatherPreviewAsync(string city)
     {
-        _lblWeatherStatus.Text      = "consultando…";
+        _lblWeatherStatus.Text      = Strings.QueryingWeather;
         _lblWeatherStatus.ForeColor = Color.Gray;
         try
         {
@@ -661,7 +735,7 @@ sealed class CellGridEditorForm : Form
         }
         catch (System.Net.Http.HttpRequestException ex) when (ex.StatusCode.HasValue)
         {
-            _lblWeatherStatus.Text      = $"HTTP {(int)ex.StatusCode.Value} — red/proxy";
+            _lblWeatherStatus.Text      = Strings.WeatherHttpError((int)ex.StatusCode.Value);
             _lblWeatherStatus.ForeColor = Color.OrangeRed;
         }
         catch (Exception ex)
@@ -861,7 +935,7 @@ sealed class CellGridEditorForm : Form
         if (remaining < tier.H * 2)
         {
             MessageBox.Show(
-                $"No hay espacio suficiente para un par de íconos ({tier.H * 2}px necesarios, {remaining}px libres).",
+                Strings.NotEnoughSpaceIconPair(tier.H * 2, remaining),
                 "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
@@ -879,18 +953,18 @@ sealed class CellGridEditorForm : Form
         // Inline dialog: choose number of lines
         using var dlg = new Form
         {
-            Text            = "Bloque de texto",
+            Text            = Strings.TextBlockDialogTitle,
             FormBorderStyle = FormBorderStyle.FixedDialog,
             StartPosition   = FormStartPosition.CenterParent,
             MinimizeBox     = false,
             MaximizeBox     = false,
             ClientSize      = new Size(240, 88),
         };
-        dlg.Controls.Add(new Label { Text = "Número de líneas:", Location = new Point(8, 16), AutoSize = true });
+        dlg.Controls.Add(new Label { Text = Strings.NumberOfLinesLabel, Location = new Point(8, 16), AutoSize = true });
         var nud = new NumericUpDown { Location = new Point(134, 13), Size = new Size(50, 22), Minimum = 1, Maximum = 8, Value = 2 };
         dlg.Controls.Add(nud);
-        var btnOk = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(60, 52), Width = 70 };
-        var btnCx = new Button { Text = "Cancelar", DialogResult = DialogResult.Cancel, Location = new Point(138, 52), Width = 76 };
+        var btnOk = new Button { Text = Strings.Ok, DialogResult = DialogResult.OK, Location = new Point(60, 52), Width = 70 };
+        var btnCx = new Button { Text = Strings.Cancel, DialogResult = DialogResult.Cancel, Location = new Point(138, 52), Width = 76 };
         dlg.Controls.AddRange([btnOk, btnCx]);
         dlg.AcceptButton = btnOk;
         dlg.CancelButton = btnCx;
@@ -905,7 +979,7 @@ sealed class CellGridEditorForm : Form
         if (remaining < tier.H * lines)
         {
             MessageBox.Show(
-                $"No hay espacio suficiente ({tier.H * lines}px necesarios, {remaining}px libres).",
+                Strings.NotEnoughSpace(tier.H * lines, remaining),
                 "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
@@ -925,7 +999,7 @@ sealed class CellGridEditorForm : Form
         string zkcPath = Path.Combine(AppContext.BaseDirectory, "zkc.exe");
         if (!File.Exists(zkcPath))
         {
-            MessageBox.Show($"No se encontró zkc.exe en:\n{zkcPath}",
+            MessageBox.Show(Strings.ZkcNotFound(zkcPath),
                 "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
@@ -940,7 +1014,7 @@ sealed class CellGridEditorForm : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"No se pudo abrir la terminal: {ex.Message}",
+            MessageBox.Show(Strings.CouldNotOpenTerminal(ex.Message),
                 "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -960,7 +1034,7 @@ sealed class CellGridEditorForm : Form
         string name = _txtLibName.Text.Trim();
         if (string.IsNullOrEmpty(name))
         {
-            MessageBox.Show("Ingresa un nombre para la configuración.",
+            MessageBox.Show(Strings.EnterConfigName,
                 "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
@@ -1004,7 +1078,7 @@ sealed class CellGridEditorForm : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error al cargar la configuración: {ex.Message}",
+            MessageBox.Show(Strings.ErrorLoadingConfig(ex.Message),
                 "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -1012,7 +1086,7 @@ sealed class CellGridEditorForm : Form
     private void OnLibDelete(object? sender, EventArgs e)
     {
         if (_lstLibFiles.SelectedItem is not string name) return;
-        if (MessageBox.Show($"¿Eliminar '{name}' de la biblioteca?", "ZMK Companion",
+        if (MessageBox.Show(Strings.ConfirmDeleteLibraryItem(name), "ZMK Companion",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
         string path = Path.Combine(LibraryDir, name + ".json");
         if (File.Exists(path)) File.Delete(path);
@@ -1055,9 +1129,7 @@ sealed class CellGridEditorForm : Form
             if (page.TotalHeight > BitmapFrame.Height)
             {
                 MessageBox.Show(
-                    $"La página '{page.Name}' excede la altura del display " +
-                    $"({page.TotalHeight}px > {BitmapFrame.Height}px).\n" +
-                    "Elimina o reduce filas antes de aplicar.",
+                    Strings.PageExceedsHeight(page.Name, page.TotalHeight, BitmapFrame.Height),
                     "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }

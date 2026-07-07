@@ -77,6 +77,74 @@ static class Strings
     public static string LoadingPercent(int v) => Current == AppLanguage.Es ? $"Cargando… {v}%" : $"Loading… {v}%";
     public static string LeaguesAvailable(int count) => Current == AppLanguage.Es
         ? $"{count} ligas disponibles" : $"{count} leagues available";
+    // ── CellGridEditorForm ───────────────────────────────────────────────────────
+    public static string EditorTitle       => Current == AppLanguage.Es ? "ZMK Companion — Editor de pantalla" : "ZMK Companion — Display Editor";
+    public static string PreviewGroupTitle => Current == AppLanguage.Es ? "Vista previa  (3×)" : "Preview  (3×)";
+    public static string PagesGroupTitle   => Current == AppLanguage.Es ? "Páginas" : "Pages";
+    public static string CyclePagesCheck   => Current == AppLanguage.Es ? "Ciclar páginas" : "Cycle pages";
+    public static string DurationLabel     => Current == AppLanguage.Es ? "Dur.:" : "Dur.:";
+    public static string RowsGroupTitle    => Current == AppLanguage.Es ? "Filas" : "Rows";
+    public static string AddRowButton      => Current == AppLanguage.Es ? "+ Agregar fila" : "+ Add row";
+    public static string DeleteButton      => Current == AppLanguage.Es ? "Eliminar" : "Delete";
+    public static string AddIconPairButton => Current == AppLanguage.Es ? "+ Par íconos" : "+ Icon pair";
+    public static string AddTextBlockButton => Current == AppLanguage.Es ? "+ Texto" : "+ Text";
+    public static string TierLabel         => Current == AppLanguage.Es ? "Tier:" : "Tier:";
+    public static string HalfLabel         => Current == AppLanguage.Es ? "Mitad:" : "Half:";
+    public static string[] SplitOptions    => Current == AppLanguage.Es
+        ? ["Normal", "↑ Mitad superior", "↓ Mitad inferior"]
+        : ["Normal", "↑ Top half", "↓ Bottom half"];
+    public static string TemplateLabel     => Current == AppLanguage.Es ? "Template:" : "Template:";
+    public static string AlignLabel        => Current == AppLanguage.Es ? "Align:" : "Align:";
+    public static string AlignLeft         => Current == AppLanguage.Es ? "Izq"    : "Left";
+    public static string AlignCenter       => Current == AppLanguage.Es ? "Centro" : "Center";
+    public static string AlignRight        => Current == AppLanguage.Es ? "Der"    : "Right";
+    public static string BoldCheck         => Current == AppLanguage.Es ? "Negrita" : "Bold";
+    public static string NumericLabel      => Current == AppLanguage.Es ? "Núm:" : "Num:";
+    public static string AlphaLabel        => Current == AppLanguage.Es ? "Alfa:" : "Alpha:";
+    public static string InsertLabel       => Current == AppLanguage.Es ? "Insertar:" : "Insert:";
+    public static string InsertButton      => Current == AppLanguage.Es ? "↵ Insertar" : "↵ Insert";
+    public static string SportsTab         => Current == AppLanguage.Es ? "Deportes" : "Sports";
+    public static string WeatherTab        => Current == AppLanguage.Es ? "Clima" : "Weather";
+    public static string LibraryTab        => Current == AppLanguage.Es ? "Biblioteca" : "Library";
+    public static string LeaguesTeamsLabel => Current == AppLanguage.Es ? "Ligas y equipos:" : "Leagues and teams:";
+    public static string EditLeaguesButton => Current == AppLanguage.Es ? "Editar ligas…" : "Edit leagues…";
+    public static string CityLabel         => Current == AppLanguage.Es ? "Ciudad:" : "City:";
+    public static string TemperatureLabel  => Current == AppLanguage.Es ? "Temperatura:" : "Temperature:";
+    public static string CopyButton        => Current == AppLanguage.Es ? "Copiar" : "Copy";
+    public static string OpenCliTerminalButton => Current == AppLanguage.Es ? "Abrir terminal con zkc -h" : "Open terminal with zkc -h";
+    public static string CliHint => Current == AppLanguage.Es
+        ? "Uso: zkc \"mensaje\"  |  zkc \"línea1\\nlínea2\""
+        : "Usage: zkc \"message\"  |  zkc \"line1\\nline2\"";
+    public static string SaveButton        => Current == AppLanguage.Es ? "Guardar" : "Save";
+    public static string LoadButton        => Current == AppLanguage.Es ? "Cargar" : "Load";
+    public static string ApplyButton       => Current == AppLanguage.Es ? "Aplicar" : "Apply";
+    public static string DefaultPageName(int n) => Current == AppLanguage.Es ? $"Página {n}" : $"Page {n}";
+    public static string TeamPlaceholder   => Current == AppLanguage.Es ? "equipo" : "team";
+    public static string QueryingWeather   => Current == AppLanguage.Es ? "consultando…" : "querying…";
+    public static string WeatherHttpError(int code) => Current == AppLanguage.Es
+        ? $"HTTP {code} — red/proxy" : $"HTTP {code} — network/proxy";
+    public static string TextBlockDialogTitle => Current == AppLanguage.Es ? "Bloque de texto" : "Text block";
+    public static string NumberOfLinesLabel   => Current == AppLanguage.Es ? "Número de líneas:" : "Number of lines:";
+    public static string NotEnoughSpaceIconPair(int needed, int free) => Current == AppLanguage.Es
+        ? $"No hay espacio suficiente para un par de íconos ({needed}px necesarios, {free}px libres)."
+        : $"Not enough space for an icon pair ({needed}px needed, {free}px free).";
+    public static string NotEnoughSpace(int needed, int free) => Current == AppLanguage.Es
+        ? $"No hay espacio suficiente ({needed}px necesarios, {free}px libres)."
+        : $"Not enough space ({needed}px needed, {free}px free).";
+    public static string ZkcNotFound(string path) => Current == AppLanguage.Es
+        ? $"No se encontró zkc.exe en:\n{path}" : $"zkc.exe not found at:\n{path}";
+    public static string CouldNotOpenTerminal(string message) => Current == AppLanguage.Es
+        ? $"No se pudo abrir la terminal: {message}" : $"Could not open the terminal: {message}";
+    public static string EnterConfigName => Current == AppLanguage.Es
+        ? "Ingresa un nombre para la configuración." : "Enter a name for the configuration.";
+    public static string ErrorLoadingConfig(string message) => Current == AppLanguage.Es
+        ? $"Error al cargar la configuración: {message}" : $"Error loading configuration: {message}";
+    public static string ConfirmDeleteLibraryItem(string name) => Current == AppLanguage.Es
+        ? $"¿Eliminar '{name}' de la biblioteca?" : $"Delete '{name}' from the library?";
+    public static string PageExceedsHeight(string pageName, int total, int max) => Current == AppLanguage.Es
+        ? $"La página '{pageName}' excede la altura del display ({total}px > {max}px).\nElimina o reduce filas antes de aplicar."
+        : $"Page '{pageName}' exceeds the display height ({total}px > {max}px).\nRemove or shrink rows before applying.";
+
     public static string[] SportNames => Current == AppLanguage.Es
         ? ["Fútbol Americano", "Fútbol", "Baloncesto", "Hockey"]
         : ["Football", "Soccer", "Basketball", "Hockey"];
