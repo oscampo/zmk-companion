@@ -20,6 +20,9 @@ sealed class ZmkAppContext : ApplicationContext
 
     // Pipe callbacks run on the thread pool; compositor/WinForms timers need STA.
     private readonly ConcurrentQueue<string> _textQueue = new();
+    // Named {custom.NAME} channel updates from `zkc --set`, same thread-handoff
+    // reason as _textQueue: LiveState.UpdateCustom must only run on the UI thread.
+    private readonly ConcurrentQueue<(string Name, string Value)> _customQueue = new();
     private System.Windows.Forms.Timer? _drainTimer;
     private bool _overrideInFlight; // guard: only one bitmap send at a time
 
@@ -52,6 +55,7 @@ sealed class ZmkAppContext : ApplicationContext
         _ble.StatusChanged          += OnStatusChanged;
         _tray.ExitRequested           += OnExit;
         _tray.CanvasEditorRequested   += OnDisplayEditor;
+        _tray.CustomTokensRequested   += OnCustomTokens;
         _tray.PomodoroToggleRequested += OnPomodoroToggle;
         _tray.PomodoroConfigRequested += OnPomodoroConfig;
 
@@ -69,6 +73,19 @@ sealed class ZmkAppContext : ApplicationContext
         _drainTimer = new System.Windows.Forms.Timer { Interval = 50 };
         _drainTimer.Tick += async (_, _) =>
         {
+            // Custom named tokens are unrelated to the bitmap-override machinery
+            // below (no full-screen mode, no page routing - they're just plain
+            // LiveState values like {weather.temp}), so this runs unconditionally,
+            // not gated by _overrideInFlight. Coalesce to the latest value per
+            // name in case several arrived since the last tick.
+            if (!_customQueue.IsEmpty)
+            {
+                var latestByName = new Dictionary<string, string>();
+                while (_customQueue.TryDequeue(out var kv)) latestByName[kv.Name] = kv.Value;
+                foreach (var (name, value) in latestByName)
+                    _liveState.UpdateCustom(name, value);
+            }
+
             if (_overrideInFlight) return; // previous BLE send still in progress — skip
 
             // Keep only the latest queued item; discard older ones (stale clock frames, etc.)
@@ -146,6 +163,13 @@ sealed class ZmkAppContext : ApplicationContext
             if (!string.IsNullOrEmpty(text) && _compositor.TextMode == ExternalTextMode.FullScreen)
                 _compositor.SignalTextIncoming();
             _textQueue.Enqueue(text);
+            return Task.FromResult(true);
+        },
+        (name, value) =>
+        {
+            // Just a queue enqueue here too (pipe thread); _liveState.UpdateCustom
+            // itself only ever runs from the drain timer, on the UI thread.
+            _customQueue.Enqueue((name, value));
             return Task.FromResult(true);
         });
 
@@ -441,6 +465,14 @@ sealed class ZmkAppContext : ApplicationContext
     {
         var form = new CellGridEditorForm(_settings, _liveState, ApplyDisplayPages);
         form.Show();
+    }
+
+    private void OnCustomTokens()
+    {
+        using var dlg = new CustomTokensForm(_settings.CustomTokens);
+        if (dlg.ShowDialog() != DialogResult.OK) return;
+        _settings.CustomTokens = dlg.Tokens.ToList();
+        _settings.Save();
     }
 
     internal void ApplyDisplayPages(List<CellGridPage> pages, bool cycle)

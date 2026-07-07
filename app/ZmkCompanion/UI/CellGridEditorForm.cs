@@ -62,6 +62,11 @@ sealed class CellGridEditorForm : Form
     private readonly Dictionary<string, TextBox> _teamBoxes = new();
     private          List<string>  _editLeagues;
 
+    // Distinct categories from settings.CustomTokens, appended to the binding
+    // picker after BindingCatalog. Computed once: this dialog doesn't need to
+    // react to CustomTokensForm changes made while it's already open.
+    private readonly List<string> _customCategories;
+
     // Library tab
     private readonly TextBox  _txtLibName;
     private readonly ListBox  _lstLibFiles;
@@ -128,6 +133,11 @@ sealed class CellGridEditorForm : Form
         _onApply     = onApply;
         _pages       = settings.DisplayPages.Select(p => p.Clone()).ToList();
         _editLeagues = settings.SelectedLeagues.ToList();
+        _customCategories = settings.CustomTokens
+            .Select(t => t.Category)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         liveState.Changed += OnLiveStateChanged;
 
@@ -324,6 +334,7 @@ sealed class CellGridEditorForm : Form
             Size          = new Size(90, 23),
         };
         foreach (var cat in BindingCatalog) _cmbBindCategory.Items.Add(cat.Category);
+        foreach (var cat in _customCategories) _cmbBindCategory.Items.Add(cat);
         _cmbBindCategory.SelectedIndex = 0;
         _cmbBindCategory.SelectedIndexChanged += OnBindCategoryChanged;
         _rowEditorPanel.Controls.Add(_cmbBindCategory);
@@ -493,13 +504,29 @@ sealed class CellGridEditorForm : Form
     private void PopulateBindings(int catIndex)
     {
         _cmbBind.Items.Clear();
-        if (catIndex < 0 || catIndex >= BindingCatalog.Length) return;
-        var items = catIndex == DeportesCategory
-            ? BuildDeportesItems()
-            : BindingCatalog[catIndex].Items;
+        int totalCategories = BindingCatalog.Length + _customCategories.Count;
+        if (catIndex < 0 || catIndex >= totalCategories) return;
+        var items = GetCategoryItems(catIndex);
         foreach (var (label, token) in items)
             _cmbBind.Items.Add($"{label}  {token}");
         if (_cmbBind.Items.Count > 0) _cmbBind.SelectedIndex = 0;
+    }
+
+    // catIndex: 0..BindingCatalog.Length-1 are the fixed built-in categories
+    // (DeportesCategory dynamic among them); beyond that, indices map to
+    // _customCategories, filtering settings.CustomTokens by category name.
+    private (string Label, string Token)[] GetCategoryItems(int catIndex)
+    {
+        if (catIndex == DeportesCategory) return BuildDeportesItems();
+        if (catIndex >= 0 && catIndex < BindingCatalog.Length) return BindingCatalog[catIndex].Items;
+
+        int customIdx = catIndex - BindingCatalog.Length;
+        if (customIdx < 0 || customIdx >= _customCategories.Count) return [];
+        string category = _customCategories[customIdx];
+        return _settings.CustomTokens
+            .Where(t => t.Category.Equals(category, StringComparison.OrdinalIgnoreCase))
+            .Select(t => (t.Name, $"{{custom.{t.Name}}}"))
+            .ToArray();
     }
 
     private (string Label, string Token)[] BuildDeportesItems()
@@ -542,9 +569,7 @@ sealed class CellGridEditorForm : Form
         int catIdx  = _cmbBindCategory.SelectedIndex;
         int bindIdx = _cmbBind.SelectedIndex;
         if (catIdx < 0 || bindIdx < 0) return;
-        var items = catIdx == DeportesCategory
-            ? BuildDeportesItems()
-            : BindingCatalog[catIdx].Items;
+        var items = GetCategoryItems(catIdx);
         if (bindIdx >= items.Length) return;
         string token = items[bindIdx].Token;
         int sel = _txtTemplate.SelectionStart;

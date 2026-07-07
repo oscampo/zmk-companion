@@ -17,6 +17,7 @@ sealed class TrayIcon : IDisposable
 
     public event Action? ExitRequested;
     public event Action? CanvasEditorRequested;
+    public event Action? CustomTokensRequested;
     public event Action? PomodoroToggleRequested;
     public event Action? PomodoroConfigRequested;
 
@@ -103,6 +104,10 @@ sealed class TrayIcon : IDisposable
 
         strip.Items.Add(new ToolStripMenuItem("Canvas…", null, (_, _) => CanvasEditorRequested?.Invoke())
             { Enabled = connected });
+        // No BLE connection needed - this just declares names/categories for the
+        // {custom.NAME} picker, values only ever come from `zkc --set` later.
+        strip.Items.Add(new ToolStripMenuItem("Tokens personalizados…", null,
+            (_, _) => CustomTokensRequested?.Invoke()));
 
         strip.Items.Add(new ToolStripSeparator());
 

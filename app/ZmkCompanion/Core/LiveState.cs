@@ -23,6 +23,13 @@ sealed class LiveState
     // Last text pushed by an external process via the named pipe (zkc CLI).
     public string ExternalText { get; private set; } = "";
 
+    // Named {custom.NAME} values, pushed by `zkc --set NAME value` / `--set
+    // NAME --watch`. Unlike ExternalText this is N independent channels, keyed
+    // by name, each usable in any row's Template on any page, no full-screen
+    // override, no page-mode routing, they render through the same per-row
+    // Expand() pipeline as {weather.temp} or {battery.percent}.
+    private readonly Dictionary<string, string> _customValues = new(StringComparer.OrdinalIgnoreCase);
+
     // Pomodoro state, updated by AppContext on each PomodoroFeature tick.
     public string PomodoroTime  { get; private set; } = "--:--";
     public string PomodoroPhase { get; private set; } = "";
@@ -75,6 +82,14 @@ sealed class LiveState
     {
         if (text == ExternalText) return;
         ExternalText = text;
+        Changed?.Invoke();
+    }
+
+    // name is assumed already validated ([a-z0-9_]) by the pipe layer.
+    public void UpdateCustom(string name, string value)
+    {
+        if (_customValues.TryGetValue(name, out var old) && old == value) return;
+        _customValues[name] = value;
         Changed?.Invoke();
     }
 
@@ -175,6 +190,11 @@ sealed class LiveState
             "ext.text"        => ExternalText,
             _ when key.StartsWith("ext.text.", StringComparison.OrdinalIgnoreCase)
                               => ExtTextLine(key["ext.text.".Length..]),
+            // "" (not the unresolved-"{key}" fallback below) for a declared-but-
+            // never-set custom token: that's the normal pending state before any
+            // script has run its first `zkc --set`, not a typo to flag.
+            _ when key.StartsWith("custom.", StringComparison.OrdinalIgnoreCase)
+                              => _customValues.GetValueOrDefault(key["custom.".Length..], ""),
             _                 => $"{{{key}}}",
         };
 

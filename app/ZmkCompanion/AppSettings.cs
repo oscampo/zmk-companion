@@ -38,6 +38,11 @@ sealed class AppSettings
     // {"football/nfl": "KC", "soccer/fifa.cwc": "COL"}
     public Dictionary<string, string> SportsTeams { get; set; } = new();
 
+    // User-declared {custom.NAME} tokens (name + picker category only, no
+    // value, values are runtime-only, pushed via `zkc --set`). Managed from
+    // the tray's "Tokens personalizados…" menu item.
+    public List<CustomTokenDef> CustomTokens { get; set; } = new();
+
     // Legacy fields — not written after migration.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<CanvasPage>? Pages { get; set; }

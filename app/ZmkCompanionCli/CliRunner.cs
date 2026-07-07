@@ -17,7 +17,16 @@ internal static class CliRunner
         }
 
         if (args.Length >= 1 && args[0] is "--watch" or "-w")
-            return await WatchAsync();
+            return await WatchAsync(target: null);
+
+        if (args.Length >= 2 && args[0] == "--set")
+        {
+            string name = args[1];
+            if (args.Length >= 3 && args[2] is "--watch" or "-w")
+                return await WatchAsync(target: name);
+            string value = args.Length >= 3 ? string.Join(" ", args[2..]) : "";
+            return await SetAsync(name, value);
+        }
 
         return await SendAsync(string.Join(" ", args));
     }
@@ -44,7 +53,7 @@ internal static class CliRunner
         catch (Exception ex) { return Err(ex.Message); }
     }
 
-    private static async Task<int> WatchAsync()
+    private static async Task<int> SetAsync(string name, string value)
     {
         try
         {
@@ -54,9 +63,32 @@ internal static class CliRunner
             using var writer = Writer(pipe);
             using var reader = Reader(pipe);
 
-            await writer.WriteLineAsync("WATCH");
+            await writer.WriteLineAsync($"SET\t{name}\t{value}");
+
+            string? response = await reader.ReadLineAsync();
+            if (response is null)  return Err("no response from tray app (pipe closed unexpectedly)");
+            if (response == "OK") { Console.WriteLine("Sent."); return 0; }
+            return Err(response.Length > 4 ? response[4..] : "set failed");
+        }
+        catch (Exception ex) { return Err(ex.Message); }
+    }
+
+    // target: null streams into {ext.text}/{ext.text.N} (unnamed channel, same
+    // as before); a name streams into that {custom.<name>} channel instead.
+    private static async Task<int> WatchAsync(string? target)
+    {
+        try
+        {
+            using var pipe = Connect(out bool connected);
+            if (!connected) return TrayNotRunning();
+
+            using var writer = Writer(pipe);
+            using var reader = Reader(pipe);
+
+            await writer.WriteLineAsync(target is null ? "WATCH" : $"WATCH\t{target}");
             string? ready = await reader.ReadLineAsync();
-            if (ready != "READY") return 1;
+            if (ready != "READY")
+                return Err(ready is { Length: > 4 } ? ready[4..] : "watch rejected");
 
             // Read raw bytes from stdin (not Console.In) so the read is genuinely
             // overlapped I/O: Console.In is a SyncTextReader whose ReadAsync can
@@ -152,11 +184,14 @@ internal static class CliRunner
         zkc — ZMK Keyboard Companion CLI
 
         Usage:
-          zkc "text"        Send text to the keyboard display (persists until next update)
-          zkc ""            Clear the text display and restore the canvas page
-          zkc --watch       Read lines from stdin and send each one live
-          zkc -w            Alias for --watch
-          zkc --help        Show this help
+          zkc "text"           Send text to the keyboard display (persists until next update)
+          zkc ""               Clear the text display and restore the canvas page
+          zkc --watch          Read lines from stdin and send each one live
+          zkc -w               Alias for --watch
+          zkc --set NAME "val" Set a named {custom.NAME} token to a value
+          zkc --set NAME --watch
+                               Read lines from stdin, updating {custom.NAME} live
+          zkc --help           Show this help
 
         Examples:
           zkc "Hola mundo"
@@ -164,6 +199,8 @@ internal static class CliRunner
           echo "score: 3-1" | zkc --watch
           python reloj.py | zkc --watch
           zkc "Bateria: \{battery.percent\}"
+          zkc --set cpu_temp "45C"
+          sensors.sh | zkc --set cpu_temp --watch
 
         Notes:
           Use \n in quoted strings for multi-line text.
@@ -173,6 +210,10 @@ internal static class CliRunner
           to their current live value before display; unescaped {like this} is
           shown as literal text. An unknown token is left as "{key}" unresolved,
           as a visible sign of a typo rather than being silently dropped.
+          {custom.NAME} works from `zkc --set` right away; declaring it from
+          the tray's "Tokens personalizados…" menu (name + category) is only
+          so it shows up in the editor's token picker, not required to work.
+          NAME may only use a-z, 0-9, _.
           The ZMK Companion tray app must be running.
         """);
 }
