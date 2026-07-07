@@ -65,6 +65,7 @@ sealed class ZmkAppContext : ApplicationContext
         _tray.CustomTokensRequested   += OnCustomTokens;
         _tray.PomodoroToggleRequested += OnPomodoroToggle;
         _tray.PomodoroConfigRequested += OnPomodoroConfig;
+        _tray.ManualReconnectRequested += OnManualReconnect;
 
         _pomodoro.StateChanged     += OnPomodoroStateChanged;
         _pomodoro.SessionCompleted += OnPomodoroCompleted;
@@ -573,6 +574,27 @@ sealed class ZmkAppContext : ApplicationContext
     {
         try   { await ConnectLoopAsync(_cts.Token); }
         finally { _reconnecting = false; }
+    }
+
+    // "Reconectar" tray menu item. Previously called _ble.ScanAndConnectAsync()
+    // directly (bypassing _reconnecting entirely), which raced against
+    // whatever background retry loop OnDisconnected/the watchdog had already
+    // started (ConnectToDeviceAsync's first step is DisposeDevice(), tearing
+    // down state the other in-flight attempt was still using), and gave no
+    // feedback either way, so a click looked like it did nothing regardless
+    // of whether it silently failed or just lost the race. Routed through the
+    // same guard now: at most one reconnect attempt in flight, and every
+    // click gets a visible response instead of quietly no-op'ing.
+    private void OnManualReconnect()
+    {
+        if (_reconnecting)
+        {
+            _tray.ShowBalloonTip(2000, "ZMK Companion", "Ya se está buscando el teclado…", ToolTipIcon.Info);
+            return;
+        }
+        _tray.ShowBalloonTip(2000, "ZMK Companion", "Buscando teclado…", ToolTipIcon.Info);
+        _reconnecting = true;
+        _ = ReconnectAsync();
     }
 
     private void OnExit()

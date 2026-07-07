@@ -20,6 +20,7 @@ sealed class TrayIcon : IDisposable
     public event Action? CustomTokensRequested;
     public event Action? PomodoroToggleRequested;
     public event Action? PomodoroConfigRequested;
+    public event Action? ManualReconnectRequested;
 
     // Controlled by AppContext: reflects whether any page has a Pomodoro widget.
     public bool HasPomodoroWidget { get; set; }
@@ -122,7 +123,7 @@ sealed class TrayIcon : IDisposable
         strip.Items.Add(new ToolStripSeparator());
 
         if (!connected)
-            strip.Items.Add(new ToolStripMenuItem("Reconectar", null, (_, _) => OnReconnect()));
+            strip.Items.Add(new ToolStripMenuItem("Reconectar", null, (_, _) => ManualReconnectRequested?.Invoke()));
         else
             strip.Items.Add(new ToolStripMenuItem("Desconectar", null, (_, _) => OnDisconnect()));
 
@@ -134,9 +135,6 @@ sealed class TrayIcon : IDisposable
     }
 
     // ── Handlers ─────────────────────────────────────────────────────────────
-
-    private void OnReconnect() =>
-        _ = Task.Run(async () => await _ble.ScanAndConnectAsync());
 
     private void OnDisconnect() =>
         _ = _ble.SendAsync(Protocol.BuildClear());
