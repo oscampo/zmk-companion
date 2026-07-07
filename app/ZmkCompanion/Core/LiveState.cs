@@ -17,6 +17,10 @@ sealed class LiveState
     // zmk_keymap_highest_layer_active(), 0-based, from 0x1526 byte 2.
     // -1 = not yet reported (old firmware without byte 2, or not connected).
     public int  Layer           { get; private set; } = -1;
+    // Raw zmk_wpm_get_state() from 0x1526 byte 3, no smoothing: decays to 0
+    // within ZMK's own ~5s window when idle, same as the native widget.
+    // -1 = not yet reported (old firmware without byte 3, or not connected).
+    public int  Wpm             { get; private set; } = -1;
 
     // Weather snapshot, refreshed periodically by AppContext from WeatherFeature.
     public string WeatherIcon { get; private set; } = "";
@@ -79,6 +83,13 @@ sealed class LiveState
     {
         if (layer == Layer) return;
         Layer = layer;
+        Changed?.Invoke();
+    }
+
+    public void UpdateWpm(int wpm)
+    {
+        if (wpm == Wpm) return;
+        Wpm = wpm;
         Changed?.Invoke();
     }
 
@@ -207,6 +218,7 @@ sealed class LiveState
             "conn.type"       => UsbActive ? "USB" : "BLE",
             "conn.profile"    => UsbActive || BleProfile < 0 ? "?" : $"{BleProfile + 1}",
             "layer"           => Layer < 0 ? "--" : $"{Layer}", // 0-based, matches ZMK's own indexing
+            "wpm"             => Wpm   < 0 ? "--" : $"{Wpm}",  // raw, decays to 0 when idle (see UpdateWpm)
             "time"            => DateTime.Now.ToString(h24 ? "HH:mm" : "h:mm"),
             "time24"          => DateTime.Now.ToString("HH:mm"),
             "time12"          => DateTime.Now.ToString("h:mm"),
@@ -243,7 +255,7 @@ sealed class LiveState
                 bool applyNum   = numConvert   && (isSports || isCustom || key is "time" or "time24" or "time12"
                                                         or "time.hh" or "time.mm" or "time.dd"
                                                         or "date" or "date.day" or "date.month"
-                                                        or "conn.profile" or "layer" or "weather" or "weather.temp");
+                                                        or "conn.profile" or "layer" or "wpm" or "weather" or "weather.temp");
                 if (applyNum || applyAlpha)
                     raw = ApplyGlyphStyles(raw, applyNum ? cfg.NumericStyle : "text",
                                                applyAlpha ? cfg.AlphaStyle : "text");

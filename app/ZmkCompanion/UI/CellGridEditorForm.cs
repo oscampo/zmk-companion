@@ -116,6 +116,7 @@ sealed class CellGridEditorForm : Form
             ("Perfil BLE",           "{conn.profile}"),
             ("Barra perfiles (5)",   "{conn.profilebar}"),
             ("Layer activo",         "{layer}"),
+            ("WPM",                  "{wpm}"),
             ("Texto ext. (completo)","{ext.text}"),
             ("Texto ext. línea 1",   "{ext.text.0}"),
             ("Texto ext. línea 2",   "{ext.text.1}"),

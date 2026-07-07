@@ -491,16 +491,20 @@ sealed class ZmkAppContext : ApplicationContext
 
     private void OnBatteryLevelChanged(byte level) => _liveState.UpdateBattery(level, false);
 
-    private void OnStatusChanged(byte status, byte bonds, byte layer)
+    private void OnStatusChanged(byte status, byte bonds, byte layer, byte wpm)
     {
         bool usb      = (status & 0x01) != 0;
         int  profile  = (status >> 1) & 0x07;
         int  bondMask = bonds & 0x1F;
         _liveState.UpdateConnection(usb, profile, bondMask);
-        // 0xFF sentinel = firmware doesn't send byte 2 yet (not reflashed with
-        // the layer-index addition to 0x1526); -1 = "unknown", same convention
-        // as BatteryLevel/BleProfile before their first real reading.
+        // 0xFF sentinel = firmware doesn't send byte 2/3 yet (not reflashed
+        // with the layer/WPM additions to 0x1526); -1 = "unknown", same
+        // convention as BatteryLevel/BleProfile before their first reading.
+        // wpm is passed through raw, deliberately no "hold last nonzero"
+        // smoothing (see custom_status_screen.c's build_status_bytes comment
+        // for why, ZMK's own decay-to-0-when-idle is a real signal we want).
         _liveState.UpdateLayer(layer == 0xFF ? -1 : layer);
+        _liveState.UpdateWpm(wpm == 0xFF ? -1 : wpm);
     }
 
     // ── Display editor ────────────────────────────────────────────────────────

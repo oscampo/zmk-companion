@@ -27,7 +27,8 @@ sealed class BleService : IDisposable
     //   byte 0 — bit 0 = USB-HID active, bits[3:1] = BLE profile (0-4)
     //   byte 1 — bits[4:0] = bond mask (bit i = profile i+1 has a paired device); 0xFF if absent (old firmware)
     //   byte 2, active layer index (zmk_keymap_highest_layer_active()); 0xFF if absent (old firmware)
-    public event Action<byte, byte, byte>?   StatusChanged;
+    //   byte 3, raw zmk_wpm_get_state() clamped to 0-255, no smoothing; 0xFF if absent (old firmware)
+    public event Action<byte, byte, byte, byte>?   StatusChanged;
 
     public bool IsConnected     => _device?.ConnectionStatus == BluetoothConnectionStatus.Connected;
     public bool HasBitmapChar   => _bitmapCharacteristic is not null;
@@ -153,7 +154,8 @@ sealed class BleService : IDisposable
                     byte s = r.ReadByte();
                     byte m = r.UnconsumedBufferLength >= 1 ? r.ReadByte() : (byte)0xFF;
                     byte l = r.UnconsumedBufferLength >= 1 ? r.ReadByte() : (byte)0xFF;
-                    _uiContext.Post(_ => StatusChanged?.Invoke(s, m, l), null);
+                    byte w = r.UnconsumedBufferLength >= 1 ? r.ReadByte() : (byte)0xFF;
+                    _uiContext.Post(_ => StatusChanged?.Invoke(s, m, l, w), null);
                 }
             }
             catch { }
@@ -230,7 +232,8 @@ sealed class BleService : IDisposable
         byte status = r.ReadByte();
         byte bonds  = r.UnconsumedBufferLength >= 1 ? r.ReadByte() : (byte)0xFF;
         byte layer  = r.UnconsumedBufferLength >= 1 ? r.ReadByte() : (byte)0xFF;
-        _uiContext.Post(_ => StatusChanged?.Invoke(status, bonds, layer), null);
+        byte wpm    = r.UnconsumedBufferLength >= 1 ? r.ReadByte() : (byte)0xFF;
+        _uiContext.Post(_ => StatusChanged?.Invoke(status, bonds, layer, wpm), null);
     }
 
     // ── Send ──────────────────────────────────────────────────────────────────
