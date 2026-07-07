@@ -15,6 +15,10 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Resources\FiraCodeNerdFont-Regular.ttf" />
+    <!-- name<TAB>hex-codepoint, one per line. Derived from the official
+         nerd-fonts glyphnames.json (name+code only, metadata stripped) for
+         GlyphPickerDialog's name search. -->
+    <EmbeddedResource Include="Resources\glyphnames.tsv" />
   </ItemGroup>
 
   <!-- Publish: framework-dependent single-file .exe (requires .NET 8 Desktop Runtime). -->

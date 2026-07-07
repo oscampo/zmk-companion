@@ -7,7 +7,8 @@ namespace ZmkCompanion.UI;
 
 // Full glyph picker: enumerates every codepoint in the embedded Nerd Font via
 // its cmap table, groups them into NF categories, and lets the user filter by
-// category or hex search.  Click a cell to select; Escape to cancel.
+// category, hex, or icon name (e.g. "keyboard", "gear"). Click a cell to
+// select; Escape to cancel.
 sealed class GlyphPickerDialog : Form
 {
     public string? SelectedGlyph { get; private set; }
@@ -30,6 +31,12 @@ sealed class GlyphPickerDialog : Form
     private readonly Label     _status;
     private int[]              _allNfCps;   // codepoints >= U+E000 from the font
 
+    // Name search data: only names whose codepoint actually exists in this
+    // font's cmap survive the filter, so a name match always renders (no
+    // tofu boxes) even though the source list covers every Nerd Font variant.
+    private readonly (string Name, int Codepoint)[] _glyphNames;
+    private readonly Dictionary<int, string>        _nameByCodepoint;
+
     public GlyphPickerDialog()
     {
         Text            = "Glyph Picker — click to select";
@@ -46,6 +53,14 @@ sealed class GlyphPickerDialog : Form
         _allNfCps = FontCmapReader.GetAllCodepoints()
                         .Where(cp => cp >= 0xE000)
                         .ToArray();
+
+        var cmapSet = new HashSet<int>(_allNfCps);
+        _glyphNames = GlyphNames.GetAll().Where(g => cmapSet.Contains(g.Codepoint)).ToArray();
+        // First name wins when a codepoint has more than one alias, only used
+        // for the hover status label, not for search (search scans all aliases).
+        _nameByCodepoint = _glyphNames
+            .GroupBy(g => g.Codepoint)
+            .ToDictionary(g => g.Key, g => g.First().Name);
 
         // ── Top toolbar ─────────────────────────────────────────────────────
         var toolbar = new Panel
@@ -87,7 +102,7 @@ sealed class GlyphPickerDialog : Form
             Size        = new Size(120, 23),
             BackColor   = Color.FromArgb(50, 50, 50),
             ForeColor   = Color.White,
-            PlaceholderText = "hex…",
+            PlaceholderText = "nombre o hex…",
         };
 
         toolbar.Controls.AddRange([lblCat, cmbCat, lblSrc, txtSearch]);
@@ -120,9 +135,15 @@ sealed class GlyphPickerDialog : Form
 
         _grid.HoveredCodepointChanged += cp =>
         {
-            _status.Text = cp >= 0
-                ? $"U+{cp:X5}  ({char.ConvertFromUtf32(cp)})"
-                : $"{_grid.Count} glyphs";
+            if (cp >= 0)
+            {
+                string label = _nameByCodepoint.TryGetValue(cp, out var n) ? $"  {n}" : "";
+                _status.Text = $"U+{cp:X5}  ({char.ConvertFromUtf32(cp)}){label}";
+            }
+            else
+            {
+                _status.Text = $"{_grid.Count} glyphs";
+            }
             _status.ForeColor = cp >= 0 ? Color.Silver : Color.Gray;
         };
 
@@ -130,12 +151,21 @@ sealed class GlyphPickerDialog : Form
         {
             int catIdx = cmbCat.SelectedIndex;
             var catMatch = Categories[catIdx < 0 ? 0 : catIdx].Match;
-            string q = txtSearch.Text.Trim().ToUpperInvariant();
+            string q = txtSearch.Text.Trim();
 
-            var filtered = _allNfCps
-                .Where(cp => catMatch(cp))
-                .Where(cp => q.Length == 0 || $"{cp:X5}".Contains(q))
-                .ToArray();
+            IEnumerable<int> matched = _allNfCps.Where(catMatch);
+            if (q.Length > 0)
+            {
+                string qHex = q.ToUpperInvariant();
+                var byHex  = matched.Where(cp => $"{cp:X5}".Contains(qHex));
+                var byName = _glyphNames
+                    .Where(g => g.Name.Contains(q, StringComparison.OrdinalIgnoreCase))
+                    .Select(g => g.Codepoint)
+                    .Where(catMatch);
+                matched = byHex.Union(byName);
+            }
+
+            var filtered = matched.Distinct().OrderBy(cp => cp).ToArray();
             _grid.SetCodepoints(filtered);
             _status.Text      = $"{filtered.Length} glyphs";
             _status.ForeColor = Color.Gray;
