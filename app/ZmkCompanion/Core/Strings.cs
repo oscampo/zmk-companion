@@ -123,4 +123,19 @@ static class Strings
           "Shows custom information on your ZMK keyboard's\n" +
           "OLED screen over BLE.\n\n" +
           "github.com/oscampo/zmk-companion";
+
+    // ── AppContext balloons/messages ─────────────────────────────────────────────
+    public static string StaleTokenTitle => Current == AppLanguage.Es ? "Token desactualizado" : "Stale token";
+    public static string StaleTokenBody(string name, string age) => Current == AppLanguage.Es
+        ? $"{{custom.{name}}} no se actualiza hace {age}."
+        : $"{{custom.{name}}} hasn't updated in {age}.";
+    public static string PomodoroCompletedBalloon => Current == AppLanguage.Es
+        ? "¡Sesión Pomodoro completada!" : "Pomodoro session complete!";
+    public static string PomodoroPhaseWork      => Current == AppLanguage.Es ? "Trabajo"      : "Work";
+    public static string PomodoroPhaseBreak     => Current == AppLanguage.Es ? "Pausa"        : "Break";
+    public static string PomodoroPhaseLongBreak => Current == AppLanguage.Es ? "Pausa Larga"  : "Long Break";
+    public static string AlreadySearchingBalloon => Current == AppLanguage.Es
+        ? "Ya se está buscando el teclado…" : "Already searching for the keyboard…";
+    public static string SearchingBalloon => Current == AppLanguage.Es
+        ? "Buscando teclado…" : "Searching for keyboard…";
 }

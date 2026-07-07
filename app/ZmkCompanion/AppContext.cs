@@ -235,8 +235,8 @@ sealed class ZmkAppContext : ApplicationContext
             if (isStale)
             {
                 if (_staleWarned.Add(def.Name)) // first tick past threshold for this episode
-                    _tray.ShowError("Token desactualizado",
-                        $"{{custom.{def.Name}}} no se actualiza hace {FormatAge(age)}.");
+                    _tray.ShowError(Strings.StaleTokenTitle,
+                        Strings.StaleTokenBody(def.Name, FormatAge(age)));
             }
             else
             {
@@ -405,7 +405,7 @@ sealed class ZmkAppContext : ApplicationContext
     {
         _lastTrayPhase = PomodoroPhase.Done;
         UpdateTrayPomodoro();
-        _tray.ShowBalloonTip(3000, "ZMK Companion", "¡Sesión Pomodoro completada!", ToolTipIcon.Info);
+        _tray.ShowBalloonTip(3000, "ZMK Companion", Strings.PomodoroCompletedBalloon, ToolTipIcon.Info);
     }
 
     private void UpdateTrayPomodoro()
@@ -418,9 +418,9 @@ sealed class ZmkAppContext : ApplicationContext
         {
             string phaseLabel = _pomodoro.Phase switch
             {
-                PomodoroPhase.Work      => "Work",
-                PomodoroPhase.Break     => "Break",
-                PomodoroPhase.LongBreak => "Long Break",
+                PomodoroPhase.Work      => Strings.PomodoroPhaseWork,
+                PomodoroPhase.Break     => Strings.PomodoroPhaseBreak,
+                PomodoroPhase.LongBreak => Strings.PomodoroPhaseLongBreak,
                 _                       => "",
             };
             int m = _pomodoro.SecondsRemaining / 60, s = _pomodoro.SecondsRemaining % 60;
@@ -601,10 +601,10 @@ sealed class ZmkAppContext : ApplicationContext
         _manualDisconnect = false; // explicit override of a prior "Desconectar"
         if (_reconnecting)
         {
-            _tray.ShowBalloonTip(2000, "ZMK Companion", "Ya se está buscando el teclado…", ToolTipIcon.Info);
+            _tray.ShowBalloonTip(2000, "ZMK Companion", Strings.AlreadySearchingBalloon, ToolTipIcon.Info);
             return;
         }
-        _tray.ShowBalloonTip(2000, "ZMK Companion", "Buscando teclado…", ToolTipIcon.Info);
+        _tray.ShowBalloonTip(2000, "ZMK Companion", Strings.SearchingBalloon, ToolTipIcon.Info);
         _reconnecting = true;
         _ = ReconnectAsync();
     }
