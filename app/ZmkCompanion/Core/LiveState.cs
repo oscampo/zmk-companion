@@ -16,7 +16,12 @@ sealed class LiveState
     public int  BleProfileMask  { get; private set; } = 0b11111;  // bits 0-4: profiles 1-5 bonded
     // zmk_keymap_highest_layer_active(), 0-based, from 0x1526 byte 2.
     // -1 = not yet reported (old firmware without byte 2, or not connected).
-    public int  Layer           { get; private set; } = -1;
+    public int    Layer         { get; private set; } = -1;
+    // zmk_keymap_layer_name() for the active layer, from 0x1526 bytes 4+.
+    // "" = not yet reported (old firmware without the trailing name, or not
+    // connected) - same as an unnamed layer would look, that ambiguity is
+    // accepted since ZMK layers are conventionally always labeled.
+    public string LayerName     { get; private set; } = "";
     // Raw zmk_wpm_get_state() from 0x1526 byte 3, no smoothing: decays to 0
     // within ZMK's own ~5s window when idle, same as the native widget.
     // -1 = not yet reported (old firmware without byte 3, or not connected).
@@ -83,6 +88,13 @@ sealed class LiveState
     {
         if (layer == Layer) return;
         Layer = layer;
+        Changed?.Invoke();
+    }
+
+    public void UpdateLayerName(string name)
+    {
+        if (name == LayerName) return;
+        LayerName = name;
         Changed?.Invoke();
     }
 
@@ -217,7 +229,8 @@ sealed class LiveState
             "battery.percent" => BatteryLevel < 0 ? "--%": $"{BatteryLevel}%",
             "conn.type"       => UsbActive ? "USB" : "BLE",
             "conn.profile"    => UsbActive || BleProfile < 0 ? "?" : $"{BleProfile + 1}",
-            "layer"           => Layer < 0 ? "--" : $"{Layer}", // 0-based, matches ZMK's own indexing
+            "layer.number"    => Layer < 0 ? "--" : $"{Layer}", // 0-based, matches ZMK's own indexing
+            "layer.name"      => LayerName,
             "wpm"             => Wpm   < 0 ? "--" : $"{Wpm}",  // raw, decays to 0 when idle (see UpdateWpm)
             "time"            => DateTime.Now.ToString(h24 ? "HH:mm" : "h:mm"),
             "time24"          => DateTime.Now.ToString("HH:mm"),
@@ -251,11 +264,11 @@ sealed class LiveState
             bool alphaConvert = cfg.AlphaStyle   != "text";
             if (numConvert || alphaConvert)
             {
-                bool applyAlpha = alphaConvert && (isSports || isCustom || key is "date" or "date.month" or "weather" or "weather.city");
+                bool applyAlpha = alphaConvert && (isSports || isCustom || key is "date" or "date.month" or "weather" or "weather.city" or "layer.name");
                 bool applyNum   = numConvert   && (isSports || isCustom || key is "time" or "time24" or "time12"
                                                         or "time.hh" or "time.mm" or "time.dd"
                                                         or "date" or "date.day" or "date.month"
-                                                        or "conn.profile" or "layer" or "wpm" or "weather" or "weather.temp");
+                                                        or "conn.profile" or "layer.number" or "wpm" or "weather" or "weather.temp");
                 if (applyNum || applyAlpha)
                     raw = ApplyGlyphStyles(raw, applyNum ? cfg.NumericStyle : "text",
                                                applyAlpha ? cfg.AlphaStyle : "text");

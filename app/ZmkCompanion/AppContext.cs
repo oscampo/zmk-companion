@@ -66,6 +66,7 @@ sealed class ZmkAppContext : ApplicationContext
         _tray.PomodoroToggleRequested += OnPomodoroToggle;
         _tray.PomodoroConfigRequested += OnPomodoroConfig;
         _tray.ManualReconnectRequested += OnManualReconnect;
+        _tray.ManualDisconnectRequested += OnManualDisconnect;
 
         _pomodoro.StateChanged     += OnPomodoroStateChanged;
         _pomodoro.SessionCompleted += OnPomodoroCompleted;
@@ -203,7 +204,7 @@ sealed class ZmkAppContext : ApplicationContext
         _connectionWatchdog.Tick += (_, _) =>
         {
             bool healthy = _ble.IsConnected && _ble.HasCellGridChar;
-            if (healthy || _reconnecting) return;
+            if (healthy || _reconnecting || _manualDisconnect) return;
             DebugLog.Log($"watchdog: unhealthy link (IsConnected={_ble.IsConnected} HasCellGridChar={_ble.HasCellGridChar}) — forcing reconnect");
             _reconnecting = true;
             _ = ReconnectAsync();
@@ -492,7 +493,7 @@ sealed class ZmkAppContext : ApplicationContext
 
     private void OnBatteryLevelChanged(byte level) => _liveState.UpdateBattery(level, false);
 
-    private void OnStatusChanged(byte status, byte bonds, byte layer, byte wpm)
+    private void OnStatusChanged(byte status, byte bonds, byte layer, byte wpm, string layerName)
     {
         bool usb      = (status & 0x01) != 0;
         int  profile  = (status >> 1) & 0x07;
@@ -505,6 +506,7 @@ sealed class ZmkAppContext : ApplicationContext
         // smoothing (see custom_status_screen.c's build_status_bytes comment
         // for why, ZMK's own decay-to-0-when-idle is a real signal we want).
         _liveState.UpdateLayer(layer == 0xFF ? -1 : layer);
+        _liveState.UpdateLayerName(layerName);
         _liveState.UpdateWpm(wpm == 0xFF ? -1 : wpm);
     }
 
@@ -550,6 +552,7 @@ sealed class ZmkAppContext : ApplicationContext
     private void OnConnected(string deviceName)
     {
         DebugLog.Log($"OnConnected: {deviceName} now={DateTime.Now:HH:mm:ss.fff}");
+        _manualDisconnect = false; // a fresh connection means any prior "Desconectar" intent is moot
         _tray.SetConnected(deviceName);
         _ = _ble.SendAsync(Protocol.BuildClock());
         LoadPage(_activePage);
@@ -557,6 +560,12 @@ sealed class ZmkAppContext : ApplicationContext
     }
 
     private bool _reconnecting;
+    // Set by "Desconectar" so OnDisconnected/the watchdog don't immediately
+    // undo it by auto-reconnecting a fraction of a second later. Cleared by
+    // "Reconectar" (explicit override) or a fresh successful connection
+    // (OnConnected), so a FUTURE unexpected drop still auto-reconnects
+    // normally, this only suppresses the one the user just asked for.
+    private bool _manualDisconnect;
 
     private void OnDisconnected()
     {
@@ -565,7 +574,7 @@ sealed class ZmkAppContext : ApplicationContext
         _pomodoro.Stop();
         _tray.SetDisconnected();
 
-        if (_reconnecting) return;
+        if (_reconnecting || _manualDisconnect) return;
         _reconnecting = true;
         _ = ReconnectAsync();
     }
@@ -587,6 +596,7 @@ sealed class ZmkAppContext : ApplicationContext
     // click gets a visible response instead of quietly no-op'ing.
     private void OnManualReconnect()
     {
+        _manualDisconnect = false; // explicit override of a prior "Desconectar"
         if (_reconnecting)
         {
             _tray.ShowBalloonTip(2000, "ZMK Companion", "Ya se está buscando el teclado…", ToolTipIcon.Info);
@@ -595,6 +605,15 @@ sealed class ZmkAppContext : ApplicationContext
         _tray.ShowBalloonTip(2000, "ZMK Companion", "Buscando teclado…", ToolTipIcon.Info);
         _reconnecting = true;
         _ = ReconnectAsync();
+    }
+
+    // "Desconectar" tray menu item. Sets _manualDisconnect before calling
+    // _ble.Disconnect() so OnDisconnected (which Disconnect() triggers, same
+    // as an unexpected drop) sees it and skips auto-reconnecting.
+    private void OnManualDisconnect()
+    {
+        _manualDisconnect = true;
+        _ble.Disconnect();
     }
 
     private void OnExit()
