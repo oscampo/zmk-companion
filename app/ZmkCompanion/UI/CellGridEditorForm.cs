@@ -367,9 +367,7 @@ sealed class CellGridEditorForm : Form
         btnInsert.Click += OnInsertBinding;
         _rowEditorPanel.Controls.Add(btnInsert);
 
-        // Full Nerd Font glyph picker (GlyphPickerDialog/FontCmapReader already
-        // existed, previously wired only to the unreachable legacy
-        // CanvasEditorForm - nothing new to build, just reconnecting it here).
+        // Full Nerd Font glyph picker (GlyphPickerDialog/FontCmapReader).
         var btnGlyph = new Button { Text = "NF…", Location = new Point(346, 180), Size = new Size(40, 23) };
         btnGlyph.Click += OnInsertGlyph;
         _rowEditorPanel.Controls.Add(btnGlyph);
