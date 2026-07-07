@@ -115,6 +115,7 @@ sealed class CellGridEditorForm : Form
             ("Tipo conexión",        "{conn.type}"),
             ("Perfil BLE",           "{conn.profile}"),
             ("Barra perfiles (5)",   "{conn.profilebar}"),
+            ("Layer activo",         "{layer}"),
             ("Texto ext. (completo)","{ext.text}"),
             ("Texto ext. línea 1",   "{ext.text.0}"),
             ("Texto ext. línea 2",   "{ext.text.1}"),
@@ -284,7 +285,18 @@ sealed class CellGridEditorForm : Form
         _rowEditorPanel.Controls.Add(_cmbSplit);
 
         _rowEditorPanel.Controls.Add(new Label { Text = "Template:", Location = new Point(0, 32), Size = new Size(62, 18) });
-        _txtTemplate = new TextBox { Location = new Point(0, 50), Size = new Size(385, 60), Multiline = true };
+        // NerdFont, not the inherited UI font: without this, any inserted glyph
+        // (from the "NF..." picker or a {token}'s icon) has no matching glyph in
+        // the default font, so Windows silently font-fallbacks to some other
+        // installed font that happens to have *something* mapped to that same
+        // codepoint, showing an unrelated character instead of the one picked.
+        _txtTemplate = new TextBox
+        {
+            Location  = new Point(0, 50),
+            Size      = new Size(385, 60),
+            Multiline = true,
+            Font      = NerdFont.CreateFont(12f),
+        };
         _txtTemplate.TextChanged += OnTemplateChanged;
         _rowEditorPanel.Controls.Add(_txtTemplate);
 
@@ -542,9 +554,10 @@ sealed class CellGridEditorForm : Form
         {
             ("Partido (resumen)",    "{sports}"),
             ("Equipo",               "{sports.team}"),
-            ("Marcador en juego",    "{sports.game}"),
+            ("Equipos en vivo",      "{sports.live_game}"),
+            ("Marcador en vivo",     "{sports.live_marker}"),
             ("Estado (icono)",       "{sports.marker}"),
-            ("Tiempo en juego",      "{sports.time}"),
+            ("Tiempo en vivo",       "{sports.live_time}"),
             ("Liga",                 "{sports.league}"),
             ("Últ. partido",         "{sports.last_game}"),
             ("Últ. marcador",        "{sports.last_marker}"),

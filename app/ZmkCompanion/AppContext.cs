@@ -307,16 +307,14 @@ sealed class ZmkAppContext : ApplicationContext
         if (g is null)
             return new SportsSnapshot
             {
-                Sport   = league.Sport.ToString(),
-                League  = league.ShortName,
-                Team    = team,
-                Game    = "No games",
-                Summary = "No games",
+                Sport    = league.Sport.ToString(),
+                League   = league.ShortName,
+                Team     = team,
+                LiveGame = "No games",
+                Summary  = "No games",
             };
 
-        string game = g.StatusState == "pre"
-            ? $"{g.Away} @ {g.Home}"
-            : $"{g.Away} {g.AwayScore}-{g.HomeScore} {g.Home}";
+        bool isLive = g.StatusState == "in";
 
         string marker = g.StatusState switch
         {
@@ -333,10 +331,11 @@ sealed class ZmkAppContext : ApplicationContext
             Away      = g.Away,
             Home      = g.Home,
             Score     = g.StatusState == "post" ? $"{g.AwayScore}-{g.HomeScore}" : "",
-            Game      = game,
             Marker    = marker,
-            Time      = g.StatusState == "in"  ? g.StatusDetail : "",
             Scheduled = g.StatusState == "pre" ? g.StatusDetail : "",
+            LiveGame  = isLive ? $"{g.Home} {g.Away}" : "No games",
+            LiveScore = isLive ? $"{g.HomeScore} - {g.AwayScore}" : "",
+            LiveTime  = isLive ? g.StatusDetail : "",
             Summary   = SportsFeature.FormatGame(g),
         };
     }
@@ -492,12 +491,16 @@ sealed class ZmkAppContext : ApplicationContext
 
     private void OnBatteryLevelChanged(byte level) => _liveState.UpdateBattery(level, false);
 
-    private void OnStatusChanged(byte status, byte bonds)
+    private void OnStatusChanged(byte status, byte bonds, byte layer)
     {
         bool usb      = (status & 0x01) != 0;
         int  profile  = (status >> 1) & 0x07;
         int  bondMask = bonds & 0x1F;
         _liveState.UpdateConnection(usb, profile, bondMask);
+        // 0xFF sentinel = firmware doesn't send byte 2 yet (not reflashed with
+        // the layer-index addition to 0x1526); -1 = "unknown", same convention
+        // as BatteryLevel/BleProfile before their first real reading.
+        _liveState.UpdateLayer(layer == 0xFF ? -1 : layer);
     }
 
     // ── Display editor ────────────────────────────────────────────────────────

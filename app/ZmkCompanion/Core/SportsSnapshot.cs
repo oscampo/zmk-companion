@@ -14,9 +14,17 @@ sealed record SportsSnapshot
     public string Away      { get; init; } = "";  // away team abbreviation
     public string Home      { get; init; } = "";  // home team abbreviation
     public string Score     { get; init; } = "";  // "38-35" for post games, "" otherwise
-    public string Game      { get; init; } = "";  // "AWY @ HME" or "AWY 24-20 HME"
     public string Marker    { get; init; } = "";  // live/final glyph, blank when scheduled
-    public string Time      { get; init; } = "";  // live clock/period, blank otherwise
     public string Scheduled { get; init; } = "";  // date/time text, blank unless scheduled
+
+    // {sports.live_*}, populated only while StatusState=="in", so these are
+    // the "is a game live right now" fields (replaces the old combined
+    // {sports.game}/{sports.time}, which mixed live/pre/post formatting into
+    // one string). LiveGame falls back to "No games" when nothing is live,
+    // explicit rather than a blank row; LiveScore/LiveTime stay blank instead
+    // (a page with all three in adjacent tiers doesn't need "No games" x3).
+    public string LiveGame  { get; init; } = "";  // "[Home] [Away]", "No games" otherwise
+    public string LiveScore { get; init; } = "";  // "[HomeScore] - [AwayScore]", "" otherwise
+    public string LiveTime  { get; init; } = "";  // live clock/period, "" otherwise
     public string Summary   { get; init; } = "";  // full multi-line text (the plain {sports} binding)
 }

@@ -14,6 +14,9 @@ sealed class LiveState
     public bool UsbActive       { get; private set; }
     public int  BleProfile      { get; private set; } = -1;  // 0-4
     public int  BleProfileMask  { get; private set; } = 0b11111;  // bits 0-4: profiles 1-5 bonded
+    // zmk_keymap_highest_layer_active(), 0-based, from 0x1526 byte 2.
+    // -1 = not yet reported (old firmware without byte 2, or not connected).
+    public int  Layer           { get; private set; } = -1;
 
     // Weather snapshot, refreshed periodically by AppContext from WeatherFeature.
     public string WeatherIcon { get; private set; } = "";
@@ -69,6 +72,13 @@ sealed class LiveState
         UsbActive      = usb;
         BleProfile     = profile;
         BleProfileMask = profileMask;
+        Changed?.Invoke();
+    }
+
+    public void UpdateLayer(int layer)
+    {
+        if (layer == Layer) return;
+        Layer = layer;
         Changed?.Invoke();
     }
 
@@ -196,6 +206,7 @@ sealed class LiveState
             "battery.percent" => BatteryLevel < 0 ? "--%": $"{BatteryLevel}%",
             "conn.type"       => UsbActive ? "USB" : "BLE",
             "conn.profile"    => UsbActive || BleProfile < 0 ? "?" : $"{BleProfile + 1}",
+            "layer"           => Layer < 0 ? "--" : $"{Layer}", // 0-based, matches ZMK's own indexing
             "time"            => DateTime.Now.ToString(h24 ? "HH:mm" : "h:mm"),
             "time24"          => DateTime.Now.ToString("HH:mm"),
             "time12"          => DateTime.Now.ToString("h:mm"),
@@ -232,7 +243,7 @@ sealed class LiveState
                 bool applyNum   = numConvert   && (isSports || isCustom || key is "time" or "time24" or "time12"
                                                         or "time.hh" or "time.mm" or "time.dd"
                                                         or "date" or "date.day" or "date.month"
-                                                        or "conn.profile" or "weather" or "weather.temp");
+                                                        or "conn.profile" or "layer" or "weather" or "weather.temp");
                 if (applyNum || applyAlpha)
                     raw = ApplyGlyphStyles(raw, applyNum ? cfg.NumericStyle : "text",
                                                applyAlpha ? cfg.AlphaStyle : "text");
@@ -313,7 +324,7 @@ sealed class LiveState
                 "sport"     => s.Sport,
                 "league"    => s.League,
                 "team"      => s.Team,
-                "time"      => s.Time,
+                "time"      => s.LiveTime, // "" for _next/_last: StatusState is never "in" there
                 "scheduled" => s.Scheduled,
                 "date"      => SplitScheduled(s.Scheduled, 0),
                 "gametime"  => SplitScheduled(s.Scheduled, 1),
@@ -323,16 +334,17 @@ sealed class LiveState
 
         return field switch
         {
-            "sport"     => s.Sport,
-            "league"    => s.League,
-            "team"      => s.Team,
-            "game"      => s.Game,
-            "marker"    => s.Marker,
-            "time"      => s.Time,
-            "scheduled" => s.Scheduled,
-            "date"      => SplitScheduled(s.Scheduled, 0), // "7/10"
-            "gametime"  => SplitScheduled(s.Scheduled, 1), // "7:30p"
-            _           => s.Summary,
+            "sport"       => s.Sport,
+            "league"      => s.League,
+            "team"        => s.Team,
+            "live_game"   => s.LiveGame,
+            "live_marker" => s.LiveScore,
+            "live_time"   => s.LiveTime,
+            "marker"      => s.Marker,
+            "scheduled"   => s.Scheduled,
+            "date"        => SplitScheduled(s.Scheduled, 0), // "7/10"
+            "gametime"    => SplitScheduled(s.Scheduled, 1), // "7:30p"
+            _             => s.Summary,
         };
     }
 
