@@ -28,7 +28,10 @@ sealed class LiveState
     // by name, each usable in any row's Template on any page, no full-screen
     // override, no page-mode routing, they render through the same per-row
     // Expand() pipeline as {weather.temp} or {battery.percent}.
-    private readonly Dictionary<string, string> _customValues = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string>   _customValues    = new(StringComparer.OrdinalIgnoreCase);
+    // Wall-clock time of the last UpdateCustom() call per name, regardless of
+    // whether the value changed. Drives AppContext's stale-token balloon check.
+    private readonly Dictionary<string, DateTime> _customUpdatedAt = new(StringComparer.OrdinalIgnoreCase);
 
     // Pomodoro state, updated by AppContext on each PomodoroFeature tick.
     public string PomodoroTime  { get; private set; } = "--:--";
@@ -88,9 +91,28 @@ sealed class LiveState
     // name is assumed already validated ([a-z0-9_]) by the pipe layer.
     public void UpdateCustom(string name, string value)
     {
+        // Stamped unconditionally, even if value == old: a script re-sending
+        // the same reading (e.g. CPU temp holding steady at 45C) is still
+        // proof it's alive. Only the early-return below (no Changed raised)
+        // is gated on the value actually differing, to avoid a wasted re-render.
+        _customUpdatedAt[name] = DateTime.UtcNow;
         if (_customValues.TryGetValue(name, out var old) && old == value) return;
         _customValues[name] = value;
         Changed?.Invoke();
+    }
+
+    // false if name was never SET at all - that's the normal "pending" state
+    // (see Resolve's "custom." case, "" fallback), not staleness; AppContext's
+    // stale checker should skip it, not warn.
+    public bool TryGetCustomAge(string name, out TimeSpan age)
+    {
+        if (_customUpdatedAt.TryGetValue(name, out var t))
+        {
+            age = DateTime.UtcNow - t;
+            return true;
+        }
+        age = default;
+        return false;
     }
 
     public void UpdatePomodoro(string time, string phase, string bar, string icon, string cycle)
@@ -167,6 +189,7 @@ sealed class LiveState
 
         // Sports — {sports}, {sports:NFL}, {sports.team}, {sports.team:NFL}, etc.
         bool isSports = key.StartsWith("sports", StringComparison.OrdinalIgnoreCase);
+        bool isCustom = key.StartsWith("custom.", StringComparison.OrdinalIgnoreCase);
         string raw = isSports ? ResolveSports(key) : key switch
         {
             "battery.level"   => BatteryLevel < 0 ? "--"  : $"{BatteryLevel}",
@@ -205,8 +228,8 @@ sealed class LiveState
             bool alphaConvert = cfg.AlphaStyle   != "text";
             if (numConvert || alphaConvert)
             {
-                bool applyAlpha = alphaConvert && (isSports || key is "date" or "date.month" or "weather" or "weather.city");
-                bool applyNum   = numConvert   && (isSports || key is "time" or "time24" or "time12"
+                bool applyAlpha = alphaConvert && (isSports || isCustom || key is "date" or "date.month" or "weather" or "weather.city");
+                bool applyNum   = numConvert   && (isSports || isCustom || key is "time" or "time24" or "time12"
                                                         or "time.hh" or "time.mm" or "time.dd"
                                                         or "date" or "date.day" or "date.month"
                                                         or "conn.profile" or "weather" or "weather.temp");

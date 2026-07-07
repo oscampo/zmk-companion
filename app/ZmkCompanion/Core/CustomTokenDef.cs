@@ -10,4 +10,12 @@ sealed class CustomTokenDef
 {
     public string Name     { get; set; } = "";
     public string Category { get; set; } = "Personalizado";
+
+    // Balloon warning threshold: if no `zkc --set` has landed for this name in
+    // more than this many seconds, AppContext's stale-check timer shows a
+    // ToolTipIcon.Error balloon. 0 = never check (default; not every value
+    // needs a freshness guarantee - a battery temp update every few minutes
+    // is fine, a stock price streamed every second going quiet for 5 minutes
+    // is not, so this is per-token, not a global setting).
+    public int StaleAfterSeconds { get; set; } = 0;
 }

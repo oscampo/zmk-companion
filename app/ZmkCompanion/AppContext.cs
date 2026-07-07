@@ -36,6 +36,13 @@ sealed class ZmkAppContext : ApplicationContext
     private System.Windows.Forms.Timer? _heartbeatTimer;
     private System.Windows.Forms.Timer? _connectionWatchdog;
 
+    // Custom-token staleness balloons (see CustomTokenDef.StaleAfterSeconds).
+    // _staleWarned tracks which names already got a balloon for the CURRENT
+    // stale episode, so re-checking every tick doesn't repeat it every 30s;
+    // cleared once fresh data arrives again so a future episode re-warns.
+    private System.Windows.Forms.Timer? _staleCheckTimer;
+    private readonly HashSet<string> _staleWarned = new(StringComparer.OrdinalIgnoreCase);
+
     // Tracks last pomodoro phase so tray only rebuilds on phase change, not every second.
     private PomodoroPhase _lastTrayPhase = PomodoroPhase.Done;
 
@@ -202,8 +209,42 @@ sealed class ZmkAppContext : ApplicationContext
         };
         _connectionWatchdog.Start();
 
+        // 30s resolution is coarse relative to typical thresholds (minutes),
+        // fine enough to not matter, cheap enough to just always run.
+        _staleCheckTimer = new System.Windows.Forms.Timer { Interval = 30_000 };
+        _staleCheckTimer.Tick += (_, _) => CheckStaleCustomTokens();
+        _staleCheckTimer.Start();
+
         _ = ConnectLoopAsync(_cts.Token);
     }
+
+    // ── Custom token staleness ────────────────────────────────────────────────
+
+    private void CheckStaleCustomTokens()
+    {
+        foreach (var def in _settings.CustomTokens)
+        {
+            if (def.StaleAfterSeconds <= 0) continue; // staleness check disabled for this token
+            if (!_liveState.TryGetCustomAge(def.Name, out var age)) continue; // never SET yet, not stale
+
+            bool isStale = age.TotalSeconds > def.StaleAfterSeconds;
+            if (isStale)
+            {
+                if (_staleWarned.Add(def.Name)) // first tick past threshold for this episode
+                    _tray.ShowError("Token desactualizado",
+                        $"{{custom.{def.Name}}} no se actualiza hace {FormatAge(age)}.");
+            }
+            else
+            {
+                _staleWarned.Remove(def.Name); // fresh again - next time it goes stale, warn again
+            }
+        }
+    }
+
+    private static string FormatAge(TimeSpan age) =>
+        age.TotalMinutes < 1 ? $"{(int)age.TotalSeconds}s"
+        : age.TotalHours  < 1 ? $"{(int)age.TotalMinutes}min"
+        : $"{(int)age.TotalHours}h";
 
     // ── Live data pollers ─────────────────────────────────────────────────────
 

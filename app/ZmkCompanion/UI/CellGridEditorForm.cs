@@ -343,15 +343,22 @@ sealed class CellGridEditorForm : Form
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
             Location      = new Point(150, 180),
-            Size          = new Size(160, 23),
+            Size          = new Size(118, 23), // narrowed 160->118 to fit btnGlyph on the same row
         };
         _cmbBind.SelectedIndexChanged += (_, _) => { };
         _rowEditorPanel.Controls.Add(_cmbBind);
         PopulateBindings(0);
 
-        var btnInsert = new Button { Text = "↵ Insertar", Location = new Point(314, 180), Size = new Size(74, 23) };
+        var btnInsert = new Button { Text = "↵ Insertar", Location = new Point(272, 180), Size = new Size(70, 23) };
         btnInsert.Click += OnInsertBinding;
         _rowEditorPanel.Controls.Add(btnInsert);
+
+        // Full Nerd Font glyph picker (GlyphPickerDialog/FontCmapReader already
+        // existed, previously wired only to the unreachable legacy
+        // CanvasEditorForm - nothing new to build, just reconnecting it here).
+        var btnGlyph = new Button { Text = "NF…", Location = new Point(346, 180), Size = new Size(40, 23) };
+        btnGlyph.Click += OnInsertGlyph;
+        _rowEditorPanel.Controls.Add(btnGlyph);
 
         grpRows.Controls.Add(_rowEditorPanel);
         Controls.Add(grpRows);
@@ -575,6 +582,19 @@ sealed class CellGridEditorForm : Form
         int sel = _txtTemplate.SelectionStart;
         _txtTemplate.Text = _txtTemplate.Text.Insert(sel, token);
         _txtTemplate.SelectionStart = sel + token.Length;
+        _txtTemplate.Focus();
+    }
+
+    // Inserts a literal glyph character (not a {token}) at the cursor, e.g. a
+    // static status/battery/traffic-light icon to sit next to a live
+    // {custom.NAME} value in the same row template.
+    private void OnInsertGlyph(object? sender, EventArgs e)
+    {
+        using var dlg = new GlyphPickerDialog();
+        if (dlg.ShowDialog(this) != DialogResult.OK || dlg.SelectedGlyph is not { } glyph) return;
+        int sel = _txtTemplate.SelectionStart;
+        _txtTemplate.Text = _txtTemplate.Text.Insert(sel, glyph);
+        _txtTemplate.SelectionStart = sel + glyph.Length;
         _txtTemplate.Focus();
     }
 
