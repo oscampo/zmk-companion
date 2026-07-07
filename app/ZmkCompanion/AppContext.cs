@@ -50,6 +50,7 @@ sealed class ZmkAppContext : ApplicationContext
     {
         DebugLog.Reset();
         _settings   = AppSettings.Load();
+        Strings.SetLanguage(_settings.Language == "en" ? AppLanguage.En : AppLanguage.Es);
         _ble        = new BleService();
         _tray       = new TrayIcon(_ble);
         _compositor = new CellGridCompositor(_ble, _liveState);
@@ -67,6 +68,7 @@ sealed class ZmkAppContext : ApplicationContext
         _tray.PomodoroConfigRequested += OnPomodoroConfig;
         _tray.ManualReconnectRequested += OnManualReconnect;
         _tray.ManualDisconnectRequested += OnManualDisconnect;
+        _tray.LanguageChangeRequested += OnLanguageChanged;
 
         _pomodoro.StateChanged     += OnPomodoroStateChanged;
         _pomodoro.SessionCompleted += OnPomodoroCompleted;
@@ -614,6 +616,14 @@ sealed class ZmkAppContext : ApplicationContext
     {
         _manualDisconnect = true;
         _ble.Disconnect();
+    }
+
+    // "Idioma" tray submenu. Strings.SetLanguage already fired inside TrayIcon
+    // (it owns the rebuild), this just persists the choice across restarts.
+    private void OnLanguageChanged(AppLanguage lang)
+    {
+        _settings.Language = lang == AppLanguage.En ? "en" : "es";
+        _settings.Save();
     }
 
     private void OnExit()

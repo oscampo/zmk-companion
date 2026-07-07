@@ -43,6 +43,9 @@ sealed class AppSettings
     // the tray's "Tokens personalizados…" menu item.
     public List<CustomTokenDef> CustomTokens { get; set; } = new();
 
+    // UI language, "es" or "en". Changed anytime from the tray's "Idioma" menu.
+    public string Language { get; set; } = "es";
+
     // Legacy fields — not written after migration.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<CanvasPage>? Pages { get; set; }

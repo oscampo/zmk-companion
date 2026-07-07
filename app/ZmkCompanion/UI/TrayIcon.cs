@@ -22,6 +22,7 @@ sealed class TrayIcon : IDisposable
     public event Action? PomodoroConfigRequested;
     public event Action? ManualReconnectRequested;
     public event Action? ManualDisconnectRequested;
+    public event Action<AppLanguage>? LanguageChangeRequested;
 
     // Controlled by AppContext: reflects whether any page has a Pomodoro widget.
     public bool HasPomodoroWidget { get; set; }
@@ -40,6 +41,7 @@ sealed class TrayIcon : IDisposable
             Icon    = MakeIcon(Color.OrangeRed),
         };
         _notify.ContextMenuStrip = BuildMenu();
+        Strings.LanguageChanged += RebuildMenu;
     }
 
     // ── Pomodoro state (set by AppContext) ────────────────────────────────────
@@ -124,15 +126,30 @@ sealed class TrayIcon : IDisposable
         strip.Items.Add(new ToolStripSeparator());
 
         if (!connected)
-            strip.Items.Add(new ToolStripMenuItem("Reconectar", null, (_, _) => ManualReconnectRequested?.Invoke()));
+            strip.Items.Add(new ToolStripMenuItem(Strings.Reconnect, null, (_, _) => ManualReconnectRequested?.Invoke()));
         else
-            strip.Items.Add(new ToolStripMenuItem("Desconectar", null, (_, _) => ManualDisconnectRequested?.Invoke()));
+            strip.Items.Add(new ToolStripMenuItem(Strings.Disconnect, null, (_, _) => ManualDisconnectRequested?.Invoke()));
+
+        strip.Items.Add(new ToolStripSeparator());
+
+        var langMenu = new ToolStripMenuItem(Strings.LanguageMenu);
+        langMenu.DropDownItems.Add(new ToolStripMenuItem("Español", null, (_, _) => OnLanguageSelected(AppLanguage.Es))
+            { Checked = Strings.Current == AppLanguage.Es });
+        langMenu.DropDownItems.Add(new ToolStripMenuItem("English", null, (_, _) => OnLanguageSelected(AppLanguage.En))
+            { Checked = Strings.Current == AppLanguage.En });
+        strip.Items.Add(langMenu);
 
         strip.Items.Add(new ToolStripSeparator());
 
         strip.Items.Add(new ToolStripMenuItem("Debug Log", null, (_, _) => OnDebugLog()));
         strip.Items.Add(new ToolStripMenuItem("Acerca de…", null, (_, _) => OnAbout()));
         strip.Items.Add(new ToolStripMenuItem("Salir", null, (_, _) => ExitRequested?.Invoke()));
+    }
+
+    private void OnLanguageSelected(AppLanguage lang)
+    {
+        Strings.SetLanguage(lang); // RebuildMenu fires via LanguageChanged subscription
+        LanguageChangeRequested?.Invoke(lang);
     }
 
     // ── Handlers ─────────────────────────────────────────────────────────────
@@ -185,6 +202,7 @@ sealed class TrayIcon : IDisposable
 
     public void Dispose()
     {
+        Strings.LanguageChanged -= RebuildMenu;
         _notify.Visible = false;
         _notify.Dispose();
     }
