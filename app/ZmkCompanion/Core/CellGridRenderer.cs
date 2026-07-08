@@ -42,13 +42,19 @@ static class CellGridRenderer
         float sizePx = (tier.W == tier.H) ? tier.W * 0.92f : tier.H * 0.78f;
 
         using var probe = NerdFont.CreateFont(sizePx, style);
-        SizeF sz = g.MeasureString(element, probe, PointF.Empty, sf);
-        if (sz.Width > tier.W) sizePx *= tier.W / sz.Width;
+        RectangleF ink = MeasureInk(g, element, probe, sf);
+        if (ink.Width > tier.W) sizePx *= tier.W / ink.Width;
 
         using var font = NerdFont.CreateFont(sizePx, style);
-        sz = g.MeasureString(element, font, PointF.Empty, sf);
+        ink = MeasureInk(g, element, font, sf);
+        // Center the glyph's actual rendered ink box, not its typographic
+        // advance box — several Nerd Font icon glyphs draw wider than (and
+        // offset from) what MeasureString reports, e.g. the soccer ball and
+        // umbrella glyphs overlap their neighbor even in a plain WinForms
+        // TextBox at the same font/size, confirming this is a font-metrics
+        // mismatch, not a centering-math bug.
         g.DrawString(element, font, Brushes.White,
-            (tier.W - sz.Width) / 2f, (tier.H - sz.Height) / 2f, sf);
+            (tier.W - ink.Width) / 2f - ink.X, (tier.H - ink.Height) / 2f - ink.Y, sf);
 
         return Pack1bpp(bmp, antiAlias);
     }
@@ -71,16 +77,33 @@ static class CellGridRenderer
         float sizePx = tier.W * 0.92f; // square canvas: fill W×W
 
         using var probe = NerdFont.CreateFont(sizePx, style);
-        SizeF sz = g.MeasureString(element, probe, PointF.Empty, sf);
-        if (sz.Width > tier.W) sizePx *= tier.W / sz.Width;
+        RectangleF ink = MeasureInk(g, element, probe, sf);
+        if (ink.Width > tier.W) sizePx *= tier.W / ink.Width;
 
         using var font = NerdFont.CreateFont(sizePx, style);
-        sz = g.MeasureString(element, font, PointF.Empty, sf);
+        ink = MeasureInk(g, element, font, sf);
         g.DrawString(element, font, Brushes.White,
-            (tier.W - sz.Width) / 2f, (fullH - sz.Height) / 2f, sf);
+            (tier.W - ink.Width) / 2f - ink.X, (fullH - ink.Height) / 2f - ink.Y, sf);
 
         int startY = half == SplitHalf.Top ? 0 : tier.H;
         return PackCrop1bpp(bmp, startY, tier.H, antiAlias);
+    }
+
+    // Measures the actual rendered ("ink") bounding box of `text`, not just
+    // its typographic advance width. MeasureString's advance-width figure
+    // under-reports how wide several Nerd Font icon glyphs actually draw
+    // (by font design, these are meant to slightly overflow a single
+    // character cell), so using it alone both fails the "is this too wide"
+    // scale-down check and miscenters the glyph within the cell.
+    private static RectangleF MeasureInk(Graphics g, string text, Font font, StringFormat baseFormat)
+    {
+        using var measureFormat = (StringFormat)baseFormat.Clone();
+        measureFormat.SetMeasurableCharacterRanges([new CharacterRange(0, text.Length)]);
+        var layoutRect = new RectangleF(0, 0, 2000, 2000); // generous — must not clip the glyph
+        var regions = g.MeasureCharacterRanges(text, font, layoutRect, measureFormat);
+        var bounds = regions[0].GetBounds(g);
+        regions[0].Dispose();
+        return bounds;
     }
 
     // Packs a bitmap to 1bpp: row-major, MSB-first, rows padded to a byte
