@@ -77,8 +77,7 @@ sealed class CellGridEditorForm : Form
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "ZmkCompanion", "library");
 
-    private const int DeportesCategory  = 2;
-    private const int TimeZoneCategory  = 5;
+    private const int DeportesCategory = 2;
 
     // Binding catalog — category → list of (label, token). Built per-instance
     // (not static readonly) so it reflects the language active when the
@@ -90,7 +89,13 @@ sealed class CellGridEditorForm : Form
         bool es = Strings.Current == AppLanguage.Es;
         return
         [
-            (es ? "Hora" : "Time", es ? [
+            // Merged with the old separate dynamic "Zona Horaria" category: every
+            // token here is local time bare, and accepts an optional ":<IANA id>"
+            // suffix for a foreign zone (see LiveState.TimeZoneAwareKeys) — the
+            // Time Zone tab shows the full id to copy for that suffix, so this
+            // list doesn't enumerate a token per selected city (would multiply
+            // by however many cities the user has picked).
+            (es ? "Zona Horaria" : "Time Zone", es ? [
                 ("Hora",                 "{time}"),
                 ("Hora 24h",             "{time24}"),
                 ("Hora 12h",             "{time12}"),
@@ -172,8 +177,6 @@ sealed class CellGridEditorForm : Form
                 ("Ext. text line 3",     "{ext.text.2}"),
                 ("Ext. text line 4",     "{ext.text.3}"),
             ]),
-            // Index 5 = TimeZoneCategory — populated dynamically
-            (es ? "Zona Horaria" : "Time Zone", []),
         ];
     }
 
@@ -477,10 +480,26 @@ sealed class CellGridEditorForm : Form
         _timeZonesPanel = new Panel
         {
             Location   = new Point(4, 28),
-            Size       = new Size(390, 68),
+            Size       = new Size(390, 54),
             AutoScroll = true,
         };
         tabTimeZone.Controls.Add(_timeZonesPanel);
+
+        // Convention hint: the "Zona Horaria"/"Time Zone" binding-picker
+        // category only lists the bare local tokens ({time}, {date}, ...) to
+        // avoid one entry per token × selected city; a foreign city is instead
+        // targeted by hand-appending ":<id>", using the full id shown above,
+        // not the short code (LiveState.Resolve rejects "BOG", it needs the
+        // real IANA id, e.g. "America/Bogota").
+        tabTimeZone.Controls.Add(new Label
+        {
+            Text      = Strings.TimeZoneSuffixHint,
+            Location  = new Point(4, 84),
+            Size      = new Size(390, 30),
+            ForeColor = Color.Gray,
+            AutoSize  = false,
+            Font      = new Font(SystemFonts.MessageBoxFont!.FontFamily, 7.5f),
+        });
 
         // ── Tab: Clima ────────────────────────────────────────────────────────
         var tabWeather = new TabPage(Strings.WeatherTab);
@@ -618,7 +637,6 @@ sealed class CellGridEditorForm : Form
     private (string Label, string Token)[] GetCategoryItems(int catIndex)
     {
         if (catIndex == DeportesCategory) return BuildDeportesItems();
-        if (catIndex == TimeZoneCategory) return BuildTimeZoneItems();
         if (catIndex >= 0 && catIndex < BindingCatalog.Length) return BindingCatalog[catIndex].Items;
 
         int customIdx = catIndex - BindingCatalog.Length;
@@ -694,34 +712,6 @@ sealed class CellGridEditorForm : Form
         return items.ToArray();
     }
 
-    // Per selected time zone (settings.SelectedTimeZones, edited from the
-    // "Editar zonas…" button on the Time Zone tab): {time:ID}/{time24:ID}/
-    // {date:ID}, using the ":ID" suffix convention LiveState.Resolve parses
-    // for foreign-zone tokens (see TimeZoneAwareKeys in LiveState.cs).
-    private (string Label, string Token)[] BuildTimeZoneItems()
-    {
-        bool es = Strings.Current == AppLanguage.Es;
-        var items = new List<(string, string)>();
-        foreach (var id in _editTimeZones)
-        {
-            var tz = TimeZoneCatalog.FindOrCreate(id);
-            string q = ":" + tz.Id;
-            if (es)
-            {
-                items.Add(($"[{tz.ShortName}] Hora",     $"{{time{q}}}"));
-                items.Add(($"[{tz.ShortName}] Hora 24h",  $"{{time24{q}}}"));
-                items.Add(($"[{tz.ShortName}] Fecha",    $"{{date{q}}}"));
-            }
-            else
-            {
-                items.Add(($"[{tz.ShortName}] Time",     $"{{time{q}}}"));
-                items.Add(($"[{tz.ShortName}] Time 24h",  $"{{time24{q}}}"));
-                items.Add(($"[{tz.ShortName}] Date",     $"{{date{q}}}"));
-            }
-        }
-        return items.ToArray();
-    }
-
     private void OnInsertBinding(object? sender, EventArgs e)
     {
         int catIdx  = _cmbBindCategory.SelectedIndex;
@@ -784,31 +774,29 @@ sealed class CellGridEditorForm : Form
     // per-zone input here (unlike RebuildTeamInputs' team-filter textboxes),
     // there's nothing to configure per zone besides its id, which the picker
     // already owns, removing a zone happens there, not in this tab.
+    //
+    // Shows the full IANA id (not just the short code) so the user has
+    // something to literally copy into a template's ":<id>" suffix, e.g.
+    // "{time:America/Bogota}" — see the hint label built in the constructor.
     private void RebuildTimeZoneLabels()
     {
         _timeZonesPanel.Controls.Clear();
 
-        int col = 0, row = 0;
-        const int slotW = 190, rowH = 22;
-        const int colsPerRow = 2;
+        int row = 0;
+        const int rowH = 18;
 
         foreach (var id in _editTimeZones)
         {
             var tz = TimeZoneCatalog.FindOrCreate(id);
-            int px = col * slotW;
-            int py = row * rowH;
-
             var lbl = new Label
             {
-                Text     = $"{tz.DisplayName} ({tz.ShortName})",
-                Location = new Point(px, py + 2),
-                Size     = new Size(slotW - 6, 18),
+                Text     = $"{tz.DisplayName} ({tz.ShortName})  →  {tz.Id}",
+                Location = new Point(0, row * rowH),
+                Size     = new Size(374, 18),
                 AutoSize = false,
             };
             _timeZonesPanel.Controls.Add(lbl);
-
-            col++;
-            if (col >= colsPerRow) { col = 0; row++; }
+            row++;
         }
     }
 

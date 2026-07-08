@@ -227,4 +227,7 @@ static class Strings
     public static string TimeZoneTab           => Current == AppLanguage.Es ? "Zona Horaria" : "Time Zone";
     public static string TimeZonesLabel        => Current == AppLanguage.Es ? "Zonas horarias:" : "Time zones:";
     public static string EditTimeZonesButton   => Current == AppLanguage.Es ? "Editar zonas…" : "Edit zones…";
+    public static string TimeZoneSuffixHint => Current == AppLanguage.Es
+        ? "Tip: agrega \":ID\" a un token de Hora/Fecha para otra ciudad,\nej. {time:America/Bogota}. Usa el ID completo de arriba, no el código corto."
+        : "Tip: append \":ID\" to a Time/Date token for another city,\ne.g. {time:America/Bogota}. Use the full id above, not the short code.";
 }
