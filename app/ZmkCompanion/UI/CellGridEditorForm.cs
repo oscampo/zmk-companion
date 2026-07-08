@@ -61,6 +61,7 @@ sealed class CellGridEditorForm : Form
     private readonly Panel         _teamsPanel;
     private readonly Dictionary<string, TextBox> _teamBoxes = new();
     private          List<string>  _editLeagues;
+    private readonly Panel         _timeZonesPanel;
     private          List<string>  _editTimeZones;
 
     // Distinct categories from settings.CustomTokens, appended to the binding
@@ -467,10 +468,19 @@ sealed class CellGridEditorForm : Form
             if (dlg.ShowDialog(this) == DialogResult.OK)
             {
                 _editTimeZones = dlg.SelectedIds.ToList();
+                RebuildTimeZoneLabels();
                 PopulateBindings(_cmbBindCategory.SelectedIndex);
             }
         };
         tabTimeZone.Controls.Add(btnTimeZones);
+
+        _timeZonesPanel = new Panel
+        {
+            Location   = new Point(4, 28),
+            Size       = new Size(390, 68),
+            AutoScroll = true,
+        };
+        tabTimeZone.Controls.Add(_timeZonesPanel);
 
         // ── Tab: Clima ────────────────────────────────────────────────────────
         var tabWeather = new TabPage(Strings.WeatherTab);
@@ -580,6 +590,7 @@ sealed class CellGridEditorForm : Form
         if (_pages.Count == 0) _pages.Add(new CellGridPage());
         LoadPage(0);
         RebuildTeamInputs();
+        RebuildTimeZoneLabels();
         RefreshLibraryList();
 
         _ = RefreshWeatherPreviewAsync(settings.City);
@@ -763,6 +774,38 @@ sealed class CellGridEditorForm : Form
             var tb  = new TextBox { Text = team, Location = new Point(px + 56, py), Size = new Size(68, 22), PlaceholderText = Strings.TeamPlaceholder };
             _teamBoxes[path] = tb;
             _teamsPanel.Controls.AddRange([lbl, tb]);
+
+            col++;
+            if (col >= colsPerRow) { col = 0; row++; }
+        }
+    }
+
+    // Read-only display of the zones picked in TimeZonePickerDialog. No
+    // per-zone input here (unlike RebuildTeamInputs' team-filter textboxes),
+    // there's nothing to configure per zone besides its id, which the picker
+    // already owns, removing a zone happens there, not in this tab.
+    private void RebuildTimeZoneLabels()
+    {
+        _timeZonesPanel.Controls.Clear();
+
+        int col = 0, row = 0;
+        const int slotW = 190, rowH = 22;
+        const int colsPerRow = 2;
+
+        foreach (var id in _editTimeZones)
+        {
+            var tz = TimeZoneCatalog.FindOrCreate(id);
+            int px = col * slotW;
+            int py = row * rowH;
+
+            var lbl = new Label
+            {
+                Text     = $"{tz.DisplayName} ({tz.ShortName})",
+                Location = new Point(px, py + 2),
+                Size     = new Size(slotW - 6, 18),
+                AutoSize = false,
+            };
+            _timeZonesPanel.Controls.Add(lbl);
 
             col++;
             if (col >= colsPerRow) { col = 0; row++; }
@@ -1128,6 +1171,7 @@ sealed class CellGridEditorForm : Form
             _radTempF.Checked =  f;
 
             RebuildTeamInputs();
+            RebuildTimeZoneLabels();
             LoadPage(0);
         }
         catch (Exception ex)
