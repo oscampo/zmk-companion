@@ -364,12 +364,27 @@ sealed class CellGridCompositor : IDisposable
 
     // ── Render ────────────────────────────────────────────────────────────────
 
+    // Reset per RenderAndSendAsync call, incremented by SendRowAsync — lets the
+    // completion/abort log below report how many of the page's cells actually
+    // went over BLE, not just how long the pass took (measures both the "is
+    // the sequential cell-by-cell reveal really this slow" question and, once
+    // full is true, roughly how many round trips a full page load costs).
+    private int _cellsSentThisRender;
+
     private async Task RenderAndSendAsync(bool full)
     {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        int rowCount = _rows.Count;
+        _cellsSentThisRender = 0;
         bool use24h = !Protocol.Detect12h();
         for (int rowIdx = 0; rowIdx < _rows.Count; rowIdx++)
         {
-            if (_textOverride || _overridePending) return; // bitmap override activated (or about to) — abort cell sends
+            if (_textOverride || _overridePending)
+            {
+                DebugLog.Log($"CellGridCompositor: render ABORTED (override) full={full} " +
+                    $"row={rowIdx}/{rowCount} cellsSent={_cellsSentThisRender} elapsed={sw.ElapsedMilliseconds}ms");
+                return; // bitmap override activated (or about to) — abort cell sends
+            }
             var    row  = _rows[rowIdx];
             var    tier = CellGridProtocol.Tiers[row.TierId];
             var    cfg  = MakeLabelConfig(row);
@@ -377,6 +392,8 @@ sealed class CellGridCompositor : IDisposable
             var    fs   = row.Bold ? System.Drawing.FontStyle.Bold : System.Drawing.FontStyle.Regular;
             await SendRowAsync(rowIdx, tier, text, row.Align, row.SplitHalf, fs, row.AntiAlias, full);
         }
+        DebugLog.Log($"CellGridCompositor: render done full={full} rows={rowCount} " +
+            $"cellsSent={_cellsSentThisRender} elapsed={sw.ElapsedMilliseconds}ms");
     }
 
     private static LabelConfig? MakeLabelConfig(CellGridRow row)
@@ -414,7 +431,10 @@ sealed class CellGridCompositor : IDisposable
             if (!full && _sent.TryGetValue(key, out var prev) && prev.AsSpan().SequenceEqual(cell))
                 continue;
             if (await _ble.SendCellGridAsync(CellGridProtocol.BuildCell(rowIdx, col, cell)))
+            {
                 _sent[key] = cell;
+                _cellsSentThisRender++;
+            }
         }
     }
 
