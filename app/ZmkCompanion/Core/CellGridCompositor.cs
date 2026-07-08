@@ -376,6 +376,24 @@ sealed class CellGridCompositor : IDisposable
         var sw = System.Diagnostics.Stopwatch.StartNew();
         int rowCount = _rows.Count;
         _cellsSentThisRender = 0;
+
+        // Full renders go as one 0x1525 bitmap blob instead of one 0x1527 CELL
+        // message per glyph: measured ~35-40ms per acked cell write vs. ~50-70ms
+        // for an ENTIRE frame, so a 45-66 cell page (1.6-2.5s) collapses to
+        // roughly the cost of one CLI text send. Verified against the firmware
+        // source (zmk-new_corne/config/custom_status_screen.c) that both paths
+        // write into the same shared canvas buffer and invalidate the same LVGL
+        // object — no per-cell widgets to lose sync with, so this doesn't
+        // conflict with the partial-diff path below, which still needs the
+        // prior CLEAR+LAYOUT_v2 (sent by the caller) for its row/col mapping.
+        if (full)
+        {
+            bool ok = await RenderFullPageBitmapAsync();
+            DebugLog.Log($"CellGridCompositor: render done full=True (bitmap) rows={rowCount} " +
+                $"ok={ok} elapsed={sw.ElapsedMilliseconds}ms");
+            return;
+        }
+
         bool use24h = !Protocol.Detect12h();
         for (int rowIdx = 0; rowIdx < _rows.Count; rowIdx++)
         {
@@ -394,6 +412,71 @@ sealed class CellGridCompositor : IDisposable
         }
         DebugLog.Log($"CellGridCompositor: render done full={full} rows={rowCount} " +
             $"cellsSent={_cellsSentThisRender} elapsed={sw.ElapsedMilliseconds}ms");
+    }
+
+    // Composites the whole page (every row/cell) into one native-resolution
+    // (68x160) bitmap and sends it as a single 0x1525 frame, seeding _sent with
+    // each cell's actual rendered bits so the next partial (full=false) render
+    // diffs correctly against what's now really on screen instead of an empty
+    // cache (which would otherwise resend everything on the very next tick).
+    private async Task<bool> RenderFullPageBitmapAsync()
+    {
+        bool use24h = !Protocol.Detect12h();
+        using var bmp = BitmapFrame.CreateCanvas();
+        using var g   = Graphics.FromImage(bmp);
+        g.Clear(Color.Black);
+
+        int yOff = 0;
+        _sent.Clear();
+        for (int rowIdx = 0; rowIdx < _rows.Count; rowIdx++)
+        {
+            if (_textOverride || _overridePending) return false;
+            var    row  = _rows[rowIdx];
+            var    tier = CellGridProtocol.Tiers[row.TierId];
+            var    cfg  = MakeLabelConfig(row);
+            string text = _state.Expand(row.Template, use24h, cfg);
+            var    fs   = row.Bold ? System.Drawing.FontStyle.Bold : System.Drawing.FontStyle.Regular;
+
+            string[] glyphs = SplitElements(text);
+            int count = Math.Min(glyphs.Length, tier.Cols);
+            int start = row.Align switch
+            {
+                "right"  => tier.Cols - count,
+                "center" => (tier.Cols - count) / 2,
+                _        => 0,
+            };
+
+            int rowBytes = (tier.W + 7) / 8;
+            for (int col = 0; col < tier.Cols; col++)
+            {
+                int gi = col - start;
+                byte[] cellBits = (gi >= 0 && gi < count)
+                    ? (row.SplitHalf != SplitHalf.None
+                        ? CellGridRenderer.RenderCellSplit(tier, glyphs[gi], row.SplitHalf, fs, row.AntiAlias)
+                        : CellGridRenderer.RenderCell(tier, glyphs[gi], fs, row.AntiAlias))
+                    : new byte[tier.Bytes];
+                _sent[(rowIdx, col)] = cellBits;
+
+                int cellX = col * tier.W;
+                for (int py = 0; py < tier.H; py++)
+                    for (int px = 0; px < tier.W; px++)
+                    {
+                        int bx = cellX + px, by = yOff + py;
+                        // Guard against a page whose row heights sum past 160px
+                        // (OnApply rejects this on save, but a hand-edited or
+                        // otherwise stale settings.json could still load one) —
+                        // SetPixel throws out of bounds, RenderPreview has the
+                        // same guard for the same reason.
+                        if (bx >= BitmapFrame.Width || by >= BitmapFrame.Height) continue;
+                        if ((cellBits[py * rowBytes + px / 8] & (0x80 >> (px % 8))) != 0)
+                            bmp.SetPixel(bx, by, Color.White);
+                    }
+            }
+            yOff += tier.H;
+        }
+
+        byte[] frame = BitmapFrame.Pack(bmp);
+        return await _ble.SendBitmapAsync(frame, preferSpeed: true);
     }
 
     private static LabelConfig? MakeLabelConfig(CellGridRow row)
