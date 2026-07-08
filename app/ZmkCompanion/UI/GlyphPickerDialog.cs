@@ -228,6 +228,13 @@ sealed class GlyphGrid : Panel
         int cols = Cols;
         int rows = (_cps.Length + cols - 1) / cols;
         AutoScrollMinSize = new Size(cols * CellSize, rows * CellSize);
+        // Changing AutoScrollMinSize while the control is scrolled can leave
+        // AutoScrollPosition with a small residual offset (WinForms tries to
+        // preserve the "scrolled to" content across the resize). That offset
+        // shifted row 0 up by a few px, clipping its top edge under the
+        // toolbar, so reset to the top on every recalc (resize or new search
+        // results) instead of letting it drift.
+        AutoScrollPosition = Point.Empty;
     }
 
     protected override void OnResize(EventArgs e)
