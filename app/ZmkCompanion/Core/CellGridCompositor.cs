@@ -57,6 +57,42 @@ sealed class CellGridCompositor : IDisposable
     private bool _sendInFlight;
     private bool _sendQueued;
 
+    // Serializes every 0x1527 (cell-grid) BLE write sequence across the three
+    // independent triggers that can each start one: the page-cycle timer
+    // (LoadPageAsync), the 15s heartbeat (ForceRedrawAsync), and the clock
+    // tick. None of these previously waited on each other, so under load
+    // (many rows, several background pollers pushing Changed events) their
+    // writes could interleave and queue up behind each other indefinitely —
+    // observed in the field as page-cycle dwell time increasingly eaten by
+    // a CLEAR+LAYOUT handshake that took seconds to even start, eventually
+    // exceeding the whole dwell budget. Page loads must eventually run
+    // (RunGatedAsync waits), but the heartbeat/clock tick are opportunistic
+    // safety-net redraws that should skip rather than queue up and make the
+    // backlog worse (TryRunGatedAsync). ShowTemporaryAsync/ShowPersistentTextAsync
+    // are deliberately NOT gated here: they can hold for a multi-second
+    // Task.Delay, and blocking page loads for that whole duration would be a
+    // new stall that doesn't exist today — a known residual gap, not solved
+    // by this pass.
+    private readonly SemaphoreSlim _bleGate = new(1, 1);
+
+    private async Task RunGatedAsync(Func<Task> body)
+    {
+        await _bleGate.WaitAsync();
+        try { await body(); }
+        finally { _bleGate.Release(); }
+    }
+
+    private async Task TryRunGatedAsync(Func<Task> body, string skipLabel)
+    {
+        if (!await _bleGate.WaitAsync(0))
+        {
+            DebugLog.Log($"CellGridCompositor: {skipLabel} skipped, BLE gate busy");
+            return;
+        }
+        try { await body(); }
+        finally { _bleGate.Release(); }
+    }
+
     public bool Running { get; private set; }
 
     // How the active page wants piped/CLI text (zkc) displayed, decided purely
@@ -78,7 +114,7 @@ sealed class CellGridCompositor : IDisposable
 
     // ── Page management ───────────────────────────────────────────────────────
 
-    public async Task LoadPageAsync(CellGridPage page)
+    public Task LoadPageAsync(CellGridPage page) => RunGatedAsync(async () =>
     {
         Stop();
         if (!_ble.IsConnected) return;
@@ -119,7 +155,7 @@ sealed class CellGridCompositor : IDisposable
 
         if (_rows.Any(r => LiveState.HasTimeBind(r.Template)))
             StartClockTimer();
-    }
+    });
 
     public void Stop()
     {
@@ -223,41 +259,49 @@ sealed class CellGridCompositor : IDisposable
     }
 
     // Restores cell-grid after a persistent text override.
-    public async Task ClearTextOverrideAsync()
+    public Task ClearTextOverrideAsync()
     {
-        if (!_textOverride || !Running) { _textOverride = false; _overridePending = false; return; }
-        _textPageTimer?.Stop();
-        _textPageTimer?.Dispose();
-        _textPageTimer = null;
-        _textOverride      = false;
-        _overridePending   = false;
-        _textOverrideFrame = [];
-        _textOverridePages = [];
+        if (!_textOverride || !Running) { _textOverride = false; _overridePending = false; return Task.CompletedTask; }
+        return RunGatedAsync(async () =>
+        {
+            _textPageTimer?.Stop();
+            _textPageTimer?.Dispose();
+            _textPageTimer = null;
+            _textOverride      = false;
+            _overridePending   = false;
+            _textOverrideFrame = [];
+            _textOverridePages = [];
 
-        var layoutArgs = _rows.Select(r => {
-            var t = CellGridProtocol.Tiers[r.TierId];
-            return ((byte)t.W, (byte)t.H, (byte)1);
-        }).ToArray();
-        await _ble.SendCellGridAsync(CellGridProtocol.BuildClear());
-        await _ble.SendCellGridAsync(CellGridProtocol.BuildLayoutV2(layoutArgs));
-        _sent.Clear();
-        await RenderAndSendAsync(full: true);
-        if (_clockTimer != null) { ScheduleNextClockTick(DateTime.Now); _clockTimer.Start(); }
+            var layoutArgs = _rows.Select(r => {
+                var t = CellGridProtocol.Tiers[r.TierId];
+                return ((byte)t.W, (byte)t.H, (byte)1);
+            }).ToArray();
+            await _ble.SendCellGridAsync(CellGridProtocol.BuildClear());
+            await _ble.SendCellGridAsync(CellGridProtocol.BuildLayoutV2(layoutArgs));
+            _sent.Clear();
+            await RenderAndSendAsync(full: true);
+            if (_clockTimer != null) { ScheduleNextClockTick(DateTime.Now); _clockTimer.Start(); }
+        });
     }
 
     // Forces a full re-render of all cells (safety net for silent BLE failures).
-    public async Task ForceRedrawAsync()
+    // Opportunistic: skips instead of queuing if a page load or another
+    // heartbeat/clock-tick redraw is already in flight (see _bleGate).
+    public Task ForceRedrawAsync()
     {
-        if (!Running) return;
+        if (!Running) return Task.CompletedTask;
         if (_textOverride)
         {
             // Use WriteWithoutResponse: WriteWithResponse here blocks the BLE queue for 5-7s,
             // blanking the display during the send and serializing streaming frames behind it.
-            await _ble.SendBitmapAsync(_textOverrideFrame, preferSpeed: true);
-            return;
+            // Not gated: a different characteristic (bitmap, not cell-grid), see _bleGate's comment.
+            return _ble.SendBitmapAsync(_textOverrideFrame, preferSpeed: true);
         }
-        _sent.Clear();
-        await RenderAndSendAsync(full: true);
+        return TryRunGatedAsync(async () =>
+        {
+            _sent.Clear();
+            await RenderAndSendAsync(full: true);
+        }, "heartbeat ForceRedraw");
     }
 
     // ── Clock timer ───────────────────────────────────────────────────────────
@@ -273,7 +317,9 @@ sealed class CellGridCompositor : IDisposable
             _clockTimer.Stop();         // stop BEFORE first await (reentrancy guard)
             bool full = ++_tickCount % 10 == 0;
             DebugLog.Log($"CellGridCompositor: clock tick tickTime={tickTime:HH:mm:ss.fff} full={full}");
-            await RenderAndSendAsync(full);
+            // Opportunistic like the heartbeat: skip this tick rather than queue
+            // behind a slow page load, next tick (≤60s away) tries again.
+            await TryRunGatedAsync(() => RenderAndSendAsync(full), "clock tick");
             // Guard: Stop() may have been called during the await above.
             if (!Running || _clockTimer is null) return;
             ScheduleNextClockTick(tickTime);
@@ -306,7 +352,11 @@ sealed class CellGridCompositor : IDisposable
             do
             {
                 _sendQueued = false;
-                await RenderAndSendAsync(full: false);
+                // Waits (not skip): unlike the heartbeat/clock tick this reflects
+                // genuinely new data (weather/sports/etc. just changed), and
+                // _sendQueued above already coalesces repeated Changed events
+                // that arrive while this is waiting/running.
+                await RunGatedAsync(() => RenderAndSendAsync(full: false));
             } while (_sendQueued);
         }
         finally { _sendInFlight = false; }
@@ -472,5 +522,9 @@ sealed class CellGridCompositor : IDisposable
         return list.ToArray();
     }
 
-    public void Dispose() => Stop();
+    public void Dispose()
+    {
+        Stop();
+        _bleGate.Dispose();
+    }
 }
