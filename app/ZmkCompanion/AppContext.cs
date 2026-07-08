@@ -381,7 +381,10 @@ sealed class ZmkAppContext : ApplicationContext
             _settings.PomodoroWorkMin,
             _settings.PomodoroBreakMin,
             _settings.PomodoroCycles,
-            _settings.PomodoroLongBreakMin);
+            _settings.PomodoroLongBreakMin,
+            _settings.PomodoroWorkIcon,
+            _settings.PomodoroBreakIcon,
+            _settings.PomodoroLongIcon);
 
         if (dlg.ShowDialog() != DialogResult.OK) return;
 
@@ -389,6 +392,9 @@ sealed class ZmkAppContext : ApplicationContext
         _settings.PomodoroBreakMin     = dlg.BreakMin;
         _settings.PomodoroCycles       = dlg.Cycles;
         _settings.PomodoroLongBreakMin = dlg.LongBreakMin;
+        _settings.PomodoroWorkIcon     = dlg.WorkIcon;
+        _settings.PomodoroBreakIcon    = dlg.BreakIcon;
+        _settings.PomodoroLongIcon     = dlg.LongIcon;
         _settings.Save();
 
         // If a session is in progress, restart it with the new config immediately.
@@ -400,6 +406,9 @@ sealed class ZmkAppContext : ApplicationContext
                 BreakMin     = dlg.BreakMin,
                 Cycles       = dlg.Cycles,
                 LongBreakMin = dlg.LongBreakMin,
+                WorkIcon     = dlg.WorkIcon,
+                BreakIcon    = dlg.BreakIcon,
+                LongIcon     = dlg.LongIcon,
             });
         }
     }
@@ -458,6 +467,9 @@ sealed class ZmkAppContext : ApplicationContext
                         BreakMin     = _settings.PomodoroBreakMin,
                         Cycles       = _settings.PomodoroCycles,
                         LongBreakMin = _settings.PomodoroLongBreakMin,
+                        WorkIcon     = _settings.PomodoroWorkIcon,
+                        BreakIcon    = _settings.PomodoroBreakIcon,
+                        LongIcon     = _settings.PomodoroLongIcon,
                     };
         return null;
     }

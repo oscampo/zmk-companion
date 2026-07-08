@@ -208,7 +208,7 @@ sealed class CellGridEditorForm : Form
         FormBorderStyle = FormBorderStyle.FixedSingle;
         StartPosition   = FormStartPosition.CenterScreen;
         MaximizeBox     = false;
-        ClientSize      = new Size(640, 657);
+        ClientSize      = new Size(640, 687);
 
         // ── RIGHT: preview ────────────────────────────────────────────────────
         var previewBox = new GroupBox
@@ -277,7 +277,7 @@ sealed class CellGridEditorForm : Form
         Controls.Add(grpPages);
 
         // ── LEFT: Rows group ──────────────────────────────────────────────────
-        var grpRows = new GroupBox { Text = Strings.RowsGroupTitle, Location = new Point(6, 100), Size = new Size(406, 375) };
+        var grpRows = new GroupBox { Text = Strings.RowsGroupTitle, Location = new Point(6, 100), Size = new Size(406, 405) };
 
         _lstRows = new ListBox { Location = new Point(6, 18), Size = new Size(390, 100), IntegralHeight = false };
         _lstRows.SelectedIndexChanged += OnRowSelected;
@@ -451,7 +451,7 @@ sealed class CellGridEditorForm : Form
         // ── LEFT: Data Sources — TabControl ───────────────────────────────────
         var tabData = new TabControl
         {
-            Location = new Point(6, 481),
+            Location = new Point(6, 511),
             Size     = new Size(406, 138),
         };
 
@@ -648,9 +648,9 @@ sealed class CellGridEditorForm : Form
         Controls.Add(tabData);
 
         // ── Bottom buttons ────────────────────────────────────────────────────
-        var btnApply = new Button { Text = Strings.ApplyButton, Location = new Point(270, 625), Size = new Size(74, 28), DialogResult = DialogResult.OK };
+        var btnApply = new Button { Text = Strings.ApplyButton, Location = new Point(270, 655), Size = new Size(74, 28), DialogResult = DialogResult.OK };
         btnApply.Click += OnApply;
-        var btnClose = new Button { Text = Strings.Close, Location = new Point(350, 625), Size = new Size(74, 28) };
+        var btnClose = new Button { Text = Strings.Close, Location = new Point(350, 655), Size = new Size(74, 28) };
         btnClose.Click += (_, _) => Close();
         Controls.Add(btnApply);
         Controls.Add(btnClose);
@@ -777,6 +777,13 @@ sealed class CellGridEditorForm : Form
         _txtTemplate.Text = _txtTemplate.Text.Insert(sel, token);
         _txtTemplate.SelectionStart = sel + token.Length;
         _txtTemplate.Focus();
+
+        // {conn.profilebar} is Material Design numeric-box glyphs — Mono's
+        // shrunk-ink sizing (see NerdFont/FontVariant) makes its 5 boxes look
+        // mismatched in size; Propo keeps their natural size. Only switches
+        // the row that receives the insert, not existing rows.
+        if (token == "{conn.profilebar}" && _rowIndex >= 0 && _pageIndex >= 0)
+            _cmbFontVariant.SelectedIndex = (int)FontVariant.Propo; // triggers OnFontVariantChanged
     }
 
     // Inserts a literal glyph character (not a {token}) at the cursor, e.g. a

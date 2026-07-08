@@ -9,6 +9,13 @@ sealed class PomodoroConfig
     public int Cycles       { get; set; } = 4;
     public int LongBreakMin { get; set; } = 15;
 
+    // User-pickable phase icons (Nerd Font glyphs, via GlyphPickerDialog).
+    // Default to the built-in Font Awesome icons so existing sessions keep
+    // their current look until the user picks something else.
+    public string WorkIcon  { get; set; } = PomodoroFeature.IconWork.ToString();
+    public string BreakIcon { get; set; } = PomodoroFeature.IconBreak.ToString();
+    public string LongIcon  { get; set; } = PomodoroFeature.IconLong.ToString();
+
     private static readonly Dictionary<string, PomodoroConfig> Presets = new()
     {
         ["classic"] = new() { WorkMin = 25, BreakMin = 5,  Cycles = 4, LongBreakMin = 15 },
@@ -158,9 +165,9 @@ sealed class PomodoroFeature : IDisposable
         };
         string icon = Phase switch
         {
-            PomodoroPhase.Work      => IconWork.ToString(),
-            PomodoroPhase.Break     => IconBreak.ToString(),
-            _                       => IconLong.ToString(),
+            PomodoroPhase.Work      => _cfg?.WorkIcon  ?? IconWork.ToString(),
+            PomodoroPhase.Break     => _cfg?.BreakIcon ?? IconBreak.ToString(),
+            _                       => _cfg?.LongIcon  ?? IconLong.ToString(),
         };
         string bar   = BuildBar(CurrentCycle - 1, TotalCycles);
         string cycle = $"{CurrentCycle}/{TotalCycles}";

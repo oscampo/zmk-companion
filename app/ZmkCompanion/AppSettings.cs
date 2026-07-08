@@ -28,6 +28,12 @@ sealed class AppSettings
     public int PomodoroCycles       { get; set; } = 4;
     public int PomodoroLongBreakMin { get; set; } = 15;
 
+    // User-pickable phase icons (Nerd Font glyphs). Default to the built-in
+    // Font Awesome icons so existing settings.json files keep their look.
+    public string PomodoroWorkIcon  { get; set; } = Features.PomodoroFeature.IconWork.ToString();
+    public string PomodoroBreakIcon { get; set; } = Features.PomodoroFeature.IconBreak.ToString();
+    public string PomodoroLongIcon  { get; set; } = Features.PomodoroFeature.IconLong.ToString();
+
     // Weather data source — city names for API queries, up to 4 (see
     // CellGridEditorForm's Weather tab, which enforces the cap). Empty list =
     // single IP-geolocated city (blank = auto-detect, same as before this was

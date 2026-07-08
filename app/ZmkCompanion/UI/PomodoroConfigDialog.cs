@@ -12,20 +12,31 @@ sealed class PomodoroConfigDialog : Form
     private readonly NumericUpDown _nudBreak;
     private readonly NumericUpDown _nudCycles;
     private readonly NumericUpDown _nudLong;
+    private readonly Button        _btnWorkIcon;
+    private readonly Button        _btnBreakIcon;
+    private readonly Button        _btnLongIcon;
 
     public int WorkMin      => (int)_nudWork.Value;
     public int BreakMin     => (int)_nudBreak.Value;
     public int Cycles       => (int)_nudCycles.Value;
     public int LongBreakMin => (int)_nudLong.Value;
+    public string WorkIcon  { get; private set; }
+    public string BreakIcon { get; private set; }
+    public string LongIcon  { get; private set; }
 
-    public PomodoroConfigDialog(int workMin, int breakMin, int cycles, int longBreakMin)
+    public PomodoroConfigDialog(int workMin, int breakMin, int cycles, int longBreakMin,
+                                 string workIcon, string breakIcon, string longIcon)
     {
+        WorkIcon  = workIcon;
+        BreakIcon = breakIcon;
+        LongIcon  = longIcon;
+
         Text            = Strings.PomodoroConfigTitle;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition   = FormStartPosition.CenterScreen;
         MinimizeBox     = false;
         MaximizeBox     = false;
-        ClientSize      = new Size(280, 210);
+        ClientSize      = new Size(280, 270);
         Font            = SystemFonts.MessageBoxFont!;
 
         // ── Field rows ────────────────────────────────────────────────────────
@@ -42,7 +53,15 @@ sealed class PomodoroConfigDialog : Form
         AddPreset(Strings.PomodoroPresetClassic, 25, 5, 4, 15, left: 70,  top: y);
         AddPreset(Strings.PomodoroPresetShort,   15, 3, 4, 10, left: 140, top: y);
         AddPreset(Strings.PomodoroPresetLong,    50, 10, 3, 20, left: 200, top: y);
-        y += 30;
+        y += 34;
+
+        // ── Phase icon pickers ───────────────────────────────────────────────
+        var lblIcons = new Label { Text = Strings.PomodoroIconsLabel, Left = 12, Top = y + 4, AutoSize = true };
+        Controls.Add(lblIcons);
+        _btnWorkIcon  = AddIconPicker(WorkIcon,  left: 90,  top: y, icon => WorkIcon  = icon);
+        _btnBreakIcon = AddIconPicker(BreakIcon, left: 140, top: y, icon => BreakIcon = icon);
+        _btnLongIcon  = AddIconPicker(LongIcon,  left: 190, top: y, icon => LongIcon  = icon);
+        y += 34;
 
         // ── OK / Cancelar ─────────────────────────────────────────────────────
         var btnOk = new Button
@@ -64,6 +83,30 @@ sealed class PomodoroConfigDialog : Form
         Controls.AddRange([btnOk, btnCancel]);
         AcceptButton = btnOk;
         CancelButton = btnCancel;
+    }
+
+    // A button showing the current glyph; clicking opens the same
+    // GlyphPickerDialog used by the cell-grid editor's "NF…" insert button.
+    private Button AddIconPicker(string currentGlyph, int left, int top, Action<string> onPicked)
+    {
+        var btn = new Button
+        {
+            Left = left,
+            Top  = top,
+            Width = 40,
+            Height = 26,
+            Font = NerdFont.CreateFont(16f),
+            Text = currentGlyph,
+        };
+        btn.Click += (_, _) =>
+        {
+            using var dlg = new GlyphPickerDialog();
+            if (dlg.ShowDialog(this) != DialogResult.OK || dlg.SelectedGlyph is not { } glyph) return;
+            btn.Text = glyph;
+            onPicked(glyph);
+        };
+        Controls.Add(btn);
+        return btn;
     }
 
     // Creates a label + NumericUpDown row, returns the control and next y.

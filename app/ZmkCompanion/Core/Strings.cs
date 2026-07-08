@@ -39,6 +39,7 @@ static class Strings
     public static string PomodoroPresetClassic => Current == AppLanguage.Es ? "Clásico" : "Classic";
     public static string PomodoroPresetShort   => Current == AppLanguage.Es ? "Corto"   : "Short";
     public static string PomodoroPresetLong    => Current == AppLanguage.Es ? "Largo"   : "Long";
+    public static string PomodoroIconsLabel    => Current == AppLanguage.Es ? "Íconos:" : "Icons:";
 
     // ── CustomTokensForm ─────────────────────────────────────────────────────────
     public static string CustomTokensTitle => Current == AppLanguage.Es ? "Tokens personalizados" : "Custom tokens";
