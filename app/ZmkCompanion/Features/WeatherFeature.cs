@@ -77,13 +77,21 @@ sealed class WeatherFeature
         var cw = wx!["current_weather"]!;
         double tempC = cw["temperature"]!.GetValue<double>();
         int wmo = cw["weathercode"]!.GetValue<int>();
+        // is_day: 1 during the city's local daytime, 0 at night (Open-Meteo
+        // computes this from the location's own sunrise/sunset, not our
+        // clock) — this is what makes {weather.icon} show a moon instead of
+        // a sun for a city currently in nighttime, regardless of what time
+        // it is where the app is running. Defaults to day if the field is
+        // ever absent (unverified against a live response in this sandbox;
+        // network access is blocked here, so this fallback is unverified).
+        bool isDay = cw["is_day"]?.GetValue<int>() != 0;
 
         return new WeatherData
         {
             City   = resolvedCity,
             TempC  = tempC,
             TempF  = tempC * 9 / 5 + 32,
-            Icon   = WmoIcon(wmo),
+            Icon   = WmoIcon(wmo, isDay),
             Label  = WmoLabel(wmo),
         };
     }
@@ -103,32 +111,35 @@ sealed class WeatherFeature
         return await resp.Content.ReadFromJsonAsync<JsonObject>();
     }
 
-    // WMO 4501 weather code → Nerd Font icon + short label
-    private static readonly (int Lo, int Hi, char Icon, string Label)[] WmoCodes =
+    // WMO 4501 weather code -> Nerd Font day/night icon + short label. Day/night
+    // pairs only differ where the glyph itself depicts a sun (Sunny, PCloudy/
+    // Cloudy, Rain, Snow/Showers): Overcast/Fog/Storm glyphs show no sun or moon
+    // in this icon set, so they're identical either way, not an oversight.
+    private static readonly (int Lo, int Hi, char DayIcon, char NightIcon, string Label)[] WmoCodes =
     [
-        ( 0,  0, '', "Sunny"),
-        ( 1,  1, '', "PCloudy"),
-        ( 2,  2, '', "Cloudy"),
-        ( 3,  3, '', "Overcast"),
-        (45, 48, '', "Fog"),
-        (51, 67, '', "Rain"),
-        (71, 77, '', "Snow"),
-        (80, 82, '', "Showers"),
-        (85, 86, '', "Snowshwrs"),
-        (95, 95, '', "Storm"),
-        (96, 99, '', "HvyStorm"),
+        ( 0,  0, '', '', "Sunny"),
+        ( 1,  1, '', '', "PCloudy"),
+        ( 2,  2, '', '', "Cloudy"),
+        ( 3,  3, '', '', "Overcast"),
+        (45, 48, '', '', "Fog"),
+        (51, 67, '', '', "Rain"),
+        (71, 77, '', '', "Snow"),
+        (80, 82, '', '', "Showers"),
+        (85, 86, '', '', "Snowshwrs"),
+        (95, 95, '', '', "Storm"),
+        (96, 99, '', '', "HvyStorm"),
     ];
 
-    private static char WmoIcon(int code)
+    private static char WmoIcon(int code, bool isDay)
     {
-        foreach (var (lo, hi, icon, _) in WmoCodes)
-            if (code >= lo && code <= hi) return icon;
-        return '';
+        foreach (var (lo, hi, dayIcon, nightIcon, _) in WmoCodes)
+            if (code >= lo && code <= hi) return isDay ? dayIcon : nightIcon;
+        return '';
     }
 
     private static string WmoLabel(int code)
     {
-        foreach (var (lo, hi, _, label) in WmoCodes)
+        foreach (var (lo, hi, _, _, label) in WmoCodes)
             if (code >= lo && code <= hi) return label;
         return $"WMO{code}";
     }
