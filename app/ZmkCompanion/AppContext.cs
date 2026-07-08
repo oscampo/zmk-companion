@@ -143,8 +143,8 @@ sealed class ZmkAppContext : ApplicationContext
                     string text = _liveState.ExpandEscaped(latest);
                     DebugLog.Log($"drain: SEND len={latest.Length} skipped={skipped}");
                     var pages = BitmapTextRenderer.RenderPages(text);
-                    var frames = pages.Select(BitmapFrame.Pack).ToList();
-                    foreach (var pageBmp in pages) pageBmp.Dispose();
+                    var frames = pages.Select(p => (Frame: BitmapFrame.Pack(p.Bitmap), p.CharCount)).ToList();
+                    foreach (var (pageBmp, _) in pages) pageBmp.Dispose();
                     await _compositor.ShowPersistentTextAsync(frames, preferSpeed: true);
                     _liveState.UpdateExternalText(text); // after _textOverride=true: Changed fires on UI thread, OnStateChanged exits early
                     DebugLog.Log($"drain: SEND done in {sw.ElapsedMilliseconds}ms " +

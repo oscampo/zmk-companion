@@ -21,7 +21,11 @@ static class BitmapTextRenderer
     // to know exactly how many characters fit before the canvas edge), and
     // finally the wrapped lines are chunked into pages of however many rows
     // fit in the canvas height.
-    public static List<Bitmap> RenderPages(string text)
+    //
+    // CharCount per page lets the caller size how long to hold that page on
+    // screen (a page with a full paragraph needs more reading time than one
+    // with "battery 87%") — see CellGridCompositor.PageDurationMs.
+    public static List<(Bitmap Bitmap, int CharCount)> RenderPages(string text)
     {
         using var measureBmp = BitmapFrame.CreateCanvas();
         using var g          = Graphics.FromImage(measureBmp);
@@ -35,7 +39,7 @@ static class BitmapTextRenderer
         foreach (string hardLine in text.Split('\n', StringSplitOptions.None))
             wrapped.AddRange(WrapByWidth(hardLine, font, g));
 
-        var pages = new List<Bitmap>();
+        var pages = new List<(Bitmap, int)>();
         for (int i = 0; i < wrapped.Count; i += linesPerPage)
         {
             var bmp = BitmapFrame.CreateCanvas();
@@ -44,16 +48,18 @@ static class BitmapTextRenderer
             pg.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
 
             float y = PaddingY;
+            int charCount = 0;
             for (int j = i; j < Math.Min(i + linesPerPage, wrapped.Count); j++)
             {
                 if (wrapped[j].Length > 0)
                     pg.DrawString(wrapped[j], font, Brushes.White, 0f, y, StringFormat.GenericTypographic);
+                charCount += wrapped[j].Length;
                 y += lineHeight;
             }
-            pages.Add(bmp);
+            pages.Add((bmp, charCount));
         }
 
-        if (pages.Count == 0) pages.Add(BitmapFrame.CreateCanvas()); // empty text → one blank page
+        if (pages.Count == 0) pages.Add((BitmapFrame.CreateCanvas(), 0)); // empty text → one blank page
         return pages;
     }
 
