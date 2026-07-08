@@ -250,11 +250,14 @@ sealed class GlyphGrid : Panel
                                 (-ap0 + ClientSize.Height) / CellSize + 1);
 
         using var nfFont = NerdFont.CreateFont(GlyphFontSize);
-        using var sf     = new StringFormat
-        {
-            Alignment     = StringAlignment.Center,
-            LineAlignment = StringAlignment.Center,
-        };
+        // GenericTypographic, not the default StringFormat: GenericDefault adds
+        // extra line-height/margin sized for Latin text metrics, and some NF
+        // icon glyphs (e.g. "gear") have unusual vertical bounds in this font
+        // that get pushed outside a small cell under that extra margin, the
+        // same reason CellGridRenderer uses GenericTypographic for cell rendering.
+        using var sf = (StringFormat)StringFormat.GenericTypographic.Clone();
+        sf.Alignment     = StringAlignment.Center;
+        sf.LineAlignment = StringAlignment.Center;
 
         for (int row = firstRow; row <= lastRow; row++)
         {
