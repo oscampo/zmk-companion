@@ -47,6 +47,7 @@ sealed class CellGridEditorForm : Form
     private readonly CheckBox      _chkAntiAlias;
     private readonly ComboBox      _cmbNumericStyle;
     private readonly ComboBox      _cmbAlphaStyle;
+    private readonly ComboBox      _cmbFontVariant;
     private readonly Panel         _rowEditorPanel;
     private          bool          _suppressRowUi;
 
@@ -329,7 +330,7 @@ sealed class CellGridEditorForm : Form
         grpRows.Controls.Add(btnTextBlock);
 
         // ── Row editor sub-panel ──────────────────────────────────────────────
-        _rowEditorPanel = new Panel { Location = new Point(6, 152), Size = new Size(390, 215), Enabled = false };
+        _rowEditorPanel = new Panel { Location = new Point(6, 152), Size = new Size(390, 241), Enabled = false };
 
         _rowEditorPanel.Controls.Add(new Label { Text = Strings.TierLabel, Location = new Point(0, 4), Size = new Size(30, 18) });
         _cmbTier = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(34, 1), Size = new Size(160, 23) };
@@ -397,13 +398,26 @@ sealed class CellGridEditorForm : Form
         _cmbAlphaStyle.SelectedIndexChanged += OnAlphaStyleChanged;
         _rowEditorPanel.Controls.Add(_cmbAlphaStyle);
 
+        // ── Font variant picker ───────────────────────────────────────────────
+        // Mono (the app default) shrinks icon/box glyph ink to force a uniform
+        // monospace advance width — that's what made weather icons and
+        // {conn.profilebar} boxes look undersized/inconsistent. Regular/Propo
+        // keep each glyph's natural size; pick per row where it matters.
+        _rowEditorPanel.Controls.Add(new Label { Text = Strings.FontVariantLabel, Location = new Point(0, 183), Size = new Size(46, 18) });
+        _cmbFontVariant = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(50, 180), Size = new Size(90, 23) };
+        foreach (var v in Enum.GetValues<FontVariant>())
+            _cmbFontVariant.Items.Add(NerdFont.VariantLabel(v));
+        _cmbFontVariant.SelectedIndex = 0;
+        _cmbFontVariant.SelectedIndexChanged += OnFontVariantChanged;
+        _rowEditorPanel.Controls.Add(_cmbFontVariant);
+
         // ── Binding picker ────────────────────────────────────────────────────
-        _rowEditorPanel.Controls.Add(new Label { Text = Strings.InsertLabel, Location = new Point(0, 183), Size = new Size(52, 18) });
+        _rowEditorPanel.Controls.Add(new Label { Text = Strings.InsertLabel, Location = new Point(0, 209), Size = new Size(52, 18) });
 
         _cmbBindCategory = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Location      = new Point(56, 180),
+            Location      = new Point(56, 206),
             Size          = new Size(90, 23),
         };
         foreach (var cat in BindingCatalog) _cmbBindCategory.Items.Add(cat.Category);
@@ -415,19 +429,19 @@ sealed class CellGridEditorForm : Form
         _cmbBind = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Location      = new Point(150, 180),
+            Location      = new Point(150, 206),
             Size          = new Size(118, 23), // narrowed 160->118 to fit btnGlyph on the same row
         };
         _cmbBind.SelectedIndexChanged += (_, _) => { };
         _rowEditorPanel.Controls.Add(_cmbBind);
         PopulateBindings(0);
 
-        var btnInsert = new Button { Text = Strings.InsertButton, Location = new Point(272, 180), Size = new Size(70, 23) };
+        var btnInsert = new Button { Text = Strings.InsertButton, Location = new Point(272, 206), Size = new Size(70, 23) };
         btnInsert.Click += OnInsertBinding;
         _rowEditorPanel.Controls.Add(btnInsert);
 
         // Full Nerd Font glyph picker (GlyphPickerDialog/FontCmapReader).
-        var btnGlyph = new Button { Text = "NF…", Location = new Point(346, 180), Size = new Size(40, 23) };
+        var btnGlyph = new Button { Text = "NF…", Location = new Point(346, 206), Size = new Size(40, 23) };
         btnGlyph.Click += OnInsertGlyph;
         _rowEditorPanel.Controls.Add(btnGlyph);
 
@@ -1020,6 +1034,7 @@ sealed class CellGridEditorForm : Form
         _chkAntiAlias.Checked          = row.AntiAlias;
         _cmbNumericStyle.SelectedIndex = NumericStyleIndex(row.NumericStyle);
         _cmbAlphaStyle.SelectedIndex   = AlphaStyleIndex(row.AlphaStyle);
+        _cmbFontVariant.SelectedIndex  = (int)row.FontVariant;
         (_radLeft.Checked, _radCenter.Checked, _radRight.Checked) = row.Align switch
         {
             "left"  => (true,  false, false),
@@ -1117,6 +1132,13 @@ sealed class CellGridEditorForm : Form
         int idx = _cmbAlphaStyle.SelectedIndex;
         _pages[_pageIndex].Rows[_rowIndex].AlphaStyle =
             idx >= 0 && idx < _alphaStyles.Length ? _alphaStyles[idx] : "text";
+        RefreshPreview();
+    }
+
+    private void OnFontVariantChanged(object? sender, EventArgs e)
+    {
+        if (_suppressRowUi || _rowIndex < 0 || _pageIndex < 0) return;
+        _pages[_pageIndex].Rows[_rowIndex].FontVariant = (FontVariant)_cmbFontVariant.SelectedIndex;
         RefreshPreview();
     }
 

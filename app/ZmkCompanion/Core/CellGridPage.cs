@@ -12,6 +12,12 @@ sealed class CellGridRow
     public string    NumericStyle { get; set; } = "text"; // text | box | box_outline | box_multiple | plain | circle | circle_outline
     public string    AlphaStyle   { get; set; } = "text"; // text | plain | box | box_outline | circle | circle_outline
     public bool      AntiAlias    { get; set; } = false;  // AntiAliasGridFit → threshold bitmapping
+    // Mono was the app default; it forces every glyph (icons included) into a
+    // single monospace advance width and, in doing so, ships those glyphs with
+    // less ink than Regular/Propo, making icon-heavy rows and profilebar boxes
+    // look shrunk/inconsistent. Default kept at Mono for backward compat with
+    // existing saved pages — pick Regular/Propo per row where it matters.
+    public FontVariant FontVariant { get; set; } = FontVariant.Mono;
 
     public CellGridRow Clone() => new()
     {
@@ -23,6 +29,7 @@ sealed class CellGridRow
         NumericStyle = NumericStyle,
         AlphaStyle   = AlphaStyle,
         AntiAlias    = AntiAlias,
+        FontVariant  = FontVariant,
     };
 }
 

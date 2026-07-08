@@ -101,6 +101,7 @@ static class Strings
     public static string BoldCheck         => Current == AppLanguage.Es ? "Negrita" : "Bold";
     public static string NumericLabel      => Current == AppLanguage.Es ? "Núm:" : "Num:";
     public static string AlphaLabel        => Current == AppLanguage.Es ? "Alfa:" : "Alpha:";
+    public static string FontVariantLabel  => Current == AppLanguage.Es ? "Fuente:" : "Font:";
     public static string InsertLabel       => Current == AppLanguage.Es ? "Insertar:" : "Insert:";
     public static string InsertButton      => Current == AppLanguage.Es ? "↵ Insertar" : "↵ Insert";
     public static string SportsTab         => Current == AppLanguage.Es ? "Deportes" : "Sports";

@@ -6,34 +6,56 @@ using System.Text;
 
 namespace ZmkCompanion.Core;
 
-// Loads FiraCode Nerd Font Mono from the embedded resource and exposes it for
-// GDI+. Mono specifically (not the plain "FiraCode Nerd Font" variant): the
-// non-Mono variant lets icon glyphs draw wider than one monospace advance
-// width by design, which was the actual cause of several icons (soccer ball,
-// umbrella, coffee cup) visually overlapping/clipping their neighbor in the
-// cell-grid — not a centering bug, see CellGridRenderer.
-// The PrivateFontCollection is kept alive for the process lifetime.
+// Which embedded FiraCode Nerd Font file a row draws with. Mono forces every
+// glyph (letters and icons alike) into one monospace advance width, and to do
+// that its icon/box glyphs carry less ink than Regular/Propo — that's what
+// made weather icons look shrunk and {conn.profilebar} boxes look mismatched
+// in size after switching to Mono (RenderCell never scales a glyph UP, only
+// down, so less native ink means a visibly smaller final glyph). Regular and
+// Propo keep each glyph's natural ink size. Selectable per-row in the editor.
+enum FontVariant { Mono, Regular, Propo }
+
+// Loads all three FiraCode Nerd Font variants from embedded resources and
+// exposes them for GDI+. See FontVariant for why more than one is embedded.
+// The PrivateFontCollections are kept alive for the process lifetime.
 static class NerdFont
 {
-    private static readonly PrivateFontCollection _pfc;
-    private static readonly byte[]               _fontData;
-    public  static readonly FontFamily            Family;
+    private static readonly PrivateFontCollection _pfcMono;
+    private static readonly PrivateFontCollection _pfcRegular;
+    private static readonly PrivateFontCollection _pfcPropo;
+    private static readonly byte[]                _fontDataMono;
+
+    // Kept for existing callers that don't care about variant (widgets, glyph
+    // picker, editor chrome) — defaults to Mono, the original single-font behavior.
+    public static readonly FontFamily Family;
+
+    private static readonly Dictionary<FontVariant, FontFamily> _families;
 
     static NerdFont()
     {
-        (_pfc, _fontData) = Load();
-        Family = _pfc.Families[0];
+        (_pfcMono, _fontDataMono, var monoFamily) = Load("FIRACODENERDFONTMONO-REGULAR.TTF");
+        (_pfcRegular, _, var regularFamily)        = Load("FIRACODENERDFONT-REGULAR.TTF");
+        (_pfcPropo, _, var propoFamily)            = Load("FIRACODENERDFONTPROPO-REGULAR.TTF");
+
+        Family = monoFamily;
+        _families = new()
+        {
+            [FontVariant.Mono]    = monoFamily,
+            [FontVariant.Regular] = regularFamily,
+            [FontVariant.Propo]   = propoFamily,
+        };
     }
 
-    // Raw bytes of the embedded Fira Code NF Mono font (used by FontCmapReader).
-    internal static byte[] GetFontData() => _fontData;
+    // Raw bytes of the Mono variant (used by FontCmapReader for codepoint
+    // lookups — all three variants ship the same glyph set/coverage).
+    internal static byte[] GetFontData() => _fontDataMono;
 
-    private static (PrivateFontCollection pfc, byte[] data) Load()
+    private static (PrivateFontCollection pfc, byte[] data, FontFamily family) Load(string resourceSuffix)
     {
         var pfc  = new PrivateFontCollection();
         var asm  = typeof(NerdFont).Assembly;
         var name = asm.GetManifestResourceNames()
-            .First(n => n.EndsWith("FIRACODENERDFONTMONO-REGULAR.TTF", StringComparison.OrdinalIgnoreCase));
+            .First(n => n.EndsWith(resourceSuffix, StringComparison.OrdinalIgnoreCase));
 
         using var stream = asm.GetManifestResourceStream(name)!;
         int    len = (int)stream.Length;
@@ -44,11 +66,20 @@ static class NerdFont
         try   { pfc.AddMemoryFont(handle.AddrOfPinnedObject(), len); }
         finally { handle.Free(); }
 
-        return (pfc, buf);
+        return (pfc, buf, pfc.Families[0]);
     }
 
-    public static Font CreateFont(float sizePx, FontStyle style = FontStyle.Regular) =>
-        new(Family, sizePx, style, GraphicsUnit.Pixel);
+    public static Font CreateFont(float sizePx, FontStyle style = FontStyle.Regular, FontVariant variant = FontVariant.Mono) =>
+        new(_families[variant], sizePx, style, GraphicsUnit.Pixel);
+
+    // Human-readable labels for the variant picker in the editor UI.
+    public static string VariantLabel(FontVariant variant) => variant switch
+    {
+        FontVariant.Mono    => "Mono",
+        FontVariant.Regular => "Regular",
+        FontVariant.Propo   => "Propo",
+        _                   => variant.ToString(),
+    };
 
     // ── Font Awesome glyphs (BMP, U+F000-F2FF) ──────────────────────────────
     public const string BatteryFull     = "";  // nf-fa-battery_4  U+F240
