@@ -39,10 +39,15 @@ sealed class PomodoroConfig
 // StateChanged and read GetDisplayState() to update LiveState / the tray.
 sealed class PomodoroFeature : IDisposable
 {
-    // FiraCode Nerd Font progress bar (U+EE00-EE05)
-    internal const char PbFirstFull  = ''; // left filled
-    internal const char PbMidFull    = ''; // middle filled
-    internal const char PbLastFull   = ''; // right filled
+    // FiraCode Nerd Font progress bar (U+EE00-EE05). Verified against the
+    // bundled Resources/glyphnames.tsv: extra-progress_full_left=EE03,
+    // extra-progress_full_mid=EE04, extra-progress_full_right=EE05 — the
+    // three "full" codepoints were previously rotated by one (First/Mid/Last
+    // pointed at Mid/Right/Left respectively), so the first filled cycle
+    // showed the "mid" shape instead of "left".
+    internal const char PbFirstFull  = ''; // left filled
+    internal const char PbMidFull    = ''; // middle filled
+    internal const char PbLastFull   = ''; // right filled
     internal const char PbEmpty      = ''; // middle empty
     internal const char PbFirstEmpty = ''; // left empty
     internal const char PbEndEmpty   = ''; // right empty
