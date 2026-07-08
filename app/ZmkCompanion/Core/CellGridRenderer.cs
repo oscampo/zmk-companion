@@ -42,19 +42,18 @@ static class CellGridRenderer
         float sizePx = (tier.W == tier.H) ? tier.W * 0.92f : tier.H * 0.78f;
 
         using var probe = NerdFont.CreateFont(sizePx, style);
-        RectangleF ink = MeasureInk(g, element, probe, sf);
-        if (ink.Width > tier.W) sizePx *= tier.W / ink.Width;
+        var ink = MeasureInkPixels(element, probe, antiAlias);
+        if (ink.Width > tier.W) sizePx *= (float)tier.W / ink.Width;
 
         using var font = NerdFont.CreateFont(sizePx, style);
-        ink = MeasureInk(g, element, font, sf);
-        // Center the glyph's actual rendered ink box, not its typographic
-        // advance box — several Nerd Font icon glyphs draw wider than (and
-        // offset from) what MeasureString reports, e.g. the soccer ball and
-        // umbrella glyphs overlap their neighbor even in a plain WinForms
-        // TextBox at the same font/size, confirming this is a font-metrics
-        // mismatch, not a centering-math bug.
+        ink = MeasureInkPixels(element, font, antiAlias);
+        // Center the glyph's actually-painted pixels, not any font-reported
+        // metric — MeasureCharacterRanges' region still didn't match for some
+        // icon glyphs (soccer ball, umbrella stayed clipped after that first
+        // attempt), so this measures real pixels the same way Pack1bpp itself
+        // reads them, guaranteed consistent with what actually gets sent.
         g.DrawString(element, font, Brushes.White,
-            (tier.W - ink.Width) / 2f - ink.X, (tier.H - ink.Height) / 2f - ink.Y, sf);
+            (tier.W - ink.Width) / 2f - ink.BearingX, (tier.H - ink.Height) / 2f - ink.BearingY, sf);
 
         return Pack1bpp(bmp, antiAlias);
     }
@@ -77,33 +76,54 @@ static class CellGridRenderer
         float sizePx = tier.W * 0.92f; // square canvas: fill W×W
 
         using var probe = NerdFont.CreateFont(sizePx, style);
-        RectangleF ink = MeasureInk(g, element, probe, sf);
-        if (ink.Width > tier.W) sizePx *= tier.W / ink.Width;
+        var ink = MeasureInkPixels(element, probe, antiAlias);
+        if (ink.Width > tier.W) sizePx *= (float)tier.W / ink.Width;
 
         using var font = NerdFont.CreateFont(sizePx, style);
-        ink = MeasureInk(g, element, font, sf);
+        ink = MeasureInkPixels(element, font, antiAlias);
         g.DrawString(element, font, Brushes.White,
-            (tier.W - ink.Width) / 2f - ink.X, (fullH - ink.Height) / 2f - ink.Y, sf);
+            (tier.W - ink.Width) / 2f - ink.BearingX, (fullH - ink.Height) / 2f - ink.BearingY, sf);
 
         int startY = half == SplitHalf.Top ? 0 : tier.H;
         return PackCrop1bpp(bmp, startY, tier.H, antiAlias);
     }
 
-    // Measures the actual rendered ("ink") bounding box of `text`, not just
-    // its typographic advance width. MeasureString's advance-width figure
-    // under-reports how wide several Nerd Font icon glyphs actually draw
-    // (by font design, these are meant to slightly overflow a single
-    // character cell), so using it alone both fails the "is this too wide"
-    // scale-down check and miscenters the glyph within the cell.
-    private static RectangleF MeasureInk(Graphics g, string text, Font font, StringFormat baseFormat)
+    private readonly record struct InkBounds(int Width, int Height, float BearingX, float BearingY);
+
+    // Renders `element` to an oversized scratch canvas and scans for the
+    // actual lit pixels — no GDI+ font metric API (MeasureString's advance
+    // width, MeasureCharacterRanges' region) matched what several Nerd Font
+    // icon glyphs (soccer ball, umbrella) actually paint, so this measures
+    // real pixels the same way Pack1bpp does, guaranteed self-consistent.
+    // BearingX/Y is the offset from the (pad,pad) draw origin used here to
+    // where the ink actually starts — GDI+ text rendering is translation
+    // invariant, so that offset holds for any origin the caller draws at.
+    private static InkBounds MeasureInkPixels(string element, Font font, bool antiAlias)
     {
-        using var measureFormat = (StringFormat)baseFormat.Clone();
-        measureFormat.SetMeasurableCharacterRanges([new CharacterRange(0, text.Length)]);
-        var layoutRect = new RectangleF(0, 0, 2000, 2000); // generous — must not clip the glyph
-        var regions = g.MeasureCharacterRanges(text, font, layoutRect, measureFormat);
-        var bounds = regions[0].GetBounds(g);
-        regions[0].Dispose();
-        return bounds;
+        int pad  = (int)(font.Size * 2) + 2;
+        int size = pad * 2 + (int)(font.Size * 2) + 4;
+        using var bmp = new Bitmap(size, size);
+        using var g   = Graphics.FromImage(bmp);
+        g.Clear(Color.Black);
+        g.TextRenderingHint = antiAlias
+            ? TextRenderingHint.AntiAliasGridFit
+            : TextRenderingHint.SingleBitPerPixelGridFit;
+        g.DrawString(element, font, Brushes.White, pad, pad, StringFormat.GenericTypographic);
+
+        int threshold = antiAlias ? 100 : 127;
+        int minX = size, minY = size, maxX = -1, maxY = -1;
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+                if (bmp.GetPixel(x, y).R > threshold)
+                {
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+
+        if (maxX < 0) return new InkBounds(0, 0, 0, 0); // blank element (e.g. a space)
+        return new InkBounds(maxX - minX + 1, maxY - minY + 1, minX - pad, minY - pad);
     }
 
     // Packs a bitmap to 1bpp: row-major, MSB-first, rows padded to a byte
