@@ -21,6 +21,17 @@ sealed class CellGridCompositor : IDisposable
     private readonly Dictionary<(int, int), byte[]> _sent    = new();
     private System.Windows.Forms.Timer?              _clockTimer;
     private bool   _textOverride;       // persistent CLI text is displayed; cell-grid suspended
+    // Multi-page text override (see BitmapTextRenderer.RenderPages): when the
+    // text doesn't fit on one screen, _textPageTimer alternates through
+    // _textOverridePages every TextPageIntervalMs. A fresh ShowPersistentTextAsync
+    // call (new text arriving) always resets to page 0 and restarts the timer —
+    // deliberately not "smart" about in-flight `--watch` streams, so a fast
+    // stream just never advances past page 0 rather than flickering through
+    // pages the reader can't keep up with anyway.
+    private const int TextPageIntervalMs = 4000;
+    private List<byte[]> _textOverridePages = [];
+    private int           _textOverridePageIndex;
+    private System.Windows.Forms.Timer? _textPageTimer;
     // Set eagerly from the pipe thread the instant text arrives, before the drain timer's own
     // tick runs. WinForms timers fire via WM_TIMER, which Windows only synthesizes once the
     // message queue is empty — a heartbeat redraw chaining many awaited BLE writes keeps the
@@ -105,6 +116,9 @@ sealed class CellGridCompositor : IDisposable
         _clockTimer?.Stop();
         _clockTimer?.Dispose();
         _clockTimer = null;
+        _textPageTimer?.Stop();
+        _textPageTimer?.Dispose();
+        _textPageTimer = null;
         _rows.Clear();
         TextMode = ExternalTextMode.None;
         _overridePending = false;
@@ -147,31 +161,58 @@ sealed class CellGridCompositor : IDisposable
         }
     }
 
-    // Shows a full-frame bitmap and keeps it until new text or page change.
-    // Suspends cell-grid updates for the duration of the override.
-    // preferSpeed=true uses WriteWithoutResponse (~30-50ms) for live streaming.
-    public async Task ShowPersistentTextAsync(byte[] frame, bool preferSpeed = false)
+    // Shows one or more full-frame bitmap "pages" and keeps the first until new
+    // text, a page change, or (if there's more than one page) the page timer
+    // advances to the next one. Suspends cell-grid updates for the duration of
+    // the override. preferSpeed=true uses WriteWithoutResponse (~30-50ms) for
+    // live streaming.
+    public async Task ShowPersistentTextAsync(List<byte[]> frames, bool preferSpeed = false)
     {
         _clockTimer?.Stop();
+        _textPageTimer?.Stop();
+        _textPageTimer?.Dispose();
+        _textPageTimer = null;
+
         bool entering = !_textOverride; // true on first call: transitioning from cell-grid to bitmap
-        _textOverride      = true;
-        _overridePending   = false;
-        _textOverrideFrame = frame;
+        _textOverride          = true;
+        _overridePending       = false;
+        _textOverridePages     = frames;
+        _textOverridePageIndex = 0;
+        _textOverrideFrame     = frames.Count > 0 ? frames[0] : [];
         // On first entry: clear LVGL cell objects so they stop rendering over the bitmap.
         // Subsequent streaming updates skip CLEAR (no new cell objects arrive once _textOverride
         // is set, and sending CLEAR+bitmap every second adds unnecessary ~150ms overhead).
         if (entering && _ble.HasCellGridChar)
             await _ble.SendCellGridAsync(CellGridProtocol.BuildClear());
-        await _ble.SendBitmapAsync(frame, preferSpeed);
+        await _ble.SendBitmapAsync(_textOverrideFrame, preferSpeed);
+
+        if (frames.Count > 1)
+        {
+            _textPageTimer = new System.Windows.Forms.Timer { Interval = TextPageIntervalMs };
+            _textPageTimer.Tick += async (_, _) => await AdvanceTextPageAsync(preferSpeed);
+            _textPageTimer.Start();
+        }
+    }
+
+    private async Task AdvanceTextPageAsync(bool preferSpeed)
+    {
+        if (!_textOverride || _textOverridePages.Count <= 1) return;
+        _textOverridePageIndex = (_textOverridePageIndex + 1) % _textOverridePages.Count;
+        _textOverrideFrame     = _textOverridePages[_textOverridePageIndex];
+        await _ble.SendBitmapAsync(_textOverrideFrame, preferSpeed);
     }
 
     // Restores cell-grid after a persistent text override.
     public async Task ClearTextOverrideAsync()
     {
         if (!_textOverride || !Running) { _textOverride = false; _overridePending = false; return; }
+        _textPageTimer?.Stop();
+        _textPageTimer?.Dispose();
+        _textPageTimer = null;
         _textOverride      = false;
         _overridePending   = false;
         _textOverrideFrame = [];
+        _textOverridePages = [];
 
         var layoutArgs = _rows.Select(r => {
             var t = CellGridProtocol.Tiers[r.TierId];
