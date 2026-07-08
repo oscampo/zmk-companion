@@ -173,10 +173,39 @@ sealed class LiveState
     // Resolves a single binding key to its current display value (no glyph styling).
     public string Resolve(string key, bool use24h = false) => Resolve(key, use24h, null);
 
+    // Time/date tokens that accept an optional ":<IANA id>" suffix for a
+    // foreign time zone, e.g. {time:America/New_York}, {date.month:Asia/Tokyo}.
+    // No suffix == local system time/date (unchanged behavior).
+    private static readonly HashSet<string> TimeZoneAwareKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "time", "time24", "time12", "time.hh", "time.mm", "ampm", "date", "date.day", "time.dd", "date.month",
+    };
+
     // Resolves a single binding key, applying glyph styles from cfg when provided.
     public string Resolve(string key, bool use24h, LabelConfig? cfg)
     {
         bool h24 = use24h || !Protocol.Detect12h();
+
+        // Strip a ":<IANA id>" suffix off a time/date key and compute that
+        // zone's current time. An unresolvable id is a visible typo signal
+        // (unresolved "{key}"), same convention as every other unknown token,
+        // not a silent fallback to local time.
+        string timeKey = key;
+        DateTime now    = DateTime.Now;
+        int colonIdx    = key.IndexOf(':');
+        if (colonIdx > 0 && TimeZoneAwareKeys.Contains(key[..colonIdx]))
+        {
+            string baseKey = key[..colonIdx];
+            string tzId    = key[(colonIdx + 1)..];
+            try
+            {
+                var tz = TimeZoneInfo.FindSystemTimeZoneById(tzId);
+                now     = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+                timeKey = baseKey;
+            }
+            catch (TimeZoneNotFoundException) { return $"{{{key}}}"; }
+            catch (InvalidTimeZoneException)  { return $"{{{key}}}"; }
+        }
 
         // Battery icon — respects BatteryGlyphStyle
         if (key == "battery.icon")
@@ -223,7 +252,7 @@ sealed class LiveState
         // Sports — {sports}, {sports:NFL}, {sports.team}, {sports.team:NFL}, etc.
         bool isSports = key.StartsWith("sports", StringComparison.OrdinalIgnoreCase);
         bool isCustom = key.StartsWith("custom.", StringComparison.OrdinalIgnoreCase);
-        string raw = isSports ? ResolveSports(key) : key switch
+        string raw = isSports ? ResolveSports(key) : timeKey switch
         {
             "battery.level"   => BatteryLevel < 0 ? "--"  : $"{BatteryLevel}",
             "battery.percent" => BatteryLevel < 0 ? "--%": $"{BatteryLevel}%",
@@ -232,16 +261,16 @@ sealed class LiveState
             "layer.number"    => Layer < 0 ? "--" : $"{Layer}", // 0-based, matches ZMK's own indexing
             "layer.name"      => LayerName,
             "wpm"             => Wpm   < 0 ? "--" : $"{Wpm}",  // raw, decays to 0 when idle (see UpdateWpm)
-            "time"            => DateTime.Now.ToString(h24 ? "HH:mm" : "h:mm"),
-            "time24"          => DateTime.Now.ToString("HH:mm"),
-            "time12"          => DateTime.Now.ToString("h:mm"),
-            "time.hh"         => DateTime.Now.ToString(h24 ? "HH" : "hh"),
-            "time.mm"         => DateTime.Now.ToString("mm"),
-            "ampm"            => h24 ? "" : DateTime.Now.ToString("tt"),
-            "date"            => DateTime.Now.ToString("ddd d").ToUpper(),
-            "date.day"        => DateTime.Now.Day.ToString(),
-            "time.dd"         => DateTime.Now.ToString("dd"),
-            "date.month"      => DateTime.Now.ToString("MMM").ToUpper(),
+            "time"            => now.ToString(h24 ? "HH:mm" : "h:mm"),
+            "time24"          => now.ToString("HH:mm"),
+            "time12"          => now.ToString("h:mm"),
+            "time.hh"         => now.ToString(h24 ? "HH" : "hh"),
+            "time.mm"         => now.ToString("mm"),
+            "ampm"            => h24 ? "" : now.ToString("tt"),
+            "date"            => now.ToString("ddd d").ToUpper(),
+            "date.day"        => now.Day.ToString(),
+            "time.dd"         => now.ToString("dd"),
+            "date.month"      => now.ToString("MMM").ToUpper(),
             "weather.icon"    => WeatherIcon,
             "weather.temp"    => WeatherTemp,
             "weather.city"    => WeatherCity,
@@ -264,8 +293,8 @@ sealed class LiveState
             bool alphaConvert = cfg.AlphaStyle   != "text";
             if (numConvert || alphaConvert)
             {
-                bool applyAlpha = alphaConvert && (isSports || isCustom || key is "date" or "date.month" or "weather" or "weather.city" or "layer.name");
-                bool applyNum   = numConvert   && (isSports || isCustom || key is "time" or "time24" or "time12"
+                bool applyAlpha = alphaConvert && (isSports || isCustom || timeKey is "date" or "date.month" or "weather" or "weather.city" or "layer.name");
+                bool applyNum   = numConvert   && (isSports || isCustom || timeKey is "time" or "time24" or "time12"
                                                         or "time.hh" or "time.mm" or "time.dd"
                                                         or "date" or "date.day" or "date.month"
                                                         or "conn.profile" or "layer.number" or "wpm" or "weather" or "weather.temp");

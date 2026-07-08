@@ -61,6 +61,7 @@ sealed class CellGridEditorForm : Form
     private readonly Panel         _teamsPanel;
     private readonly Dictionary<string, TextBox> _teamBoxes = new();
     private          List<string>  _editLeagues;
+    private          List<string>  _editTimeZones;
 
     // Distinct categories from settings.CustomTokens, appended to the binding
     // picker after BindingCatalog. Computed once: this dialog doesn't need to
@@ -75,7 +76,8 @@ sealed class CellGridEditorForm : Form
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "ZmkCompanion", "library");
 
-    private const int DeportesCategory = 2;
+    private const int DeportesCategory  = 2;
+    private const int TimeZoneCategory  = 5;
 
     // Binding catalog — category → list of (label, token). Built per-instance
     // (not static readonly) so it reflects the language active when the
@@ -169,6 +171,8 @@ sealed class CellGridEditorForm : Form
                 ("Ext. text line 3",     "{ext.text.2}"),
                 ("Ext. text line 4",     "{ext.text.3}"),
             ]),
+            // Index 5 = TimeZoneCategory — populated dynamically
+            (es ? "Zona Horaria" : "Time Zone", []),
         ];
     }
 
@@ -182,6 +186,7 @@ sealed class CellGridEditorForm : Form
         _onApply     = onApply;
         _pages       = settings.DisplayPages.Select(p => p.Clone()).ToList();
         _editLeagues = settings.SelectedLeagues.ToList();
+        _editTimeZones = settings.SelectedTimeZones.ToList();
         _customCategories = settings.CustomTokens
             .Select(t => t.Category)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -451,7 +456,21 @@ sealed class CellGridEditorForm : Form
             AutoScroll = true,
         };
         tabSports.Controls.Add(_teamsPanel);
-        tabData.TabPages.Add(tabSports);
+
+        // ── Tab: Zona Horaria ─────────────────────────────────────────────────
+        var tabTimeZone = new TabPage(Strings.TimeZoneTab);
+        tabTimeZone.Controls.Add(new Label { Text = Strings.TimeZonesLabel, Location = new Point(6, 6), AutoSize = true });
+        var btnTimeZones = new Button { Text = Strings.EditTimeZonesButton, Location = new Point(280, 3), Size = new Size(110, 23) };
+        btnTimeZones.Click += (_, _) =>
+        {
+            using var dlg = new TimeZonePickerDialog(_editTimeZones);
+            if (dlg.ShowDialog(this) == DialogResult.OK)
+            {
+                _editTimeZones = dlg.SelectedIds.ToList();
+                PopulateBindings(_cmbBindCategory.SelectedIndex);
+            }
+        };
+        tabTimeZone.Controls.Add(btnTimeZones);
 
         // ── Tab: Clima ────────────────────────────────────────────────────────
         var tabWeather = new TabPage(Strings.WeatherTab);
@@ -478,7 +497,6 @@ sealed class CellGridEditorForm : Form
         _radTempC = new RadioButton { Text = "°C", Location = new Point(90, 34), Size = new Size(42, 20), Checked = !isFahrenheit };
         _radTempF = new RadioButton { Text = "°F", Location = new Point(136, 34), Size = new Size(42, 20), Checked =  isFahrenheit };
         tabWeather.Controls.AddRange([_radTempC, _radTempF]);
-        tabData.TabPages.Add(tabWeather);
 
         // ── Tab: CLI ──────────────────────────────────────────────────────────
         var tabCli = new TabPage("CLI"); // "CLI" is an acronym, invariant across languages
@@ -511,7 +529,6 @@ sealed class CellGridEditorForm : Form
             Font      = new Font(SystemFonts.MessageBoxFont!.FontFamily, 7.5f),
         };
         tabCli.Controls.Add(lblCliHint);
-        tabData.TabPages.Add(tabCli);
 
         // ── Tab: Biblioteca ───────────────────────────────────────────────────
         var tabLib = new TabPage(Strings.LibraryTab);
@@ -539,7 +556,14 @@ sealed class CellGridEditorForm : Form
         btnLibDel.Click += OnLibDelete;
         tabLib.Controls.Add(btnLibDel);
 
+        // Add order determines both left-to-right tab order and which tab is
+        // selected by default (TabControl.SelectedIndex defaults to 0, the
+        // first one added) — Library first so the editor opens there.
         tabData.TabPages.Add(tabLib);
+        tabData.TabPages.Add(tabTimeZone);
+        tabData.TabPages.Add(tabWeather);
+        tabData.TabPages.Add(tabSports);
+        tabData.TabPages.Add(tabCli);
         Controls.Add(tabData);
 
         // ── Bottom buttons ────────────────────────────────────────────────────
@@ -583,6 +607,7 @@ sealed class CellGridEditorForm : Form
     private (string Label, string Token)[] GetCategoryItems(int catIndex)
     {
         if (catIndex == DeportesCategory) return BuildDeportesItems();
+        if (catIndex == TimeZoneCategory) return BuildTimeZoneItems();
         if (catIndex >= 0 && catIndex < BindingCatalog.Length) return BindingCatalog[catIndex].Items;
 
         int customIdx = catIndex - BindingCatalog.Length;
@@ -653,6 +678,34 @@ sealed class CellGridEditorForm : Form
                     items.Add(($"[{lg.ShortName}] League",      $"{{sports.league{q}}}"));
                     items.Add(($"[{lg.ShortName}] Team",        $"{{sports.team{q}}}"));
                 }
+            }
+        }
+        return items.ToArray();
+    }
+
+    // Per selected time zone (settings.SelectedTimeZones, edited from the
+    // "Editar zonas…" button on the Time Zone tab): {time:ID}/{time24:ID}/
+    // {date:ID}, using the ":ID" suffix convention LiveState.Resolve parses
+    // for foreign-zone tokens (see TimeZoneAwareKeys in LiveState.cs).
+    private (string Label, string Token)[] BuildTimeZoneItems()
+    {
+        bool es = Strings.Current == AppLanguage.Es;
+        var items = new List<(string, string)>();
+        foreach (var id in _editTimeZones)
+        {
+            var tz = TimeZoneCatalog.FindOrCreate(id);
+            string q = ":" + tz.Id;
+            if (es)
+            {
+                items.Add(($"[{tz.ShortName}] Hora",     $"{{time{q}}}"));
+                items.Add(($"[{tz.ShortName}] Hora 24h",  $"{{time24{q}}}"));
+                items.Add(($"[{tz.ShortName}] Fecha",    $"{{date{q}}}"));
+            }
+            else
+            {
+                items.Add(($"[{tz.ShortName}] Time",     $"{{time{q}}}"));
+                items.Add(($"[{tz.ShortName}] Time 24h",  $"{{time24{q}}}"));
+                items.Add(($"[{tz.ShortName}] Date",     $"{{date{q}}}"));
             }
         }
         return items.ToArray();
@@ -1066,7 +1119,8 @@ sealed class CellGridEditorForm : Form
             foreach (var p in snap.DisplayPages) _pages.Add(p.Clone());
             if (_pages.Count == 0) _pages.Add(new CellGridPage());
 
-            _editLeagues  = snap.SelectedLeagues.ToList();
+            _editLeagues   = snap.SelectedLeagues.ToList();
+            _editTimeZones = snap.SelectedTimeZones.ToList();
             _chkCycle.Checked = snap.CycleDisplayPages;
             _txtCity.Text = snap.City;
             bool f = snap.WeatherUnit == "fahrenheit";
@@ -1100,6 +1154,7 @@ sealed class CellGridEditorForm : Form
         City              = _txtCity.Text.Trim(),
         WeatherUnit       = _radTempF.Checked ? "fahrenheit" : "celsius",
         SelectedLeagues   = _editLeagues.Count > 0 ? _editLeagues : ["football/nfl"],
+        SelectedTimeZones = _editTimeZones,
         SportsTeams       = _teamBoxes
             .Where(kv => !string.IsNullOrWhiteSpace(kv.Value.Text))
             .ToDictionary(kv => kv.Key, kv => kv.Value.Text.Trim().ToUpper()),
@@ -1137,8 +1192,9 @@ sealed class CellGridEditorForm : Form
 
         _settings.City            = _txtCity.Text.Trim();
         _settings.WeatherUnit     = _radTempF.Checked ? "fahrenheit" : "celsius";
-        _settings.SelectedLeagues = _editLeagues.Count > 0 ? _editLeagues : ["football/nfl"];
-        _settings.SportsTeams     = _teamBoxes
+        _settings.SelectedLeagues   = _editLeagues.Count > 0 ? _editLeagues : ["football/nfl"];
+        _settings.SelectedTimeZones = _editTimeZones;
+        _settings.SportsTeams       = _teamBoxes
             .Where(kv => !string.IsNullOrWhiteSpace(kv.Value.Text))
             .ToDictionary(kv => kv.Key, kv => kv.Value.Text.Trim().ToUpper());
         _settings.SportsTeam      = null;

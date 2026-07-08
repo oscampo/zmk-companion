@@ -206,4 +206,25 @@ static class Strings
         ? "Ya se está buscando el teclado…" : "Already searching for the keyboard…";
     public static string SearchingBalloon => Current == AppLanguage.Es
         ? "Buscando teclado…" : "Searching for keyboard…";
+
+    // ── TimeZonePickerDialog ─────────────────────────────────────────────────────
+    public static string TimeZonePickerTitle => Current == AppLanguage.Es
+        ? "ZMK Companion - Configurar zonas horarias" : "ZMK Companion - Configure Time Zones";
+    public static string SearchTimeZonesLabel => Current == AppLanguage.Es ? "Buscar ciudad:" : "Search city:";
+    public static string SearchTimeZonesPlaceholder => Current == AppLanguage.Es ? "Escribe para filtrar…" : "Type to filter…";
+    public static string AvailableTimeZonesLabel => Current == AppLanguage.Es
+        ? "Disponibles  (doble clic o Enter para agregar):" : "Available  (double-click or Enter to add):";
+    public static string CustomTimeZoneIdLabel => Current == AppLanguage.Es
+        ? "¿No está en la lista? Escribe un ID IANA:" : "Not in the list? Type an IANA id:";
+    public static string SelectedTimeZonesLabel => Current == AppLanguage.Es
+        ? "Seleccionadas  (clic en la ficha para quitar):" : "Selected  (click chip to remove):";
+    public static string InvalidTimeZoneTitle => Current == AppLanguage.Es ? "Zona horaria inválida" : "Invalid time zone";
+    public static string InvalidTimeZoneBody(string id) => Current == AppLanguage.Es
+        ? $"\"{id}\" no es un ID de zona horaria IANA reconocido (ej: America/New_York)."
+        : $"\"{id}\" isn't a recognized IANA time zone id (e.g. America/New_York).";
+
+    // ── CellGridEditorForm: Time Zone tab ────────────────────────────────────────
+    public static string TimeZoneTab           => Current == AppLanguage.Es ? "Zona Horaria" : "Time Zone";
+    public static string TimeZonesLabel        => Current == AppLanguage.Es ? "Zonas horarias:" : "Time zones:";
+    public static string EditTimeZonesButton   => Current == AppLanguage.Es ? "Editar zonas…" : "Edit zones…";
 }

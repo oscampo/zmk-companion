@@ -38,6 +38,10 @@ sealed class AppSettings
     // {"football/nfl": "KC", "soccer/fifa.cwc": "COL"}
     public Dictionary<string, string> SportsTeams { get; set; } = new();
 
+    // Selected foreign time zones as IANA ids, e.g. ["America/New_York", "Asia/Tokyo"].
+    // Powers the {time:ID}/{date:ID}/etc. binding-picker category (Time Zone tab).
+    public List<string> SelectedTimeZones { get; set; } = new();
+
     // User-declared {custom.NAME} tokens (name + picker category only, no
     // value, values are runtime-only, pushed via `zkc --set`). Managed from
     // the tray's "Tokens personalizados…" menu item.
