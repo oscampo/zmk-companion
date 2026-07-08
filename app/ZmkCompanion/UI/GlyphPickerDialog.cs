@@ -188,9 +188,16 @@ sealed class GlyphPickerDialog : Form
 // Owner-drawn scrollable grid of glyph cells.
 sealed class GlyphGrid : Panel
 {
-    private const int CellSize = 36;
-    private const int Cols     = 10;
+    // Bumped 36->52 (and the glyph font 18->30) per user feedback that icons
+    // were too small to make out at a glance. Cols is computed from the
+    // control's actual width instead of a hardcoded 10: at the old 36px
+    // cell size 10 columns fit this dialog's ~400px content width, but a
+    // fixed column count would either waste space or clip columns once the
+    // cell size changes, or if the dialog is resized (it's Sizable).
+    private const int CellSize = 52;
+    private const float GlyphFontSize = 30f;
 
+    private int   Cols => Math.Max(1, ClientSize.Width / CellSize);
     private int[] _cps     = [];
     private int   _hovered = -1;
 
@@ -212,23 +219,37 @@ sealed class GlyphGrid : Panel
     {
         _cps    = cps;
         _hovered = -1;
-        int rows = (cps.Length + Cols - 1) / Cols;
-        AutoScrollMinSize = new Size(Cols * CellSize, rows * CellSize);
+        RecalcScrollSize();
+        Invalidate();
+    }
+
+    private void RecalcScrollSize()
+    {
+        int cols = Cols;
+        int rows = (_cps.Length + cols - 1) / cols;
+        AutoScrollMinSize = new Size(cols * CellSize, rows * CellSize);
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        RecalcScrollSize();
         Invalidate();
     }
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        var g   = e.Graphics;
+        var g    = e.Graphics;
+        int cols = Cols;
         g.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
 
         int ap0 = AutoScrollPosition.Y;  // ≤ 0 when scrolled down
 
         int firstRow = Math.Max(0, (-ap0) / CellSize);
-        int lastRow  = Math.Min((_cps.Length + Cols - 1) / Cols,
+        int lastRow  = Math.Min((_cps.Length + cols - 1) / cols,
                                 (-ap0 + ClientSize.Height) / CellSize + 1);
 
-        using var nfFont = NerdFont.CreateFont(18f);
+        using var nfFont = NerdFont.CreateFont(GlyphFontSize);
         using var sf     = new StringFormat
         {
             Alignment     = StringAlignment.Center,
@@ -237,9 +258,9 @@ sealed class GlyphGrid : Panel
 
         for (int row = firstRow; row <= lastRow; row++)
         {
-            for (int col = 0; col < Cols; col++)
+            for (int col = 0; col < cols; col++)
             {
-                int idx = row * Cols + col;
+                int idx = row * cols + col;
                 if (idx >= _cps.Length) break;
 
                 int cellX = col * CellSize + AutoScrollPosition.X;
@@ -286,12 +307,13 @@ sealed class GlyphGrid : Panel
 
     private int HitTest(int mx, int my)
     {
+        int cols = Cols;
         int vx  = mx - AutoScrollPosition.X;
         int vy  = my - AutoScrollPosition.Y;
         int col = vx / CellSize;
         int row = vy / CellSize;
-        if (col < 0 || col >= Cols || row < 0) return -1;
-        int idx = row * Cols + col;
+        if (col < 0 || col >= cols || row < 0) return -1;
+        int idx = row * cols + col;
         return idx < _cps.Length ? idx : -1;
     }
 }
