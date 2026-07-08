@@ -14,7 +14,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Resources\FiraCodeNerdFont-Regular.ttf" />
+    <!-- Mono variant: forces every glyph, including Nerd Font icons, into a
+         single monospace advance width. The non-Mono variant (previously
+         embedded here) lets icon glyphs draw wider than one cell by design,
+         which is what caused several icons (soccer ball, umbrella, coffee
+         cup) to visually overlap/clip their neighbor in the cell-grid. -->
+    <EmbeddedResource Include="Resources\FIRACODENERDFONTMONO-REGULAR.TTF" />
     <!-- name<TAB>hex-codepoint, one per line. Derived from the official
          nerd-fonts glyphnames.json (name+code only, metadata stripped) for
          GlyphPickerDialog's name search. -->

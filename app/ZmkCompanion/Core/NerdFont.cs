@@ -6,7 +6,12 @@ using System.Text;
 
 namespace ZmkCompanion.Core;
 
-// Loads FiraCode Nerd Font from the embedded resource and exposes it for GDI+.
+// Loads FiraCode Nerd Font Mono from the embedded resource and exposes it for
+// GDI+. Mono specifically (not the plain "FiraCode Nerd Font" variant): the
+// non-Mono variant lets icon glyphs draw wider than one monospace advance
+// width by design, which was the actual cause of several icons (soccer ball,
+// umbrella, coffee cup) visually overlapping/clipping their neighbor in the
+// cell-grid — not a centering bug, see CellGridRenderer.
 // The PrivateFontCollection is kept alive for the process lifetime.
 static class NerdFont
 {
@@ -20,7 +25,7 @@ static class NerdFont
         Family = _pfc.Families[0];
     }
 
-    // Raw bytes of the embedded Fira Code NF font (used by FontCmapReader).
+    // Raw bytes of the embedded Fira Code NF Mono font (used by FontCmapReader).
     internal static byte[] GetFontData() => _fontData;
 
     private static (PrivateFontCollection pfc, byte[] data) Load()
@@ -28,7 +33,7 @@ static class NerdFont
         var pfc  = new PrivateFontCollection();
         var asm  = typeof(NerdFont).Assembly;
         var name = asm.GetManifestResourceNames()
-            .First(n => n.EndsWith("FiraCodeNerdFont-Regular.ttf", StringComparison.OrdinalIgnoreCase));
+            .First(n => n.EndsWith("FIRACODENERDFONTMONO-REGULAR.TTF", StringComparison.OrdinalIgnoreCase));
 
         using var stream = asm.GetManifestResourceStream(name)!;
         int    len = (int)stream.Length;
