@@ -237,6 +237,22 @@ sealed class GlyphGrid : Panel
         AutoScrollPosition = Point.Empty;
     }
 
+    // ScrollableControl defers its real scrollbar/position adjustment until
+    // the control has a native window handle. SetCodepoints runs during the
+    // dialog's constructor (via Refilter()), before the handle exists, so
+    // the AutoScrollPosition reset in RecalcScrollSize() at that point gets
+    // silently overwritten once WinForms actually creates the handle and
+    // performs its own deferred scroll adjustment, leaving row 0 squashed
+    // into a sliver a few px tall under the toolbar (still hit-testable,
+    // since HitTest uses the same math, just not visibly painted). Redoing
+    // the recalc here, after the handle exists, is the last word.
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        RecalcScrollSize();
+        Invalidate();
+    }
+
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
