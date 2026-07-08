@@ -255,16 +255,30 @@ sealed class ZmkAppContext : ApplicationContext
 
     private async Task RefreshWeatherAsync()
     {
-        try
+        var cities = _settings.WeatherCities.Count > 0 ? _settings.WeatherCities : [""];
+        bool first = true;
+        foreach (var city in cities)
         {
-            var data = await WeatherFeature.FetchWeatherAsync(_settings.City);
-            string tempStr = _settings.WeatherUnit == "fahrenheit"
-                ? $"{data.TempC * 9 / 5 + 32:F0}°F"
-                : $"{data.TempC:F0}°";
-            _liveState.UpdateWeather(data.Icon.ToString(), tempStr, data.City);
-            DebugLog.Log($"weather: {data.City} {tempStr} wmo={data.Icon}");
+            try
+            {
+                var data = await WeatherFeature.FetchWeatherAsync(city);
+                string tempStr = _settings.WeatherUnit == "fahrenheit"
+                    ? $"{data.TempC * 9 / 5 + 32:F0}°F"
+                    : $"{data.TempC:F0}°";
+                string key = string.IsNullOrWhiteSpace(city) ? "default" : city;
+                _liveState.UpdateWeather(key, data.Icon.ToString(), tempStr, data.City);
+                // Always update "default" for the first configured city so
+                // switching cities never leaves stale data behind (same reasoning
+                // as RefreshSportsAsync's "default*" double-keying).
+                if (first)
+                {
+                    _liveState.UpdateWeather("default", data.Icon.ToString(), tempStr, data.City);
+                    first = false;
+                }
+                DebugLog.Log($"weather[{key}]: {data.City} {tempStr} wmo={data.Icon}");
+            }
+            catch (Exception ex) { DebugLog.Log($"weather error ({city}): {ex.Message}"); }
         }
-        catch (Exception ex) { DebugLog.Log($"weather error: {ex.Message}"); }
     }
 
     private async Task RefreshSportsAsync()

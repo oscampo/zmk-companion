@@ -28,9 +28,13 @@ sealed class AppSettings
     public int PomodoroCycles       { get; set; } = 4;
     public int PomodoroLongBreakMin { get; set; } = 15;
 
-    // Weather data source — city name for API queries (blank = IP geolocation).
+    // Weather data source — city names for API queries, up to 4 (see
+    // CellGridEditorForm's Weather tab, which enforces the cap). Empty list =
+    // single IP-geolocated city (blank = auto-detect, same as before this was
+    // a list). First entry backs the bare {weather}/{weather.*} bindings;
+    // any additional ones need the ":<city>" suffix, e.g. {weather.temp:Madrid}.
     // Temperature unit: "celsius" or "fahrenheit".
-    public string City        { get; set; } = "";
+    public List<string> WeatherCities { get; set; } = new();
     public string WeatherUnit { get; set; } = "celsius";
     // Selected leagues as ESPN paths, e.g. ["football/nfl", "soccer/eng.1"]
     public List<string> SelectedLeagues { get; set; } = ["football/nfl"];
@@ -62,6 +66,8 @@ sealed class AppSettings
     public string? SportEspnPath { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? SportsTeam { get; set; } // migrated → SportsTeams
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? City { get; set; } // migrated → WeatherCities
 
     private static CellGridPage DefaultDisplayPage() => new()
     {
@@ -96,6 +102,15 @@ sealed class AppSettings
                 if (s.SelectedLeagues == null || s.SelectedLeagues.Count == 0)
                     s.SelectedLeagues = ["football/nfl"];
                 s.SportEspnPath = null;
+                // Migrate City (single string, blank = auto-detect) → WeatherCities.
+                // An explicitly-empty WeatherCities list is itself a valid, already-
+                // migrated state (same auto-detect meaning) — only backfill from the
+                // legacy field when City was actually set to a non-blank value.
+                if ((s.WeatherCities == null || s.WeatherCities.Count == 0) &&
+                    !string.IsNullOrEmpty(s.City))
+                    s.WeatherCities = [s.City];
+                s.WeatherCities ??= new List<string>();
+                s.City = null;
                 // Clear legacy canvas fields
                 s.Canvas = null;
                 s.Pages  = null;

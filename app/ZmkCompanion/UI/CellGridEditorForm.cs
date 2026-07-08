@@ -58,6 +58,9 @@ sealed class CellGridEditorForm : Form
     private readonly TextBox       _txtCity;
     private readonly Label         _lblWeatherStatus;
     private readonly RadioButton   _radTempC, _radTempF;
+    private readonly FlowLayoutPanel _weatherCitiesPanel;
+    private          List<string>  _editWeatherCities;
+    private const int MaxWeatherCities = 4;
     private readonly Panel         _teamsPanel;
     private readonly Dictionary<string, TextBox> _teamBoxes = new();
     private          List<string>  _editLeagues;
@@ -191,6 +194,7 @@ sealed class CellGridEditorForm : Form
         _pages       = settings.DisplayPages.Select(p => p.Clone()).ToList();
         _editLeagues = settings.SelectedLeagues.ToList();
         _editTimeZones = settings.SelectedTimeZones.ToList();
+        _editWeatherCities = settings.WeatherCities.ToList();
         _customCategories = settings.CustomTokens
             .Select(t => t.Category)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -502,29 +506,63 @@ sealed class CellGridEditorForm : Form
         });
 
         // ── Tab: Clima ────────────────────────────────────────────────────────
+        // Up to MaxWeatherCities cities: unlike Sports/Time Zone there's no
+        // finite catalog to browse (any place name is technically valid), so
+        // instead of a modal picker dialog, "add" happens inline here — type a
+        // name, it's validated against the geocoding API (same one
+        // WeatherFeature already calls) before being accepted into the list.
         var tabWeather = new TabPage(Strings.WeatherTab);
-        tabWeather.Controls.Add(new Label { Text = Strings.CityLabel, Location = new Point(6, 8), AutoSize = true });
-        _txtCity = new TextBox { Text = settings.City, Location = new Point(58, 5), Size = new Size(100, 22) };
+        tabWeather.Controls.Add(new Label { Text = Strings.CityLabel, Location = new Point(6, 6), AutoSize = true });
+        _txtCity = new TextBox
+        {
+            Location        = new Point(58, 3),
+            Size            = new Size(150, 22),
+            PlaceholderText = "Madrid",
+        };
         tabWeather.Controls.Add(_txtCity);
 
-        var btnRefreshWeather = new Button { Text = "↺", Location = new Point(162, 5), Size = new Size(26, 22) };
-        btnRefreshWeather.Click += (_, _) => _ = RefreshWeatherPreviewAsync(_txtCity.Text.Trim());
-        tabWeather.Controls.Add(btnRefreshWeather);
+        var btnAddWeatherCity = new Button { Text = Strings.Add, Location = new Point(212, 3), Size = new Size(80, 22) };
+        btnAddWeatherCity.Click += (_, _) => _ = OnAddWeatherCityAsync();
+        tabWeather.Controls.Add(btnAddWeatherCity);
+        _txtCity.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { _ = OnAddWeatherCityAsync(); e.SuppressKeyPress = true; } };
 
         _lblWeatherStatus = new Label
         {
             Text      = "…",
-            Location  = new Point(194, 8),
-            Size      = new Size(196, 18),
+            Location  = new Point(6, 27),
+            Size      = new Size(378, 16),
             ForeColor = Color.Gray,
             AutoSize  = false,
         };
         tabWeather.Controls.Add(_lblWeatherStatus);
 
-        tabWeather.Controls.Add(new Label { Text = Strings.TemperatureLabel, Location = new Point(6, 36), AutoSize = true });
+        _weatherCitiesPanel = new FlowLayoutPanel
+        {
+            Location     = new Point(4, 45),
+            Size         = new Size(390, 30),
+            AutoScroll   = true,
+            WrapContents = true,
+        };
+        tabWeather.Controls.Add(_weatherCitiesPanel);
+
+        // Convention hint: {weather.*} accepts an optional ":<city>" suffix for
+        // any additional configured city besides the first/default one, using
+        // the exact text shown on its chip above (no separate id to look up,
+        // unlike Time Zone's IANA ids).
+        tabWeather.Controls.Add(new Label
+        {
+            Text      = Strings.WeatherSuffixHint,
+            Location  = new Point(4, 77),
+            Size      = new Size(390, 14),
+            ForeColor = Color.Gray,
+            AutoSize  = false,
+            Font      = new Font(SystemFonts.MessageBoxFont!.FontFamily, 7.5f),
+        });
+
+        tabWeather.Controls.Add(new Label { Text = Strings.TemperatureLabel, Location = new Point(6, 94), AutoSize = true });
         bool isFahrenheit = settings.WeatherUnit == "fahrenheit";
-        _radTempC = new RadioButton { Text = "°C", Location = new Point(90, 34), Size = new Size(42, 20), Checked = !isFahrenheit };
-        _radTempF = new RadioButton { Text = "°F", Location = new Point(136, 34), Size = new Size(42, 20), Checked =  isFahrenheit };
+        _radTempC = new RadioButton { Text = "°C", Location = new Point(90, 92), Size = new Size(42, 20), Checked = !isFahrenheit };
+        _radTempF = new RadioButton { Text = "°F", Location = new Point(136, 92), Size = new Size(42, 20), Checked =  isFahrenheit };
         tabWeather.Controls.AddRange([_radTempC, _radTempF]);
 
         // ── Tab: CLI ──────────────────────────────────────────────────────────
@@ -610,9 +648,10 @@ sealed class CellGridEditorForm : Form
         LoadPage(0);
         RebuildTeamInputs();
         RebuildTimeZoneLabels();
+        RebuildWeatherCityLabels();
         RefreshLibraryList();
 
-        _ = RefreshWeatherPreviewAsync(settings.City);
+        _ = RefreshWeatherPreviewAsync(_editWeatherCities.FirstOrDefault() ?? "", "default");
     }
 
     // ── Binding picker ────────────────────────────────────────────────────────
@@ -800,9 +839,76 @@ sealed class CellGridEditorForm : Form
         }
     }
 
+    // ── Weather cities ─────────────────────────────────────────────────────────
+
+    // No modal picker here (unlike Sports/Time Zone): there's no finite catalog
+    // to browse, any place name is potentially valid, so "add" means validating
+    // the typed name against the same geocoding call WeatherFeature already
+    // makes, then accepting it into the list on success.
+    private async Task OnAddWeatherCityAsync()
+    {
+        string city = _txtCity.Text.Trim();
+        if (city.Length == 0) return;
+        if (_editWeatherCities.Count >= MaxWeatherCities)
+        {
+            MessageBox.Show(this, Strings.WeatherCityLimitBody(MaxWeatherCities),
+                Strings.WeatherCityLimitTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        if (_editWeatherCities.Any(c => c.Equals(city, StringComparison.OrdinalIgnoreCase)))
+            return; // already added
+
+        bool isFirst = _editWeatherCities.Count == 0;
+        bool ok = await RefreshWeatherPreviewAsync(city, city, alsoDefault: isFirst);
+        if (!ok) return; // _lblWeatherStatus already shows the error
+
+        _editWeatherCities.Add(city);
+        _txtCity.Text = "";
+        RebuildWeatherCityLabels();
+        PopulateBindings(_cmbBindCategory.SelectedIndex);
+    }
+
+    private void RebuildWeatherCityLabels()
+    {
+        _weatherCitiesPanel.Controls.Clear();
+        if (_editWeatherCities.Count == 0)
+        {
+            _weatherCitiesPanel.Controls.Add(new Label
+            {
+                Text     = Strings.WeatherAutoDetectHint,
+                AutoSize = true,
+                ForeColor = Color.Gray,
+            });
+            return;
+        }
+
+        foreach (var city in _editWeatherCities.ToList())
+        {
+            var chip = new Button
+            {
+                Text      = $"{city}  ×",
+                AutoSize  = true,
+                FlatStyle = FlatStyle.Flat,
+                Margin    = new Padding(2),
+            };
+            chip.FlatAppearance.BorderSize = 1;
+            chip.Click += (_, _) =>
+            {
+                _editWeatherCities.Remove(city);
+                RebuildWeatherCityLabels();
+                PopulateBindings(_cmbBindCategory.SelectedIndex);
+            };
+            _weatherCitiesPanel.Controls.Add(chip);
+        }
+    }
+
     // ── Weather preview refresh ───────────────────────────────────────────────
 
-    private async Task RefreshWeatherPreviewAsync(string city)
+    // Validates `city` against the live API and, on success, updates the
+    // preview's LiveState under `cityKey` (and also "default" when
+    // alsoDefault, for whichever city is first/bare-token-backed). Returns
+    // whether the fetch succeeded, callers use this to gate adding the city.
+    private async Task<bool> RefreshWeatherPreviewAsync(string city, string cityKey, bool alsoDefault = false)
     {
         _lblWeatherStatus.Text      = Strings.QueryingWeather;
         _lblWeatherStatus.ForeColor = Color.Gray;
@@ -813,20 +919,25 @@ sealed class CellGridEditorForm : Form
             string tempStr  = fahrenheit
                 ? $"{data.TempC * 9 / 5 + 32:F0}°F"
                 : $"{data.TempC:F0}°";
-            _liveState.UpdateWeather(data.Icon.ToString(), tempStr, data.City);
+            _liveState.UpdateWeather(cityKey, data.Icon.ToString(), tempStr, data.City);
+            if (alsoDefault && cityKey != "default")
+                _liveState.UpdateWeather("default", data.Icon.ToString(), tempStr, data.City);
             _lblWeatherStatus.Text      = $"{data.City} {tempStr}";
             _lblWeatherStatus.ForeColor = Color.LimeGreen;
+            return true;
         }
         catch (System.Net.Http.HttpRequestException ex) when (ex.StatusCode.HasValue)
         {
             _lblWeatherStatus.Text      = Strings.WeatherHttpError((int)ex.StatusCode.Value);
             _lblWeatherStatus.ForeColor = Color.OrangeRed;
+            return false;
         }
         catch (Exception ex)
         {
             string msg = ex.Message;
             _lblWeatherStatus.Text      = msg.Length > 34 ? msg[..34] + "…" : msg;
             _lblWeatherStatus.ForeColor = Color.OrangeRed;
+            return false;
         }
     }
 
@@ -1150,16 +1261,17 @@ sealed class CellGridEditorForm : Form
             foreach (var p in snap.DisplayPages) _pages.Add(p.Clone());
             if (_pages.Count == 0) _pages.Add(new CellGridPage());
 
-            _editLeagues   = snap.SelectedLeagues.ToList();
-            _editTimeZones = snap.SelectedTimeZones.ToList();
+            _editLeagues       = snap.SelectedLeagues.ToList();
+            _editTimeZones     = snap.SelectedTimeZones.ToList();
+            _editWeatherCities = snap.WeatherCities.ToList();
             _chkCycle.Checked = snap.CycleDisplayPages;
-            _txtCity.Text = snap.City;
             bool f = snap.WeatherUnit == "fahrenheit";
             _radTempC.Checked = !f;
             _radTempF.Checked =  f;
 
             RebuildTeamInputs();
             RebuildTimeZoneLabels();
+            RebuildWeatherCityLabels();
             LoadPage(0);
         }
         catch (Exception ex)
@@ -1183,7 +1295,7 @@ sealed class CellGridEditorForm : Form
     {
         DisplayPages      = _pages.Select(p => p.Clone()).ToList(),
         CycleDisplayPages = _chkCycle.Checked,
-        City              = _txtCity.Text.Trim(),
+        WeatherCities     = _editWeatherCities,
         WeatherUnit       = _radTempF.Checked ? "fahrenheit" : "celsius",
         SelectedLeagues   = _editLeagues.Count > 0 ? _editLeagues : ["football/nfl"],
         SelectedTimeZones = _editTimeZones,
@@ -1222,8 +1334,8 @@ sealed class CellGridEditorForm : Form
             }
         }
 
-        _settings.City            = _txtCity.Text.Trim();
-        _settings.WeatherUnit     = _radTempF.Checked ? "fahrenheit" : "celsius";
+        _settings.WeatherCities     = _editWeatherCities;
+        _settings.WeatherUnit       = _radTempF.Checked ? "fahrenheit" : "celsius";
         _settings.SelectedLeagues   = _editLeagues.Count > 0 ? _editLeagues : ["football/nfl"];
         _settings.SelectedTimeZones = _editTimeZones;
         _settings.SportsTeams       = _teamBoxes

@@ -27,10 +27,14 @@ sealed class LiveState
     // -1 = not yet reported (old firmware without byte 3, or not connected).
     public int  Wpm             { get; private set; } = -1;
 
-    // Weather snapshot, refreshed periodically by AppContext from WeatherFeature.
-    public string WeatherIcon { get; private set; } = "";
-    public string WeatherTemp { get; private set; } = "--°";
-    public string WeatherCity { get; private set; } = "";
+    // Weather data per configured city (keyed by the exact city string the
+    // user typed when adding it, upper/lower-case insensitive), refreshed
+    // periodically by AppContext from WeatherFeature. "default" is the first
+    // configured city (or the sole auto-detected one), used by the bare
+    // {weather}/{weather.*} bindings — same "default" + own-key double-keying
+    // scheme as _sportsData.
+    private readonly Dictionary<string, WeatherSnapshot> _weatherData = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly WeatherSnapshot _emptyWeather = new();
 
     // Last text pushed by an external process via the named pipe (zkc CLI).
     public string ExternalText { get; private set; } = "";
@@ -105,14 +109,16 @@ sealed class LiveState
         Changed?.Invoke();
     }
 
-    public void UpdateWeather(string icon, string temp, string city)
+    public void UpdateWeather(string cityKey, string icon, string temp, string city)
     {
-        if (icon == WeatherIcon && temp == WeatherTemp && city == WeatherCity) return;
-        WeatherIcon = icon;
-        WeatherTemp = temp;
-        WeatherCity = city;
+        if (_weatherData.TryGetValue(cityKey, out var old) &&
+            old.Icon == icon && old.Temp == temp && old.City == city) return;
+        _weatherData[cityKey] = new WeatherSnapshot { Icon = icon, Temp = temp, City = city };
         Changed?.Invoke();
     }
+
+    private WeatherSnapshot Weather(string cityKey) =>
+        _weatherData.TryGetValue(cityKey, out var v) ? v : _emptyWeather;
 
     public void UpdateExternalText(string text)
     {
@@ -250,9 +256,13 @@ sealed class LiveState
         }
 
         // Sports — {sports}, {sports:NFL}, {sports.team}, {sports.team:NFL}, etc.
-        bool isSports = key.StartsWith("sports", StringComparison.OrdinalIgnoreCase);
-        bool isCustom = key.StartsWith("custom.", StringComparison.OrdinalIgnoreCase);
-        string raw = isSports ? ResolveSports(key) : timeKey switch
+        bool isSports  = key.StartsWith("sports", StringComparison.OrdinalIgnoreCase);
+        // Weather — {weather}, {weather:Madrid}, {weather.temp}, {weather.temp:Madrid}, etc.
+        bool isWeather = key.StartsWith("weather", StringComparison.OrdinalIgnoreCase);
+        bool isCustom  = key.StartsWith("custom.", StringComparison.OrdinalIgnoreCase);
+        string raw = isSports  ? ResolveSports(key)
+                   : isWeather ? ResolveWeather(key)
+                   : timeKey switch
         {
             "battery.level"   => BatteryLevel < 0 ? "--"  : $"{BatteryLevel}",
             "battery.percent" => BatteryLevel < 0 ? "--%": $"{BatteryLevel}%",
@@ -271,10 +281,6 @@ sealed class LiveState
             "date.day"        => now.Day.ToString(),
             "time.dd"         => now.ToString("dd"),
             "date.month"      => now.ToString("MMM").ToUpper(),
-            "weather.icon"    => WeatherIcon,
-            "weather.temp"    => WeatherTemp,
-            "weather.city"    => WeatherCity,
-            "weather"         => $"{WeatherCity} {WeatherIcon} {WeatherTemp}".Trim(),
             "ext.text"        => ExternalText,
             _ when key.StartsWith("ext.text.", StringComparison.OrdinalIgnoreCase)
                               => ExtTextLine(key["ext.text.".Length..]),
@@ -293,11 +299,11 @@ sealed class LiveState
             bool alphaConvert = cfg.AlphaStyle   != "text";
             if (numConvert || alphaConvert)
             {
-                bool applyAlpha = alphaConvert && (isSports || isCustom || timeKey is "date" or "date.month" or "weather" or "weather.city" or "layer.name");
-                bool applyNum   = numConvert   && (isSports || isCustom || timeKey is "time" or "time24" or "time12"
+                bool applyAlpha = alphaConvert && (isSports || isWeather || isCustom || timeKey is "date" or "date.month" or "layer.name");
+                bool applyNum   = numConvert   && (isSports || isWeather || isCustom || timeKey is "time" or "time24" or "time12"
                                                         or "time.hh" or "time.mm" or "time.dd"
                                                         or "date" or "date.day" or "date.month"
-                                                        or "conn.profile" or "layer.number" or "wpm" or "weather" or "weather.temp");
+                                                        or "conn.profile" or "layer.number" or "wpm");
                 if (applyNum || applyAlpha)
                     raw = ApplyGlyphStyles(raw, applyNum ? cfg.NumericStyle : "text",
                                                applyAlpha ? cfg.AlphaStyle : "text");
@@ -399,6 +405,37 @@ sealed class LiveState
             "date"        => SplitScheduled(s.Scheduled, 0), // "7/10"
             "gametime"    => SplitScheduled(s.Scheduled, 1), // "7:30p"
             _             => s.Summary,
+        };
+    }
+
+    // Parses "weather", "weather:Madrid", "weather.icon", "weather.temp:Madrid",
+    // etc. The suffix is the exact city string the user typed when adding it
+    // via the Weather tab's picker (not a formal id — weather has no IANA-style
+    // catalog), "default" (no suffix) is whichever city is configured first.
+    private string ResolveWeather(string key)
+    {
+        string rest    = key.Length > "weather".Length ? key["weather".Length..] : "";
+        string field   = "summary";
+        string cityKey = "default";
+
+        if (rest.StartsWith('.'))
+        {
+            int colon = rest.IndexOf(':');
+            field     = colon >= 0 ? rest[1..colon] : rest[1..];
+            cityKey   = colon >= 0 ? rest[(colon + 1)..] : "default";
+        }
+        else if (rest.StartsWith(':'))
+        {
+            cityKey = rest[1..];
+        }
+
+        var w = Weather(cityKey);
+        return field switch
+        {
+            "icon" => w.Icon,
+            "temp" => w.Temp,
+            "city" => w.City,
+            _      => $"{w.City} {w.Icon} {w.Temp}".Trim(),
         };
     }
 

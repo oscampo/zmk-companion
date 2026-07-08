@@ -123,6 +123,16 @@ static class Strings
     public static string QueryingWeather   => Current == AppLanguage.Es ? "consultando…" : "querying…";
     public static string WeatherHttpError(int code) => Current == AppLanguage.Es
         ? $"HTTP {code} — red/proxy" : $"HTTP {code} — network/proxy";
+    public static string WeatherCityLimitTitle => Current == AppLanguage.Es ? "Límite de ciudades" : "City limit";
+    public static string WeatherCityLimitBody(int max) => Current == AppLanguage.Es
+        ? $"No puedes agregar más de {max} ciudades de clima."
+        : $"You can't add more than {max} weather cities.";
+    public static string WeatherAutoDetectHint => Current == AppLanguage.Es
+        ? "Sin ciudades definidas: se detecta automáticamente por IP."
+        : "No cities set: auto-detected via IP.";
+    public static string WeatherSuffixHint => Current == AppLanguage.Es
+        ? "Tip: usa \":Ciudad\" en un token de Clima, ej. {weather.temp:Madrid}."
+        : "Tip: use \":City\" on a Weather token, e.g. {weather.temp:Madrid}.";
     public static string TextBlockDialogTitle => Current == AppLanguage.Es ? "Bloque de texto" : "Text block";
     public static string NumberOfLinesLabel   => Current == AppLanguage.Es ? "Número de líneas:" : "Number of lines:";
     public static string NotEnoughSpaceIconPair(int needed, int free) => Current == AppLanguage.Es
