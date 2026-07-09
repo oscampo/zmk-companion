@@ -27,6 +27,11 @@
          nerd-fonts glyphnames.json (name+code only, metadata stripped) for
          GlyphPickerDialog's name search. -->
     <EmbeddedResource Include="Resources\glyphnames.tsv" />
+    <!-- WelcomeForm content, shown on first run of each app version and from
+         the tray's Help menu. Minimal Markdown subset (headings, bold,
+         bullets, plain-text URLs) rendered by Core/MarkdownRenderer.cs. -->
+    <EmbeddedResource Include="Resources\welcome.es.md" />
+    <EmbeddedResource Include="Resources\welcome.en.md" />
   </ItemGroup>
 
   <!-- Publish: framework-dependent single-file .exe (requires .NET 8 Desktop Runtime). -->

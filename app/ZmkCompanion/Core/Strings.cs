@@ -188,12 +188,15 @@ static class Strings
     public static string PomodoroStart    => Current == AppLanguage.Es ? "Pomodoro — Iniciar" : "Pomodoro — Start";
     public static string PomodoroConfigMenu => Current == AppLanguage.Es ? "Configurar Pomodoro…" : "Configure Pomodoro…";
     public static string DebugLogMenu     => "Debug Log";
+    public static string HelpMenu         => Current == AppLanguage.Es ? "Ayuda…" : "Help…";
     public static string AboutMenu        => Current == AppLanguage.Es ? "Acerca de…" : "About…";
     public static string ExitMenu         => Current == AppLanguage.Es ? "Salir" : "Exit";
     public static string NoDebugLogYet    => Current == AppLanguage.Es ? "Aún no hay log de debug." : "There's no debug log yet.";
     public static string CouldNotOpenLog(string message, string path) => Current == AppLanguage.Es
         ? $"No se pudo abrir el log: {message}\n\nRuta: {path}"
         : $"Could not open the log: {message}\n\nPath: {path}";
+    public static string WelcomeTitle => Current == AppLanguage.Es ? "Bienvenido a ZMK Companion" : "Welcome to ZMK Companion";
+    public static string DontShowAgainCheck => Current == AppLanguage.Es ? "No volver a mostrar" : "Don't show again";
     public static string AboutTitle => Current == AppLanguage.Es ? "Acerca de ZMK Companion" : "About ZMK Companion";
     public static string AboutBody(int major, int minor, int build) => Current == AppLanguage.Es
         ? $"ZMK Companion  v{major}.{minor}.{build}\n\n" +

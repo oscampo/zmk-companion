@@ -23,6 +23,7 @@ sealed class TrayIcon : IDisposable
     public event Action? ManualReconnectRequested;
     public event Action? ManualDisconnectRequested;
     public event Action<AppLanguage>? LanguageChangeRequested;
+    public event Action? HelpRequested;
 
     // Controlled by AppContext: reflects whether any page has a Pomodoro widget.
     public bool HasPomodoroWidget { get; set; }
@@ -142,6 +143,7 @@ sealed class TrayIcon : IDisposable
         strip.Items.Add(new ToolStripSeparator());
 
         strip.Items.Add(new ToolStripMenuItem(Strings.DebugLogMenu, null, (_, _) => OnDebugLog()));
+        strip.Items.Add(new ToolStripMenuItem(Strings.HelpMenu, null, (_, _) => HelpRequested?.Invoke()));
         strip.Items.Add(new ToolStripMenuItem(Strings.AboutMenu, null, (_, _) => OnAbout()));
         strip.Items.Add(new ToolStripMenuItem(Strings.ExitMenu, null, (_, _) => ExitRequested?.Invoke()));
     }

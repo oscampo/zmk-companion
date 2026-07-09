@@ -38,6 +38,14 @@ sealed class AppSettings
     // button). Empty = fall back to the default "zkc -h" terminal.
     public string CliLastCommand { get; set; } = "";
 
+    // WelcomeForm: the app <Version> (ZmkCompanion.csproj) for which the user
+    // last checked "don't show again". Compared against the running build's
+    // version on startup — different (including "never dismissed", "") means
+    // show it again, so bumping <Version> on a release re-surfaces it to
+    // announce whatever changed. This only works if releases actually bump
+    // that version; nothing enforces it today.
+    public string WelcomeDismissedVersion { get; set; } = "";
+
     // Weather data source — city names for API queries, up to 4 (see
     // CellGridEditorForm's Weather tab, which enforces the cap). Empty list =
     // single IP-geolocated city (blank = auto-detect, same as before this was

@@ -69,6 +69,7 @@ sealed class ZmkAppContext : ApplicationContext
         _tray.ManualReconnectRequested += OnManualReconnect;
         _tray.ManualDisconnectRequested += OnManualDisconnect;
         _tray.LanguageChangeRequested += OnLanguageChanged;
+        _tray.HelpRequested += () => ShowWelcome(force: true);
 
         _pomodoro.StateChanged     += OnPomodoroStateChanged;
         _pomodoro.SessionCompleted += OnPomodoroCompleted;
@@ -221,6 +222,36 @@ sealed class ZmkAppContext : ApplicationContext
         _staleCheckTimer.Start();
 
         _ = ConnectLoopAsync(_cts.Token);
+
+        ShowWelcome(force: false);
+    }
+
+    // ── Welcome / help screen ────────────────────────────────────────────────
+
+    private static string CurrentVersionString
+    {
+        get
+        {
+            var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            return $"{v?.Major ?? 0}.{v?.Minor ?? 0}.{v?.Build ?? 0}";
+        }
+    }
+
+    // force=false (startup): only shows if the user hasn't dismissed this
+    // exact version yet, so bumping <Version> in the .csproj on a release
+    // re-surfaces it, nothing else triggers that automatically.
+    // force=true (tray "Help…"): always shows, regardless of dismissal.
+    private void ShowWelcome(bool force)
+    {
+        if (!force && _settings.WelcomeDismissedVersion == CurrentVersionString) return;
+
+        using var form = new WelcomeForm();
+        form.ShowDialog();
+        if (form.DontShowAgain)
+        {
+            _settings.WelcomeDismissedVersion = CurrentVersionString;
+            _settings.Save();
+        }
     }
 
     // ── Custom token staleness ────────────────────────────────────────────────
