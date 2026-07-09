@@ -18,6 +18,10 @@ Esta app vive en la **bandeja del sistema** (system tray), junto al reloj de Win
 
 ## Más información
 
-La documentación completa del protocolo BLE y los clientes CLI está en el repositorio del proyecto:
+Guía completa de uso (editor, tokens, CLI, resolución de problemas):
+
+https://github.com/oscampo/zmk-companion/blob/main/docs/user_guide.md
+
+¿Tu teclado todavía no tiene el firmware necesario? Eso se configura aparte, en el repositorio del proyecto:
 
 https://github.com/oscampo/zmk-companion
