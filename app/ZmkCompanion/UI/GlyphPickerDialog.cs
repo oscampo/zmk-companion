@@ -127,7 +127,19 @@ sealed class GlyphPickerDialog : Form
         Controls.Add(_status);
 
         // ── Glyph grid ───────────────────────────────────────────────────────
-        _grid = new GlyphGrid { Dock = DockStyle.Fill };
+        // Not Dock=Fill: mixing Fill with Top/Bottom-docked siblings depends
+        // on WinForms' z-order-based dock resolution order, which sent row 0
+        // and the scrollbar's top edge underneath the toolbar in practice
+        // (confirmed from screenshots: hidden at the very top, both become
+        // visible once scrolled past that point). Computing bounds explicitly
+        // from the toolbar/status heights and using Anchor to track resizes
+        // sidesteps that ambiguity entirely instead of fighting it.
+        _grid = new GlyphGrid
+        {
+            Location = new Point(0, toolbar.Height),
+            Size     = new Size(ClientSize.Width, ClientSize.Height - toolbar.Height - _status.Height),
+            Anchor   = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+        };
         Controls.Add(_grid);
 
         // Wire events
