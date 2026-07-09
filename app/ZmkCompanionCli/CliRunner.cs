@@ -17,7 +17,16 @@ internal static class CliRunner
         }
 
         if (args.Length >= 1 && args[0] is "--watch" or "-w")
-            return await WatchAsync();
+            return await WatchAsync(target: null);
+
+        if (args.Length >= 2 && args[0] == "--set")
+        {
+            string name = args[1];
+            if (args.Length >= 3 && args[2] is "--watch" or "-w")
+                return await WatchAsync(target: name);
+            string value = args.Length >= 3 ? string.Join(" ", args[2..]) : "";
+            return await SetAsync(name, value);
+        }
 
         return await SendAsync(string.Join(" ", args));
     }
@@ -37,14 +46,14 @@ internal static class CliRunner
             await writer.WriteLineAsync($"SEND\t{text}");
 
             string? response = await reader.ReadLineAsync();
-            if (response is null)  return Err("no response from tray app (pipe closed unexpectedly)");
-            if (response == "OK") { Console.WriteLine("Sent."); return 0; }
-            return Err(response.Length > 4 ? response[4..] : "send failed");
+            if (response is null)  return Err(CliStrings.NoResponse);
+            if (response == "OK") { Console.WriteLine(CliStrings.Sent); return 0; }
+            return Err(response.Length > 4 ? response[4..] : CliStrings.SendFailed);
         }
         catch (Exception ex) { return Err(ex.Message); }
     }
 
-    private static async Task<int> WatchAsync()
+    private static async Task<int> SetAsync(string name, string value)
     {
         try
         {
@@ -54,9 +63,32 @@ internal static class CliRunner
             using var writer = Writer(pipe);
             using var reader = Reader(pipe);
 
-            await writer.WriteLineAsync("WATCH");
+            await writer.WriteLineAsync($"SET\t{name}\t{value}");
+
+            string? response = await reader.ReadLineAsync();
+            if (response is null)  return Err(CliStrings.NoResponse);
+            if (response == "OK") { Console.WriteLine(CliStrings.Sent); return 0; }
+            return Err(response.Length > 4 ? response[4..] : CliStrings.SetFailed);
+        }
+        catch (Exception ex) { return Err(ex.Message); }
+    }
+
+    // target: null streams into {ext.text}/{ext.text.N} (unnamed channel, same
+    // as before); a name streams into that {custom.<name>} channel instead.
+    private static async Task<int> WatchAsync(string? target)
+    {
+        try
+        {
+            using var pipe = Connect(out bool connected);
+            if (!connected) return TrayNotRunning();
+
+            using var writer = Writer(pipe);
+            using var reader = Reader(pipe);
+
+            await writer.WriteLineAsync(target is null ? "WATCH" : $"WATCH\t{target}");
             string? ready = await reader.ReadLineAsync();
-            if (ready != "READY") return 1;
+            if (ready != "READY")
+                return Err(ready is { Length: > 4 } ? ready[4..] : CliStrings.WatchRejected);
 
             // Read raw bytes from stdin (not Console.In) so the read is genuinely
             // overlapped I/O: Console.In is a SyncTextReader whose ReadAsync can
@@ -142,32 +174,11 @@ internal static class CliRunner
 
     private static int TrayNotRunning()
     {
-        Console.Error.WriteLine("zkc: tray app not running — launch ZmkCompanion from the Start menu first.");
+        Console.Error.WriteLine(CliStrings.TrayNotRunning);
         return 1;
     }
 
     private static int Err(string msg) { Console.Error.WriteLine($"zkc: {msg}"); return 1; }
 
-    private static void PrintHelp() => Console.WriteLine("""
-        zkc — ZMK Keyboard Companion CLI
-
-        Usage:
-          zkc "text"        Send text to the keyboard display (persists until next update)
-          zkc ""            Clear the text display and restore the canvas page
-          zkc --watch       Read lines from stdin and send each one live
-          zkc -w            Alias for --watch
-          zkc --help        Show this help
-
-        Examples:
-          zkc "Hola mundo"
-          zkc "Line1\nLine2\nLine3"
-          echo "score: 3-1" | zkc --watch
-          python reloj.py | zkc --watch
-
-        Notes:
-          Use \n in quoted strings for multi-line text.
-          --watch accepts both \n and \r as line separators, so scripts that
-          use carriage-return to overwrite a terminal line work out of the box.
-          The ZMK Companion tray app must be running.
-        """);
+    private static void PrintHelp() => Console.WriteLine(CliStrings.Help);
 }

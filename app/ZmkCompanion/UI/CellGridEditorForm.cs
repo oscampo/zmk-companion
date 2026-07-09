@@ -47,6 +47,7 @@ sealed class CellGridEditorForm : Form
     private readonly CheckBox      _chkAntiAlias;
     private readonly ComboBox      _cmbNumericStyle;
     private readonly ComboBox      _cmbAlphaStyle;
+    private readonly ComboBox      _cmbFontVariant;
     private readonly Panel         _rowEditorPanel;
     private          bool          _suppressRowUi;
 
@@ -58,13 +59,28 @@ sealed class CellGridEditorForm : Form
     private readonly TextBox       _txtCity;
     private readonly Label         _lblWeatherStatus;
     private readonly RadioButton   _radTempC, _radTempF;
+    private readonly FlowLayoutPanel _weatherCitiesPanel;
+    private          List<string>  _editWeatherCities;
+    private const int MaxWeatherCities = 4;
     private readonly Panel         _teamsPanel;
     private readonly Dictionary<string, TextBox> _teamBoxes = new();
     private          List<string>  _editLeagues;
+    private readonly Panel         _timeZonesPanel;
+    private          List<string>  _editTimeZones;
+
+    // Distinct categories from settings.CustomTokens, appended to the binding
+    // picker after BindingCatalog. Computed once: this dialog doesn't need to
+    // react to CustomTokensForm changes made while it's already open.
+    private readonly List<string> _customCategories;
 
     // Library tab
     private readonly TextBox  _txtLibName;
     private readonly ListBox  _lstLibFiles;
+
+    // CLI tab: raw command line the "Launch zkc" button runs verbatim in cmd
+    // (may pipe another program into zkc, e.g. "python reloj.py | zkc -w",
+    // so it's a shell command line, not just arguments to zkc.exe itself).
+    private readonly TextBox _txtCliCommand;
 
     private static string LibraryDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -72,51 +88,106 @@ sealed class CellGridEditorForm : Form
 
     private const int DeportesCategory = 2;
 
-    // Binding catalog — category → list of (label, token)
-    private static readonly (string Category, (string Label, string Token)[] Items)[] BindingCatalog =
-    [
-        ("Hora", [
-            ("Hora",                 "{time}"),
-            ("Hora 24h",             "{time24}"),
-            ("Hora 12h",             "{time12}"),
-            ("Hora (HH)",            "{time.hh}"),
-            ("Minutos (MM)",         "{time.mm}"),
-            ("AM/PM",                "{ampm}"),
-            ("Fecha",                "{date}"),
-            ("Día del mes",          "{date.day}"),
-            ("Día del mes (DD)",     "{time.dd}"),
-            ("Mes",                  "{date.month}"),
-        ]),
-        ("Clima", [
-            ("Clima (resumen)",      "{weather}"),
-            ("Icono clima",          "{weather.icon}"),
-            ("Temperatura",          "{weather.temp}"),
-            ("Ciudad clima",         "{weather.city}"),
-        ]),
-        // Index 2 = DeportesCategory — populated dynamically
-        ("Deportes", []),
-        ("Pomodoro", [
-            ("Tiempo pomodoro",      "{pomodoro.time}"),
-            ("Fase",                 "{pomodoro.phase}"),
-            ("Barra progreso",       "{pomodoro.bar}"),
-            ("Icono fase",           "{pomodoro.icon}"),
-            ("Ciclo #",              "{pomodoro.cycle}"),
-        ]),
-        ("Sistema", [
-            ("Batería (icono)",      "{battery.icon}"),
-            ("Batería (%)",          "{battery.percent}"),
-            ("Batería (nivel)",      "{battery.level}"),
-            ("Conexión (icono)",     "{conn.icon}"),
-            ("Tipo conexión",        "{conn.type}"),
-            ("Perfil BLE",           "{conn.profile}"),
-            ("Barra perfiles (5)",   "{conn.profilebar}"),
-            ("Texto ext. (completo)","{ext.text}"),
-            ("Texto ext. línea 1",   "{ext.text.0}"),
-            ("Texto ext. línea 2",   "{ext.text.1}"),
-            ("Texto ext. línea 3",   "{ext.text.2}"),
-            ("Texto ext. línea 4",   "{ext.text.3}"),
-        ]),
-    ];
+    // Binding catalog — category → list of (label, token). Built per-instance
+    // (not static readonly) so it reflects the language active when the
+    // editor is opened, same reasoning as GlyphPickerDialog.Categories.
+    private readonly (string Category, (string Label, string Token)[] Items)[] BindingCatalog = BuildBindingCatalog();
+
+    private static (string Category, (string Label, string Token)[] Items)[] BuildBindingCatalog()
+    {
+        bool es = Strings.Current == AppLanguage.Es;
+        return
+        [
+            // Merged with the old separate dynamic "Zona Horaria" category: every
+            // token here is local time bare, and accepts an optional ":<IANA id>"
+            // suffix for a foreign zone (see LiveState.TimeZoneAwareKeys) — the
+            // Time Zone tab shows the full id to copy for that suffix, so this
+            // list doesn't enumerate a token per selected city (would multiply
+            // by however many cities the user has picked).
+            (es ? "Zona Horaria" : "Time Zone", es ? [
+                ("Hora",                 "{time}"),
+                ("Hora 24h",             "{time24}"),
+                ("Hora 12h",             "{time12}"),
+                ("Hora (HH)",            "{time.hh}"),
+                ("Minutos (MM)",         "{time.mm}"),
+                ("AM/PM",                "{ampm}"),
+                ("Fecha",                "{date}"),
+                ("Día del mes",          "{date.day}"),
+                ("Día del mes (DD)",     "{time.dd}"),
+                ("Mes",                  "{date.month}"),
+            ] : [
+                ("Time",                 "{time}"),
+                ("Time 24h",             "{time24}"),
+                ("Time 12h",             "{time12}"),
+                ("Hour (HH)",            "{time.hh}"),
+                ("Minutes (MM)",         "{time.mm}"),
+                ("AM/PM",                "{ampm}"),
+                ("Date",                 "{date}"),
+                ("Day of month",         "{date.day}"),
+                ("Day of month (DD)",    "{time.dd}"),
+                ("Month",                "{date.month}"),
+            ]),
+            (es ? "Clima" : "Weather", es ? [
+                ("Clima (resumen)",      "{weather}"),
+                ("Icono clima",          "{weather.icon}"),
+                ("Temperatura",          "{weather.temp}"),
+                ("Ciudad clima",         "{weather.city}"),
+            ] : [
+                ("Weather (summary)",    "{weather}"),
+                ("Weather icon",         "{weather.icon}"),
+                ("Temperature",          "{weather.temp}"),
+                ("Weather city",         "{weather.city}"),
+            ]),
+            // Index 2 = DeportesCategory — populated dynamically
+            (es ? "Deportes" : "Sports", []),
+            ("Pomodoro", es ? [
+                ("Tiempo pomodoro",      "{pomodoro.time}"),
+                ("Fase",                 "{pomodoro.phase}"),
+                ("Barra progreso",       "{pomodoro.bar}"),
+                ("Icono fase",           "{pomodoro.icon}"),
+                ("Ciclo #",              "{pomodoro.cycle}"),
+            ] : [
+                ("Pomodoro time",        "{pomodoro.time}"),
+                ("Phase",                "{pomodoro.phase}"),
+                ("Progress bar",         "{pomodoro.bar}"),
+                ("Phase icon",           "{pomodoro.icon}"),
+                ("Cycle #",              "{pomodoro.cycle}"),
+            ]),
+            (es ? "Sistema" : "System", es ? [
+                ("Batería (icono)",      "{battery.icon}"),
+                ("Batería (%)",          "{battery.percent}"),
+                ("Batería (nivel)",      "{battery.level}"),
+                ("Conexión (icono)",     "{conn.icon}"),
+                ("Tipo conexión",        "{conn.type}"),
+                ("Perfil BLE",           "{conn.profile}"),
+                ("Barra perfiles (5)",   "{conn.profilebar}"),
+                ("Layer (número)",       "{layer.number}"),
+                ("Layer (nombre)",       "{layer.name}"),
+                ("WPM",                  "{wpm}"),
+                ("Texto ext. (completo)","{ext.text}"),
+                ("Texto ext. línea 1",   "{ext.text.0}"),
+                ("Texto ext. línea 2",   "{ext.text.1}"),
+                ("Texto ext. línea 3",   "{ext.text.2}"),
+                ("Texto ext. línea 4",   "{ext.text.3}"),
+            ] : [
+                ("Battery (icon)",       "{battery.icon}"),
+                ("Battery (%)",          "{battery.percent}"),
+                ("Battery (level)",      "{battery.level}"),
+                ("Connection (icon)",    "{conn.icon}"),
+                ("Connection type",      "{conn.type}"),
+                ("BLE profile",          "{conn.profile}"),
+                ("Profile bar (5)",      "{conn.profilebar}"),
+                ("Layer (number)",       "{layer.number}"),
+                ("Layer (name)",         "{layer.name}"),
+                ("WPM",                  "{wpm}"),
+                ("Ext. text (full)",     "{ext.text}"),
+                ("Ext. text line 1",     "{ext.text.0}"),
+                ("Ext. text line 2",     "{ext.text.1}"),
+                ("Ext. text line 3",     "{ext.text.2}"),
+                ("Ext. text line 4",     "{ext.text.3}"),
+            ]),
+        ];
+    }
 
     // ── Construction ─────────────────────────────────────────────────────────
 
@@ -128,19 +199,26 @@ sealed class CellGridEditorForm : Form
         _onApply     = onApply;
         _pages       = settings.DisplayPages.Select(p => p.Clone()).ToList();
         _editLeagues = settings.SelectedLeagues.ToList();
+        _editTimeZones = settings.SelectedTimeZones.ToList();
+        _editWeatherCities = settings.WeatherCities.ToList();
+        _customCategories = settings.CustomTokens
+            .Select(t => t.Category)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         liveState.Changed += OnLiveStateChanged;
 
-        Text            = "ZMK Companion — Display Editor";
+        Text            = Strings.EditorTitle;
         FormBorderStyle = FormBorderStyle.FixedSingle;
         StartPosition   = FormStartPosition.CenterScreen;
         MaximizeBox     = false;
-        ClientSize      = new Size(640, 657);
+        ClientSize      = new Size(640, 711);
 
         // ── RIGHT: preview ────────────────────────────────────────────────────
         var previewBox = new GroupBox
         {
-            Text     = "Vista previa  (3×)",
+            Text     = Strings.PreviewGroupTitle,
             Location = new Point(420, 6),
             Size     = new Size(PreviewW + 18, PreviewH + 22),
         };
@@ -155,7 +233,7 @@ sealed class CellGridEditorForm : Form
         Controls.Add(previewBox);
 
         // ── LEFT: Pages group (top) ───────────────────────────────────────────
-        var grpPages = new GroupBox { Text = "Páginas", Location = new Point(6, 6), Size = new Size(406, 90) };
+        var grpPages = new GroupBox { Text = Strings.PagesGroupTitle, Location = new Point(6, 6), Size = new Size(406, 90) };
 
         _cmbPages = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(6, 18), Size = new Size(130, 23) };
         _cmbPages.SelectedIndexChanged += OnPageComboChanged;
@@ -165,7 +243,7 @@ sealed class CellGridEditorForm : Form
         btnAddPage.Click += (_, _) =>
         {
             SyncCurrentPage();
-            _pages.Add(new CellGridPage { Name = $"Page {_pages.Count + 1}" });
+            _pages.Add(new CellGridPage { Name = Strings.DefaultPageName(_pages.Count + 1) });
             LoadPage(_pages.Count - 1);
         };
         grpPages.Controls.Add(btnAddPage);
@@ -179,7 +257,7 @@ sealed class CellGridEditorForm : Form
         };
         grpPages.Controls.Add(btnRemPage);
 
-        grpPages.Controls.Add(new Label { Text = "Nombre:", Location = new Point(6, 48), Size = new Size(52, 18) });
+        grpPages.Controls.Add(new Label { Text = Strings.NameLabel, Location = new Point(6, 48), Size = new Size(52, 18) });
         _txtPageName = new TextBox { Location = new Point(62, 45), Size = new Size(120, 22) };
         _txtPageName.TextChanged += (_, _) =>
         {
@@ -189,10 +267,10 @@ sealed class CellGridEditorForm : Form
         };
         grpPages.Controls.Add(_txtPageName);
 
-        _chkCycle = new CheckBox { Text = "Ciclar páginas", Checked = settings.CycleDisplayPages, Location = new Point(196, 18), Size = new Size(110, 22) };
+        _chkCycle = new CheckBox { Text = Strings.CyclePagesCheck, Checked = settings.CycleDisplayPages, Location = new Point(196, 18), Size = new Size(110, 22) };
         grpPages.Controls.Add(_chkCycle);
 
-        grpPages.Controls.Add(new Label { Text = "Dur.:", Location = new Point(196, 48), Size = new Size(34, 18) });
+        grpPages.Controls.Add(new Label { Text = Strings.DurationLabel, Location = new Point(196, 48), Size = new Size(34, 18) });
         _nudDuration = new NumericUpDown { Location = new Point(232, 45), Size = new Size(50, 22), Minimum = 2, Maximum = 3600, Value = 10 };
         _nudDuration.ValueChanged += (_, _) =>
         {
@@ -204,18 +282,18 @@ sealed class CellGridEditorForm : Form
         Controls.Add(grpPages);
 
         // ── LEFT: Rows group ──────────────────────────────────────────────────
-        var grpRows = new GroupBox { Text = "Filas", Location = new Point(6, 100), Size = new Size(406, 375) };
+        var grpRows = new GroupBox { Text = Strings.RowsGroupTitle, Location = new Point(6, 100), Size = new Size(406, 405) };
 
         _lstRows = new ListBox { Location = new Point(6, 18), Size = new Size(390, 100), IntegralHeight = false };
         _lstRows.SelectedIndexChanged += OnRowSelected;
         grpRows.Controls.Add(_lstRows);
 
         // Row action buttons
-        var btnAddRow = new Button { Text = "+ Agregar fila", Location = new Point(6, 122), Size = new Size(90, 24) };
+        var btnAddRow = new Button { Text = Strings.AddRowButton, Location = new Point(6, 122), Size = new Size(90, 24) };
         btnAddRow.Click += OnAddRow;
         grpRows.Controls.Add(btnAddRow);
 
-        var btnRemRow = new Button { Text = "Eliminar", Location = new Point(100, 122), Size = new Size(70, 24) };
+        var btnRemRow = new Button { Text = Strings.DeleteButton, Location = new Point(100, 122), Size = new Size(70, 24) };
         btnRemRow.Click += (_, _) =>
         {
             if (_rowIndex < 0 || _pageIndex < 0) return;
@@ -248,40 +326,51 @@ sealed class CellGridEditorForm : Form
         };
         grpRows.Controls.Add(btnDown);
 
-        var btnIconPair = new Button { Text = "+ Par íconos", Location = new Point(248, 122), Size = new Size(82, 24) };
+        var btnIconPair = new Button { Text = Strings.AddIconPairButton, Location = new Point(248, 122), Size = new Size(82, 24) };
         btnIconPair.Click += OnAddIconPair;
         grpRows.Controls.Add(btnIconPair);
 
-        var btnTextBlock = new Button { Text = "+ Texto", Location = new Point(334, 122), Size = new Size(58, 24) };
+        var btnTextBlock = new Button { Text = Strings.AddTextBlockButton, Location = new Point(334, 122), Size = new Size(58, 24) };
         btnTextBlock.Click += OnAddTextBlock;
         grpRows.Controls.Add(btnTextBlock);
 
         // ── Row editor sub-panel ──────────────────────────────────────────────
-        _rowEditorPanel = new Panel { Location = new Point(6, 152), Size = new Size(390, 215), Enabled = false };
+        _rowEditorPanel = new Panel { Location = new Point(6, 152), Size = new Size(390, 241), Enabled = false };
 
-        _rowEditorPanel.Controls.Add(new Label { Text = "Tier:", Location = new Point(0, 4), Size = new Size(30, 18) });
+        _rowEditorPanel.Controls.Add(new Label { Text = Strings.TierLabel, Location = new Point(0, 4), Size = new Size(30, 18) });
         _cmbTier = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(34, 1), Size = new Size(160, 23) };
         foreach (var t in CellGridProtocol.Tiers)
             _cmbTier.Items.Add($"{t.Name}  {t.W}×{t.H}px  ({t.Cols} {(t.Cols == 1 ? "col" : "cols")})");
         _cmbTier.SelectedIndexChanged += OnTierChanged;
         _rowEditorPanel.Controls.Add(_cmbTier);
 
-        _rowEditorPanel.Controls.Add(new Label { Text = "Mitad:", Location = new Point(198, 4), Size = new Size(38, 18) });
+        _rowEditorPanel.Controls.Add(new Label { Text = Strings.HalfLabel, Location = new Point(198, 4), Size = new Size(38, 18) });
         _cmbSplit = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(238, 1), Size = new Size(148, 23) };
-        _cmbSplit.Items.AddRange(["Normal", "↑ Mitad superior", "↓ Mitad inferior"]);
+        _cmbSplit.Items.AddRange(Strings.SplitOptions);
         _cmbSplit.SelectedIndex = 0;
         _cmbSplit.SelectedIndexChanged += OnSplitChanged;
         _rowEditorPanel.Controls.Add(_cmbSplit);
 
-        _rowEditorPanel.Controls.Add(new Label { Text = "Template:", Location = new Point(0, 32), Size = new Size(62, 18) });
-        _txtTemplate = new TextBox { Location = new Point(0, 50), Size = new Size(385, 60), Multiline = true };
+        _rowEditorPanel.Controls.Add(new Label { Text = Strings.TemplateLabel, Location = new Point(0, 32), Size = new Size(62, 18) });
+        // NerdFont, not the inherited UI font: without this, any inserted glyph
+        // (from the "NF..." picker or a {token}'s icon) has no matching glyph in
+        // the default font, so Windows silently font-fallbacks to some other
+        // installed font that happens to have *something* mapped to that same
+        // codepoint, showing an unrelated character instead of the one picked.
+        _txtTemplate = new TextBox
+        {
+            Location  = new Point(0, 50),
+            Size      = new Size(385, 60),
+            Multiline = true,
+            Font      = NerdFont.CreateFont(12f),
+        };
         _txtTemplate.TextChanged += OnTemplateChanged;
         _rowEditorPanel.Controls.Add(_txtTemplate);
 
-        _rowEditorPanel.Controls.Add(new Label { Text = "Align:", Location = new Point(0, 117), Size = new Size(40, 18) });
-        _radLeft   = new RadioButton { Text = "Izq",    Location = new Point(44,  115), Size = new Size(50, 20) };
-        _radCenter = new RadioButton { Text = "Centro", Location = new Point(96,  115), Size = new Size(62, 20), Checked = true };
-        _radRight  = new RadioButton { Text = "Der",    Location = new Point(162, 115), Size = new Size(50, 20) };
+        _rowEditorPanel.Controls.Add(new Label { Text = Strings.AlignLabel, Location = new Point(0, 117), Size = new Size(40, 18) });
+        _radLeft   = new RadioButton { Text = Strings.AlignLeft,   Location = new Point(44,  115), Size = new Size(50, 20) };
+        _radCenter = new RadioButton { Text = Strings.AlignCenter, Location = new Point(96,  115), Size = new Size(62, 20), Checked = true };
+        _radRight  = new RadioButton { Text = Strings.AlignRight,  Location = new Point(162, 115), Size = new Size(50, 20) };
         _radLeft.CheckedChanged   += OnAlignChanged;
         _radCenter.CheckedChanged += OnAlignChanged;
         _radRight.CheckedChanged  += OnAlignChanged;
@@ -290,7 +379,7 @@ sealed class CellGridEditorForm : Form
         _rowEditorPanel.Controls.Add(_radRight);
 
         // ── Style row (Bold + AntiAlias + glyph styles) ──────────────────────
-        _chkBold = new CheckBox { Text = "Bold", Location = new Point(0, 141), Size = new Size(52, 20) };
+        _chkBold = new CheckBox { Text = Strings.BoldCheck, Location = new Point(0, 141), Size = new Size(52, 20) };
         _chkBold.CheckedChanged += OnBoldChanged;
         _rowEditorPanel.Controls.Add(_chkBold);
 
@@ -298,7 +387,7 @@ sealed class CellGridEditorForm : Form
         _chkAntiAlias.CheckedChanged += OnAntiAliasChanged;
         _rowEditorPanel.Controls.Add(_chkAntiAlias);
 
-        _rowEditorPanel.Controls.Add(new Label { Text = "Núm:", Location = new Point(100, 144), Size = new Size(32, 18) });
+        _rowEditorPanel.Controls.Add(new Label { Text = Strings.NumericLabel, Location = new Point(100, 144), Size = new Size(32, 18) });
         _cmbNumericStyle = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(134, 141), Size = new Size(116, 23) };
         foreach (var s in new[] { "text", "box", "box_outline", "box_multiple", "plain", "circle", "circle_outline" })
             _cmbNumericStyle.Items.Add(NerdFont.NumericStyleLabel(s));
@@ -306,7 +395,7 @@ sealed class CellGridEditorForm : Form
         _cmbNumericStyle.SelectedIndexChanged += OnNumericStyleChanged;
         _rowEditorPanel.Controls.Add(_cmbNumericStyle);
 
-        _rowEditorPanel.Controls.Add(new Label { Text = "Alfa:", Location = new Point(254, 144), Size = new Size(30, 18) });
+        _rowEditorPanel.Controls.Add(new Label { Text = Strings.AlphaLabel, Location = new Point(254, 144), Size = new Size(30, 18) });
         _cmbAlphaStyle = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(284, 141), Size = new Size(100, 23) };
         foreach (var s in new[] { "text", "plain", "box", "box_outline", "circle", "circle_outline" })
             _cmbAlphaStyle.Items.Add(NerdFont.AlphaStyleLabel(s));
@@ -314,16 +403,30 @@ sealed class CellGridEditorForm : Form
         _cmbAlphaStyle.SelectedIndexChanged += OnAlphaStyleChanged;
         _rowEditorPanel.Controls.Add(_cmbAlphaStyle);
 
+        // ── Font variant picker ───────────────────────────────────────────────
+        // Mono (the app default) shrinks icon/box glyph ink to force a uniform
+        // monospace advance width — that's what made weather icons and
+        // {conn.profilebar} boxes look undersized/inconsistent. Regular/Propo
+        // keep each glyph's natural size; pick per row where it matters.
+        _rowEditorPanel.Controls.Add(new Label { Text = Strings.FontVariantLabel, Location = new Point(0, 183), Size = new Size(46, 18) });
+        _cmbFontVariant = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(50, 180), Size = new Size(90, 23) };
+        foreach (var v in Enum.GetValues<FontVariant>())
+            _cmbFontVariant.Items.Add(NerdFont.VariantLabel(v));
+        _cmbFontVariant.SelectedIndex = 0;
+        _cmbFontVariant.SelectedIndexChanged += OnFontVariantChanged;
+        _rowEditorPanel.Controls.Add(_cmbFontVariant);
+
         // ── Binding picker ────────────────────────────────────────────────────
-        _rowEditorPanel.Controls.Add(new Label { Text = "Insertar:", Location = new Point(0, 183), Size = new Size(52, 18) });
+        _rowEditorPanel.Controls.Add(new Label { Text = Strings.InsertLabel, Location = new Point(0, 209), Size = new Size(52, 18) });
 
         _cmbBindCategory = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Location      = new Point(56, 180),
+            Location      = new Point(56, 206),
             Size          = new Size(90, 23),
         };
         foreach (var cat in BindingCatalog) _cmbBindCategory.Items.Add(cat.Category);
+        foreach (var cat in _customCategories) _cmbBindCategory.Items.Add(cat);
         _cmbBindCategory.SelectedIndex = 0;
         _cmbBindCategory.SelectedIndexChanged += OnBindCategoryChanged;
         _rowEditorPanel.Controls.Add(_cmbBindCategory);
@@ -331,16 +434,21 @@ sealed class CellGridEditorForm : Form
         _cmbBind = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Location      = new Point(150, 180),
-            Size          = new Size(160, 23),
+            Location      = new Point(150, 206),
+            Size          = new Size(118, 23), // narrowed 160->118 to fit btnGlyph on the same row
         };
         _cmbBind.SelectedIndexChanged += (_, _) => { };
         _rowEditorPanel.Controls.Add(_cmbBind);
         PopulateBindings(0);
 
-        var btnInsert = new Button { Text = "↵ Insertar", Location = new Point(314, 180), Size = new Size(74, 23) };
+        var btnInsert = new Button { Text = Strings.InsertButton, Location = new Point(272, 206), Size = new Size(70, 23) };
         btnInsert.Click += OnInsertBinding;
         _rowEditorPanel.Controls.Add(btnInsert);
+
+        // Full Nerd Font glyph picker (GlyphPickerDialog/FontCmapReader).
+        var btnGlyph = new Button { Text = "NF…", Location = new Point(346, 206), Size = new Size(40, 23) };
+        btnGlyph.Click += OnInsertGlyph;
+        _rowEditorPanel.Controls.Add(btnGlyph);
 
         grpRows.Controls.Add(_rowEditorPanel);
         Controls.Add(grpRows);
@@ -348,14 +456,14 @@ sealed class CellGridEditorForm : Form
         // ── LEFT: Data Sources — TabControl ───────────────────────────────────
         var tabData = new TabControl
         {
-            Location = new Point(6, 481),
-            Size     = new Size(406, 138),
+            Location = new Point(6, 511),
+            Size     = new Size(406, 162),
         };
 
         // ── Tab: Deportes ─────────────────────────────────────────────────────
-        var tabSports = new TabPage("Deportes");
-        tabSports.Controls.Add(new Label { Text = "Ligas y equipos:", Location = new Point(6, 6), AutoSize = true });
-        var btnLeagues = new Button { Text = "Editar ligas…", Location = new Point(280, 3), Size = new Size(110, 23) };
+        var tabSports = new TabPage(Strings.SportsTab);
+        tabSports.Controls.Add(new Label { Text = Strings.LeaguesTeamsLabel, Location = new Point(6, 6), AutoSize = true });
+        var btnLeagues = new Button { Text = Strings.EditLeaguesButton, Location = new Point(280, 3), Size = new Size(110, 23) };
         btnLeagues.Click += (_, _) =>
         {
             using var dlg = new LeaguePickerDialog(_editLeagues);
@@ -375,37 +483,109 @@ sealed class CellGridEditorForm : Form
             AutoScroll = true,
         };
         tabSports.Controls.Add(_teamsPanel);
-        tabData.TabPages.Add(tabSports);
+
+        // ── Tab: Zona Horaria ─────────────────────────────────────────────────
+        var tabTimeZone = new TabPage(Strings.TimeZoneTab);
+        tabTimeZone.Controls.Add(new Label { Text = Strings.TimeZonesLabel, Location = new Point(6, 6), AutoSize = true });
+        var btnTimeZones = new Button { Text = Strings.EditTimeZonesButton, Location = new Point(280, 3), Size = new Size(110, 23) };
+        btnTimeZones.Click += (_, _) =>
+        {
+            using var dlg = new TimeZonePickerDialog(_editTimeZones);
+            if (dlg.ShowDialog(this) == DialogResult.OK)
+            {
+                _editTimeZones = dlg.SelectedIds.ToList();
+                RebuildTimeZoneLabels();
+                PopulateBindings(_cmbBindCategory.SelectedIndex);
+            }
+        };
+        tabTimeZone.Controls.Add(btnTimeZones);
+
+        _timeZonesPanel = new Panel
+        {
+            Location   = new Point(4, 28),
+            Size       = new Size(390, 54),
+            AutoScroll = true,
+        };
+        tabTimeZone.Controls.Add(_timeZonesPanel);
+
+        // Convention hint: the "Zona Horaria"/"Time Zone" binding-picker
+        // category only lists the bare local tokens ({time}, {date}, ...) to
+        // avoid one entry per token × selected city; a foreign city is instead
+        // targeted by hand-appending ":<id>", using the full id shown above,
+        // not the short code (LiveState.Resolve rejects "BOG", it needs the
+        // real IANA id, e.g. "America/Bogota").
+        tabTimeZone.Controls.Add(new Label
+        {
+            Text      = Strings.TimeZoneSuffixHint,
+            Location  = new Point(4, 84),
+            Size      = new Size(390, 30),
+            ForeColor = Color.Gray,
+            AutoSize  = false,
+            Font      = new Font(SystemFonts.MessageBoxFont!.FontFamily, 7.5f),
+        });
 
         // ── Tab: Clima ────────────────────────────────────────────────────────
-        var tabWeather = new TabPage("Clima");
-        tabWeather.Controls.Add(new Label { Text = "Ciudad:", Location = new Point(6, 8), AutoSize = true });
-        _txtCity = new TextBox { Text = settings.City, Location = new Point(58, 5), Size = new Size(100, 22) };
+        // Up to MaxWeatherCities cities: unlike Sports/Time Zone there's no
+        // finite catalog to browse (any place name is technically valid), so
+        // instead of a modal picker dialog, "add" happens inline here — type a
+        // name, it's validated against the geocoding API (same one
+        // WeatherFeature already calls) before being accepted into the list.
+        var tabWeather = new TabPage(Strings.WeatherTab);
+        tabWeather.Controls.Add(new Label { Text = Strings.CityLabel, Location = new Point(6, 6), AutoSize = true });
+        _txtCity = new TextBox
+        {
+            Location        = new Point(58, 3),
+            Size            = new Size(150, 22),
+            PlaceholderText = "Madrid",
+        };
         tabWeather.Controls.Add(_txtCity);
 
-        var btnRefreshWeather = new Button { Text = "↺", Location = new Point(162, 5), Size = new Size(26, 22) };
-        btnRefreshWeather.Click += (_, _) => _ = RefreshWeatherPreviewAsync(_txtCity.Text.Trim());
-        tabWeather.Controls.Add(btnRefreshWeather);
+        var btnAddWeatherCity = new Button { Text = Strings.Add, Location = new Point(212, 3), Size = new Size(80, 22) };
+        btnAddWeatherCity.Click += (_, _) => _ = OnAddWeatherCityAsync();
+        tabWeather.Controls.Add(btnAddWeatherCity);
+        _txtCity.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { _ = OnAddWeatherCityAsync(); e.SuppressKeyPress = true; } };
 
         _lblWeatherStatus = new Label
         {
             Text      = "…",
-            Location  = new Point(194, 8),
-            Size      = new Size(196, 18),
+            Location  = new Point(6, 27),
+            Size      = new Size(378, 16),
             ForeColor = Color.Gray,
             AutoSize  = false,
         };
         tabWeather.Controls.Add(_lblWeatherStatus);
 
-        tabWeather.Controls.Add(new Label { Text = "Temperatura:", Location = new Point(6, 36), AutoSize = true });
+        _weatherCitiesPanel = new FlowLayoutPanel
+        {
+            Location     = new Point(4, 45),
+            Size         = new Size(390, 30),
+            AutoScroll   = true,
+            WrapContents = true,
+        };
+        tabWeather.Controls.Add(_weatherCitiesPanel);
+
+        // Convention hint: {weather.*} accepts an optional ":<city>" suffix for
+        // any additional configured city besides the first/default one, using
+        // the exact text shown on its chip above (no separate id to look up,
+        // unlike Time Zone's IANA ids).
+        tabWeather.Controls.Add(new Label
+        {
+            Text      = Strings.WeatherSuffixHint,
+            Location  = new Point(4, 77),
+            Size      = new Size(390, 14),
+            ForeColor = Color.Gray,
+            AutoSize  = false,
+            Font      = new Font(SystemFonts.MessageBoxFont!.FontFamily, 7.5f),
+        });
+
+        tabWeather.Controls.Add(new Label { Text = Strings.TemperatureLabel, Location = new Point(6, 94), AutoSize = true });
         bool isFahrenheit = settings.WeatherUnit == "fahrenheit";
-        _radTempC = new RadioButton { Text = "°C", Location = new Point(90, 34), Size = new Size(42, 20), Checked = !isFahrenheit };
-        _radTempF = new RadioButton { Text = "°F", Location = new Point(136, 34), Size = new Size(42, 20), Checked =  isFahrenheit };
+        _radTempC = new RadioButton { Text = "°C", Location = new Point(90, 92), Size = new Size(42, 20), Checked = !isFahrenheit };
+        _radTempF = new RadioButton { Text = "°F", Location = new Point(136, 92), Size = new Size(42, 20), Checked =  isFahrenheit };
         tabWeather.Controls.AddRange([_radTempC, _radTempF]);
-        tabData.TabPages.Add(tabWeather);
 
         // ── Tab: CLI ──────────────────────────────────────────────────────────
-        var tabCli = new TabPage("CLI");
+        var tabCli = new TabPage("CLI"); // "CLI" is an acronym, invariant across languages
         string exeDir   = AppContext.BaseDirectory;
         string zkcPath  = Path.Combine(exeDir, "zkc.exe");
         var txtCliPath = new TextBox
@@ -418,32 +598,41 @@ sealed class CellGridEditorForm : Form
         };
         tabCli.Controls.Add(txtCliPath);
 
-        var btnCopyPath = new Button { Text = "Copiar", Location = new Point(320, 5), Size = new Size(60, 22) };
+        var btnCopyPath = new Button { Text = Strings.CopyButton, Location = new Point(320, 5), Size = new Size(60, 22) };
         btnCopyPath.Click += (_, _) => Clipboard.SetText(zkcPath);
         tabCli.Controls.Add(btnCopyPath);
 
-        var btnOpenCli = new Button { Text = "Abrir terminal con zkc -h", Location = new Point(4, 33), Size = new Size(180, 26) };
+        tabCli.Controls.Add(new Label { Text = Strings.CliCommandLabel, Location = new Point(4, 30), Size = new Size(390, 14) });
+        _txtCliCommand = new TextBox
+        {
+            Location        = new Point(4, 45),
+            Size            = new Size(390, 20),
+            PlaceholderText = "python reloj.py | zkc -w",
+            Text            = settings.CliLastCommand,
+        };
+        tabCli.Controls.Add(_txtCliCommand);
+
+        var btnOpenCli = new Button { Text = Strings.LaunchCliButton, Location = new Point(4, 68), Size = new Size(140, 24) };
         btnOpenCli.Click += OnOpenCli;
         tabCli.Controls.Add(btnOpenCli);
 
         var lblCliHint = new Label
         {
-            Text      = "Uso: zkc \"mensaje\"  |  zkc \"línea1\\nlínea2\"",
-            Location  = new Point(4, 66),
-            Size      = new Size(390, 18),
+            Text      = Strings.CliHint,
+            Location  = new Point(4, 94),
+            Size      = new Size(390, 28),
             ForeColor = Color.Gray,
             Font      = new Font(SystemFonts.MessageBoxFont!.FontFamily, 7.5f),
         };
         tabCli.Controls.Add(lblCliHint);
-        tabData.TabPages.Add(tabCli);
 
         // ── Tab: Biblioteca ───────────────────────────────────────────────────
-        var tabLib = new TabPage("Biblioteca");
-        tabLib.Controls.Add(new Label { Text = "Nombre:", Location = new Point(4, 8), AutoSize = true });
+        var tabLib = new TabPage(Strings.LibraryTab);
+        tabLib.Controls.Add(new Label { Text = Strings.NameLabel, Location = new Point(4, 8), AutoSize = true });
         _txtLibName = new TextBox { Location = new Point(58, 5), Size = new Size(200, 22) };
         tabLib.Controls.Add(_txtLibName);
 
-        var btnLibSave = new Button { Text = "Guardar", Location = new Point(264, 5), Size = new Size(70, 22) };
+        var btnLibSave = new Button { Text = Strings.SaveButton, Location = new Point(264, 5), Size = new Size(70, 22) };
         btnLibSave.Click += OnLibSave;
         tabLib.Controls.Add(btnLibSave);
 
@@ -455,21 +644,28 @@ sealed class CellGridEditorForm : Form
         };
         tabLib.Controls.Add(_lstLibFiles);
 
-        var btnLibLoad = new Button { Text = "Cargar", Location = new Point(284, 32), Size = new Size(106, 24) };
+        var btnLibLoad = new Button { Text = Strings.LoadButton, Location = new Point(284, 32), Size = new Size(106, 24) };
         btnLibLoad.Click += OnLibLoad;
         tabLib.Controls.Add(btnLibLoad);
 
-        var btnLibDel = new Button { Text = "Eliminar", Location = new Point(284, 60), Size = new Size(106, 24) };
+        var btnLibDel = new Button { Text = Strings.DeleteButton, Location = new Point(284, 60), Size = new Size(106, 24) };
         btnLibDel.Click += OnLibDelete;
         tabLib.Controls.Add(btnLibDel);
 
+        // Add order determines both left-to-right tab order and which tab is
+        // selected by default (TabControl.SelectedIndex defaults to 0, the
+        // first one added) — Library first so the editor opens there.
         tabData.TabPages.Add(tabLib);
+        tabData.TabPages.Add(tabTimeZone);
+        tabData.TabPages.Add(tabWeather);
+        tabData.TabPages.Add(tabSports);
+        tabData.TabPages.Add(tabCli);
         Controls.Add(tabData);
 
         // ── Bottom buttons ────────────────────────────────────────────────────
-        var btnApply = new Button { Text = "Aplicar", Location = new Point(270, 625), Size = new Size(74, 28), DialogResult = DialogResult.OK };
+        var btnApply = new Button { Text = Strings.ApplyButton, Location = new Point(270, 679), Size = new Size(74, 28), DialogResult = DialogResult.OK };
         btnApply.Click += OnApply;
-        var btnClose = new Button { Text = "Cerrar", Location = new Point(350, 625), Size = new Size(74, 28) };
+        var btnClose = new Button { Text = Strings.Close, Location = new Point(350, 679), Size = new Size(74, 28) };
         btnClose.Click += (_, _) => Close();
         Controls.Add(btnApply);
         Controls.Add(btnClose);
@@ -480,9 +676,11 @@ sealed class CellGridEditorForm : Form
         if (_pages.Count == 0) _pages.Add(new CellGridPage());
         LoadPage(0);
         RebuildTeamInputs();
+        RebuildTimeZoneLabels();
+        RebuildWeatherCityLabels();
         RefreshLibraryList();
 
-        _ = RefreshWeatherPreviewAsync(settings.City);
+        _ = RefreshWeatherPreviewAsync(_editWeatherCities.FirstOrDefault() ?? "", "default");
     }
 
     // ── Binding picker ────────────────────────────────────────────────────────
@@ -493,30 +691,62 @@ sealed class CellGridEditorForm : Form
     private void PopulateBindings(int catIndex)
     {
         _cmbBind.Items.Clear();
-        if (catIndex < 0 || catIndex >= BindingCatalog.Length) return;
-        var items = catIndex == DeportesCategory
-            ? BuildDeportesItems()
-            : BindingCatalog[catIndex].Items;
+        int totalCategories = BindingCatalog.Length + _customCategories.Count;
+        if (catIndex < 0 || catIndex >= totalCategories) return;
+        var items = GetCategoryItems(catIndex);
         foreach (var (label, token) in items)
             _cmbBind.Items.Add($"{label}  {token}");
         if (_cmbBind.Items.Count > 0) _cmbBind.SelectedIndex = 0;
     }
 
+    // catIndex: 0..BindingCatalog.Length-1 are the fixed built-in categories
+    // (DeportesCategory dynamic among them); beyond that, indices map to
+    // _customCategories, filtering settings.CustomTokens by category name.
+    private (string Label, string Token)[] GetCategoryItems(int catIndex)
+    {
+        if (catIndex == DeportesCategory) return BuildDeportesItems();
+        if (catIndex >= 0 && catIndex < BindingCatalog.Length) return BindingCatalog[catIndex].Items;
+
+        int customIdx = catIndex - BindingCatalog.Length;
+        if (customIdx < 0 || customIdx >= _customCategories.Count) return [];
+        string category = _customCategories[customIdx];
+        return _settings.CustomTokens
+            .Where(t => t.Category.Equals(category, StringComparison.OrdinalIgnoreCase))
+            .Select(t => (t.Name, $"{{custom.{t.Name}}}"))
+            .ToArray();
+    }
+
     private (string Label, string Token)[] BuildDeportesItems()
     {
-        var items = new List<(string, string)>
+        bool es = Strings.Current == AppLanguage.Es;
+        var items = es ? new List<(string, string)>
         {
             ("Partido (resumen)",    "{sports}"),
             ("Equipo",               "{sports.team}"),
-            ("Marcador en juego",    "{sports.game}"),
+            ("Equipos en vivo",      "{sports.live_game}"),
+            ("Marcador en vivo",     "{sports.live_marker}"),
             ("Estado (icono)",       "{sports.marker}"),
-            ("Tiempo en juego",      "{sports.time}"),
+            ("Tiempo en vivo",       "{sports.live_time}"),
             ("Liga",                 "{sports.league}"),
             ("Últ. partido",         "{sports.last_game}"),
             ("Últ. marcador",        "{sports.last_marker}"),
             ("Próx. partido",        "{sports.next_game}"),
             ("Próx. fecha",          "{sports.next_date}"),
             ("Próx. hora",           "{sports.next_gametime}"),
+        } : new List<(string, string)>
+        {
+            ("Game (summary)",       "{sports}"),
+            ("Team",                 "{sports.team}"),
+            ("Live teams",           "{sports.live_game}"),
+            ("Live score",           "{sports.live_marker}"),
+            ("Status (icon)",        "{sports.marker}"),
+            ("Live time",            "{sports.live_time}"),
+            ("League",               "{sports.league}"),
+            ("Last game",            "{sports.last_game}"),
+            ("Last score",           "{sports.last_marker}"),
+            ("Next game",            "{sports.next_game}"),
+            ("Next date",            "{sports.next_date}"),
+            ("Next time",            "{sports.next_gametime}"),
         };
 
         if (_editLeagues.Count > 1)
@@ -525,13 +755,26 @@ sealed class CellGridEditorForm : Form
             {
                 var lg = SportsFeature.FindOrCreate(path);
                 string q = ":" + lg.ShortName;
-                items.Add(($"[{lg.ShortName}] Últ. partido",   $"{{sports.last_game{q}}}"));
-                items.Add(($"[{lg.ShortName}] Últ. marcador",  $"{{sports.last_marker{q}}}"));
-                items.Add(($"[{lg.ShortName}] Próx. partido",  $"{{sports.next_game{q}}}"));
-                items.Add(($"[{lg.ShortName}] Próx. fecha",    $"{{sports.next_date{q}}}"));
-                items.Add(($"[{lg.ShortName}] Próx. hora",     $"{{sports.next_gametime{q}}}"));
-                items.Add(($"[{lg.ShortName}] Liga",           $"{{sports.league{q}}}"));
-                items.Add(($"[{lg.ShortName}] Equipo",         $"{{sports.team{q}}}"));
+                if (es)
+                {
+                    items.Add(($"[{lg.ShortName}] Últ. partido",   $"{{sports.last_game{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Últ. marcador",  $"{{sports.last_marker{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Próx. partido",  $"{{sports.next_game{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Próx. fecha",    $"{{sports.next_date{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Próx. hora",     $"{{sports.next_gametime{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Liga",           $"{{sports.league{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Equipo",         $"{{sports.team{q}}}"));
+                }
+                else
+                {
+                    items.Add(($"[{lg.ShortName}] Last game",   $"{{sports.last_game{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Last score",  $"{{sports.last_marker{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Next game",   $"{{sports.next_game{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Next date",   $"{{sports.next_date{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Next time",   $"{{sports.next_gametime{q}}}"));
+                    items.Add(($"[{lg.ShortName}] League",      $"{{sports.league{q}}}"));
+                    items.Add(($"[{lg.ShortName}] Team",        $"{{sports.team{q}}}"));
+                }
             }
         }
         return items.ToArray();
@@ -542,14 +785,32 @@ sealed class CellGridEditorForm : Form
         int catIdx  = _cmbBindCategory.SelectedIndex;
         int bindIdx = _cmbBind.SelectedIndex;
         if (catIdx < 0 || bindIdx < 0) return;
-        var items = catIdx == DeportesCategory
-            ? BuildDeportesItems()
-            : BindingCatalog[catIdx].Items;
+        var items = GetCategoryItems(catIdx);
         if (bindIdx >= items.Length) return;
         string token = items[bindIdx].Token;
         int sel = _txtTemplate.SelectionStart;
         _txtTemplate.Text = _txtTemplate.Text.Insert(sel, token);
         _txtTemplate.SelectionStart = sel + token.Length;
+        _txtTemplate.Focus();
+
+        // {conn.profilebar} is Material Design numeric-box glyphs — Mono's
+        // shrunk-ink sizing (see NerdFont/FontVariant) makes its 5 boxes look
+        // mismatched in size; Propo keeps their natural size. Only switches
+        // the row that receives the insert, not existing rows.
+        if (token == "{conn.profilebar}" && _rowIndex >= 0 && _pageIndex >= 0)
+            _cmbFontVariant.SelectedIndex = (int)FontVariant.Propo; // triggers OnFontVariantChanged
+    }
+
+    // Inserts a literal glyph character (not a {token}) at the cursor, e.g. a
+    // static status/battery/traffic-light icon to sit next to a live
+    // {custom.NAME} value in the same row template.
+    private void OnInsertGlyph(object? sender, EventArgs e)
+    {
+        using var dlg = new GlyphPickerDialog();
+        if (dlg.ShowDialog(this) != DialogResult.OK || dlg.SelectedGlyph is not { } glyph) return;
+        int sel = _txtTemplate.SelectionStart;
+        _txtTemplate.Text = _txtTemplate.Text.Insert(sel, glyph);
+        _txtTemplate.SelectionStart = sel + glyph.Length;
         _txtTemplate.Focus();
     }
 
@@ -575,7 +836,7 @@ sealed class CellGridEditorForm : Form
             int py = row * rowH;
 
             var lbl = new Label { Text = lg.ShortName + ":", Location = new Point(px, py + 4), Size = new Size(54, 18), AutoSize = false };
-            var tb  = new TextBox { Text = team, Location = new Point(px + 56, py), Size = new Size(68, 22), PlaceholderText = "equipo" };
+            var tb  = new TextBox { Text = team, Location = new Point(px + 56, py), Size = new Size(68, 22), PlaceholderText = Strings.TeamPlaceholder };
             _teamBoxes[path] = tb;
             _teamsPanel.Controls.AddRange([lbl, tb]);
 
@@ -584,11 +845,108 @@ sealed class CellGridEditorForm : Form
         }
     }
 
+    // Read-only display of the zones picked in TimeZonePickerDialog. No
+    // per-zone input here (unlike RebuildTeamInputs' team-filter textboxes),
+    // there's nothing to configure per zone besides its id, which the picker
+    // already owns, removing a zone happens there, not in this tab.
+    //
+    // Shows the full IANA id (not just the short code) so the user has
+    // something to literally copy into a template's ":<id>" suffix, e.g.
+    // "{time:America/Bogota}" — see the hint label built in the constructor.
+    private void RebuildTimeZoneLabels()
+    {
+        _timeZonesPanel.Controls.Clear();
+
+        int row = 0;
+        const int rowH = 18;
+
+        foreach (var id in _editTimeZones)
+        {
+            var tz = TimeZoneCatalog.FindOrCreate(id);
+            var lbl = new Label
+            {
+                Text     = $"{tz.DisplayName} ({tz.ShortName})  →  {tz.Id}",
+                Location = new Point(0, row * rowH),
+                Size     = new Size(374, 18),
+                AutoSize = false,
+            };
+            _timeZonesPanel.Controls.Add(lbl);
+            row++;
+        }
+    }
+
+    // ── Weather cities ─────────────────────────────────────────────────────────
+
+    // No modal picker here (unlike Sports/Time Zone): there's no finite catalog
+    // to browse, any place name is potentially valid, so "add" means validating
+    // the typed name against the same geocoding call WeatherFeature already
+    // makes, then accepting it into the list on success.
+    private async Task OnAddWeatherCityAsync()
+    {
+        string city = _txtCity.Text.Trim();
+        if (city.Length == 0) return;
+        if (_editWeatherCities.Count >= MaxWeatherCities)
+        {
+            MessageBox.Show(this, Strings.WeatherCityLimitBody(MaxWeatherCities),
+                Strings.WeatherCityLimitTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        if (_editWeatherCities.Any(c => c.Equals(city, StringComparison.OrdinalIgnoreCase)))
+            return; // already added
+
+        bool isFirst = _editWeatherCities.Count == 0;
+        bool ok = await RefreshWeatherPreviewAsync(city, city, alsoDefault: isFirst);
+        if (!ok) return; // _lblWeatherStatus already shows the error
+
+        _editWeatherCities.Add(city);
+        _txtCity.Text = "";
+        RebuildWeatherCityLabels();
+        PopulateBindings(_cmbBindCategory.SelectedIndex);
+    }
+
+    private void RebuildWeatherCityLabels()
+    {
+        _weatherCitiesPanel.Controls.Clear();
+        if (_editWeatherCities.Count == 0)
+        {
+            _weatherCitiesPanel.Controls.Add(new Label
+            {
+                Text     = Strings.WeatherAutoDetectHint,
+                AutoSize = true,
+                ForeColor = Color.Gray,
+            });
+            return;
+        }
+
+        foreach (var city in _editWeatherCities.ToList())
+        {
+            var chip = new Button
+            {
+                Text      = $"{city}  ×",
+                AutoSize  = true,
+                FlatStyle = FlatStyle.Flat,
+                Margin    = new Padding(2),
+            };
+            chip.FlatAppearance.BorderSize = 1;
+            chip.Click += (_, _) =>
+            {
+                _editWeatherCities.Remove(city);
+                RebuildWeatherCityLabels();
+                PopulateBindings(_cmbBindCategory.SelectedIndex);
+            };
+            _weatherCitiesPanel.Controls.Add(chip);
+        }
+    }
+
     // ── Weather preview refresh ───────────────────────────────────────────────
 
-    private async Task RefreshWeatherPreviewAsync(string city)
+    // Validates `city` against the live API and, on success, updates the
+    // preview's LiveState under `cityKey` (and also "default" when
+    // alsoDefault, for whichever city is first/bare-token-backed). Returns
+    // whether the fetch succeeded, callers use this to gate adding the city.
+    private async Task<bool> RefreshWeatherPreviewAsync(string city, string cityKey, bool alsoDefault = false)
     {
-        _lblWeatherStatus.Text      = "consultando…";
+        _lblWeatherStatus.Text      = Strings.QueryingWeather;
         _lblWeatherStatus.ForeColor = Color.Gray;
         try
         {
@@ -597,20 +955,25 @@ sealed class CellGridEditorForm : Form
             string tempStr  = fahrenheit
                 ? $"{data.TempC * 9 / 5 + 32:F0}°F"
                 : $"{data.TempC:F0}°";
-            _liveState.UpdateWeather(data.Icon.ToString(), tempStr, data.City);
+            _liveState.UpdateWeather(cityKey, data.Icon.ToString(), tempStr, data.City);
+            if (alsoDefault && cityKey != "default")
+                _liveState.UpdateWeather("default", data.Icon.ToString(), tempStr, data.City);
             _lblWeatherStatus.Text      = $"{data.City} {tempStr}";
             _lblWeatherStatus.ForeColor = Color.LimeGreen;
+            return true;
         }
         catch (System.Net.Http.HttpRequestException ex) when (ex.StatusCode.HasValue)
         {
-            _lblWeatherStatus.Text      = $"HTTP {(int)ex.StatusCode.Value} — red/proxy";
+            _lblWeatherStatus.Text      = Strings.WeatherHttpError((int)ex.StatusCode.Value);
             _lblWeatherStatus.ForeColor = Color.OrangeRed;
+            return false;
         }
         catch (Exception ex)
         {
             string msg = ex.Message;
             _lblWeatherStatus.Text      = msg.Length > 34 ? msg[..34] + "…" : msg;
             _lblWeatherStatus.ForeColor = Color.OrangeRed;
+            return false;
         }
     }
 
@@ -693,6 +1056,7 @@ sealed class CellGridEditorForm : Form
         _chkAntiAlias.Checked          = row.AntiAlias;
         _cmbNumericStyle.SelectedIndex = NumericStyleIndex(row.NumericStyle);
         _cmbAlphaStyle.SelectedIndex   = AlphaStyleIndex(row.AlphaStyle);
+        _cmbFontVariant.SelectedIndex  = (int)row.FontVariant;
         (_radLeft.Checked, _radCenter.Checked, _radRight.Checked) = row.Align switch
         {
             "left"  => (true,  false, false),
@@ -793,6 +1157,13 @@ sealed class CellGridEditorForm : Form
         RefreshPreview();
     }
 
+    private void OnFontVariantChanged(object? sender, EventArgs e)
+    {
+        if (_suppressRowUi || _rowIndex < 0 || _pageIndex < 0) return;
+        _pages[_pageIndex].Rows[_rowIndex].FontVariant = (FontVariant)_cmbFontVariant.SelectedIndex;
+        RefreshPreview();
+    }
+
     private void OnAddIconPair(object? sender, EventArgs e)
     {
         if (_pageIndex < 0) return;
@@ -803,7 +1174,7 @@ sealed class CellGridEditorForm : Form
         if (remaining < tier.H * 2)
         {
             MessageBox.Show(
-                $"No hay espacio suficiente para un par de íconos ({tier.H * 2}px necesarios, {remaining}px libres).",
+                Strings.NotEnoughSpaceIconPair(tier.H * 2, remaining),
                 "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
@@ -821,18 +1192,18 @@ sealed class CellGridEditorForm : Form
         // Inline dialog: choose number of lines
         using var dlg = new Form
         {
-            Text            = "Bloque de texto",
+            Text            = Strings.TextBlockDialogTitle,
             FormBorderStyle = FormBorderStyle.FixedDialog,
             StartPosition   = FormStartPosition.CenterParent,
             MinimizeBox     = false,
             MaximizeBox     = false,
             ClientSize      = new Size(240, 88),
         };
-        dlg.Controls.Add(new Label { Text = "Número de líneas:", Location = new Point(8, 16), AutoSize = true });
+        dlg.Controls.Add(new Label { Text = Strings.NumberOfLinesLabel, Location = new Point(8, 16), AutoSize = true });
         var nud = new NumericUpDown { Location = new Point(134, 13), Size = new Size(50, 22), Minimum = 1, Maximum = 8, Value = 2 };
         dlg.Controls.Add(nud);
-        var btnOk = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(60, 52), Width = 70 };
-        var btnCx = new Button { Text = "Cancelar", DialogResult = DialogResult.Cancel, Location = new Point(138, 52), Width = 76 };
+        var btnOk = new Button { Text = Strings.Ok, DialogResult = DialogResult.OK, Location = new Point(60, 52), Width = 70 };
+        var btnCx = new Button { Text = Strings.Cancel, DialogResult = DialogResult.Cancel, Location = new Point(138, 52), Width = 76 };
         dlg.Controls.AddRange([btnOk, btnCx]);
         dlg.AcceptButton = btnOk;
         dlg.CancelButton = btnCx;
@@ -847,7 +1218,7 @@ sealed class CellGridEditorForm : Form
         if (remaining < tier.H * lines)
         {
             MessageBox.Show(
-                $"No hay espacio suficiente ({tier.H * lines}px necesarios, {remaining}px libres).",
+                Strings.NotEnoughSpace(tier.H * lines, remaining),
                 "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
@@ -867,22 +1238,30 @@ sealed class CellGridEditorForm : Form
         string zkcPath = Path.Combine(AppContext.BaseDirectory, "zkc.exe");
         if (!File.Exists(zkcPath))
         {
-            MessageBox.Show($"No se encontró zkc.exe en:\n{zkcPath}",
+            MessageBox.Show(Strings.ZkcNotFound(zkcPath),
                 "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
+
+        // The command field holds a full shell command line, not just zkc
+        // arguments (the documented example pipes another program into zkc:
+        // "python reloj.py | zkc -w"), so run it verbatim via cmd /K rather
+        // than trying to parse/append it as zkc's argv. Blank falls back to
+        // the previous fixed "zkc -h" behavior.
+        string command  = _txtCliCommand.Text.Trim();
+        string cmdArgs  = command.Length > 0 ? command : $"\"{zkcPath}\" -h";
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
                 FileName  = "cmd.exe",
-                Arguments = $"/K \"{zkcPath}\" -h",
+                Arguments = $"/K {cmdArgs}",
                 UseShellExecute = true,
             });
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"No se pudo abrir la terminal: {ex.Message}",
+            MessageBox.Show(Strings.CouldNotOpenTerminal(ex.Message),
                 "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -902,7 +1281,7 @@ sealed class CellGridEditorForm : Form
         string name = _txtLibName.Text.Trim();
         if (string.IsNullOrEmpty(name))
         {
-            MessageBox.Show("Ingresa un nombre para la configuración.",
+            MessageBox.Show(Strings.EnterConfigName,
                 "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
@@ -934,19 +1313,22 @@ sealed class CellGridEditorForm : Form
             foreach (var p in snap.DisplayPages) _pages.Add(p.Clone());
             if (_pages.Count == 0) _pages.Add(new CellGridPage());
 
-            _editLeagues  = snap.SelectedLeagues.ToList();
+            _editLeagues       = snap.SelectedLeagues.ToList();
+            _editTimeZones     = snap.SelectedTimeZones.ToList();
+            _editWeatherCities = snap.WeatherCities.ToList();
             _chkCycle.Checked = snap.CycleDisplayPages;
-            _txtCity.Text = snap.City;
             bool f = snap.WeatherUnit == "fahrenheit";
             _radTempC.Checked = !f;
             _radTempF.Checked =  f;
 
             RebuildTeamInputs();
+            RebuildTimeZoneLabels();
+            RebuildWeatherCityLabels();
             LoadPage(0);
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error al cargar la configuración: {ex.Message}",
+            MessageBox.Show(Strings.ErrorLoadingConfig(ex.Message),
                 "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -954,7 +1336,7 @@ sealed class CellGridEditorForm : Form
     private void OnLibDelete(object? sender, EventArgs e)
     {
         if (_lstLibFiles.SelectedItem is not string name) return;
-        if (MessageBox.Show($"¿Eliminar '{name}' de la biblioteca?", "ZMK Companion",
+        if (MessageBox.Show(Strings.ConfirmDeleteLibraryItem(name), "ZMK Companion",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
         string path = Path.Combine(LibraryDir, name + ".json");
         if (File.Exists(path)) File.Delete(path);
@@ -965,9 +1347,10 @@ sealed class CellGridEditorForm : Form
     {
         DisplayPages      = _pages.Select(p => p.Clone()).ToList(),
         CycleDisplayPages = _chkCycle.Checked,
-        City              = _txtCity.Text.Trim(),
+        WeatherCities     = _editWeatherCities,
         WeatherUnit       = _radTempF.Checked ? "fahrenheit" : "celsius",
         SelectedLeagues   = _editLeagues.Count > 0 ? _editLeagues : ["football/nfl"],
+        SelectedTimeZones = _editTimeZones,
         SportsTeams       = _teamBoxes
             .Where(kv => !string.IsNullOrWhiteSpace(kv.Value.Text))
             .ToDictionary(kv => kv.Key, kv => kv.Value.Text.Trim().ToUpper()),
@@ -997,21 +1380,21 @@ sealed class CellGridEditorForm : Form
             if (page.TotalHeight > BitmapFrame.Height)
             {
                 MessageBox.Show(
-                    $"La página '{page.Name}' excede la altura del display " +
-                    $"({page.TotalHeight}px > {BitmapFrame.Height}px).\n" +
-                    "Elimina o reduce filas antes de aplicar.",
+                    Strings.PageExceedsHeight(page.Name, page.TotalHeight, BitmapFrame.Height),
                     "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
         }
 
-        _settings.City            = _txtCity.Text.Trim();
-        _settings.WeatherUnit     = _radTempF.Checked ? "fahrenheit" : "celsius";
-        _settings.SelectedLeagues = _editLeagues.Count > 0 ? _editLeagues : ["football/nfl"];
-        _settings.SportsTeams     = _teamBoxes
+        _settings.WeatherCities     = _editWeatherCities;
+        _settings.WeatherUnit       = _radTempF.Checked ? "fahrenheit" : "celsius";
+        _settings.SelectedLeagues   = _editLeagues.Count > 0 ? _editLeagues : ["football/nfl"];
+        _settings.SelectedTimeZones = _editTimeZones;
+        _settings.SportsTeams       = _teamBoxes
             .Where(kv => !string.IsNullOrWhiteSpace(kv.Value.Text))
             .ToDictionary(kv => kv.Key, kv => kv.Value.Text.Trim().ToUpper());
         _settings.SportsTeam      = null;
+        _settings.CliLastCommand  = _txtCliCommand.Text;
 
         _onApply(_pages.Select(p => p.Clone()).ToList(), _chkCycle.Checked);
     }

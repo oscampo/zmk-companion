@@ -14,14 +14,40 @@ sealed class LiveState
     public bool UsbActive       { get; private set; }
     public int  BleProfile      { get; private set; } = -1;  // 0-4
     public int  BleProfileMask  { get; private set; } = 0b11111;  // bits 0-4: profiles 1-5 bonded
+    // zmk_keymap_highest_layer_active(), 0-based, from 0x1526 byte 2.
+    // -1 = not yet reported (old firmware without byte 2, or not connected).
+    public int    Layer         { get; private set; } = -1;
+    // zmk_keymap_layer_name() for the active layer, from 0x1526 bytes 4+.
+    // "" = not yet reported (old firmware without the trailing name, or not
+    // connected) - same as an unnamed layer would look, that ambiguity is
+    // accepted since ZMK layers are conventionally always labeled.
+    public string LayerName     { get; private set; } = "";
+    // Raw zmk_wpm_get_state() from 0x1526 byte 3, no smoothing: decays to 0
+    // within ZMK's own ~5s window when idle, same as the native widget.
+    // -1 = not yet reported (old firmware without byte 3, or not connected).
+    public int  Wpm             { get; private set; } = -1;
 
-    // Weather snapshot, refreshed periodically by AppContext from WeatherFeature.
-    public string WeatherIcon { get; private set; } = "";
-    public string WeatherTemp { get; private set; } = "--°";
-    public string WeatherCity { get; private set; } = "";
+    // Weather data per configured city (keyed by the exact city string the
+    // user typed when adding it, upper/lower-case insensitive), refreshed
+    // periodically by AppContext from WeatherFeature. "default" is the first
+    // configured city (or the sole auto-detected one), used by the bare
+    // {weather}/{weather.*} bindings — same "default" + own-key double-keying
+    // scheme as _sportsData.
+    private readonly Dictionary<string, WeatherSnapshot> _weatherData = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly WeatherSnapshot _emptyWeather = new();
 
     // Last text pushed by an external process via the named pipe (zkc CLI).
     public string ExternalText { get; private set; } = "";
+
+    // Named {custom.NAME} values, pushed by `zkc --set NAME value` / `--set
+    // NAME --watch`. Unlike ExternalText this is N independent channels, keyed
+    // by name, each usable in any row's Template on any page, no full-screen
+    // override, no page-mode routing, they render through the same per-row
+    // Expand() pipeline as {weather.temp} or {battery.percent}.
+    private readonly Dictionary<string, string>   _customValues    = new(StringComparer.OrdinalIgnoreCase);
+    // Wall-clock time of the last UpdateCustom() call per name, regardless of
+    // whether the value changed. Drives AppContext's stale-token balloon check.
+    private readonly Dictionary<string, DateTime> _customUpdatedAt = new(StringComparer.OrdinalIgnoreCase);
 
     // Pomodoro state, updated by AppContext on each PomodoroFeature tick.
     public string PomodoroTime  { get; private set; } = "--:--";
@@ -62,20 +88,70 @@ sealed class LiveState
         Changed?.Invoke();
     }
 
-    public void UpdateWeather(string icon, string temp, string city)
+    public void UpdateLayer(int layer)
     {
-        if (icon == WeatherIcon && temp == WeatherTemp && city == WeatherCity) return;
-        WeatherIcon = icon;
-        WeatherTemp = temp;
-        WeatherCity = city;
+        if (layer == Layer) return;
+        Layer = layer;
         Changed?.Invoke();
     }
+
+    public void UpdateLayerName(string name)
+    {
+        if (name == LayerName) return;
+        LayerName = name;
+        Changed?.Invoke();
+    }
+
+    public void UpdateWpm(int wpm)
+    {
+        if (wpm == Wpm) return;
+        Wpm = wpm;
+        Changed?.Invoke();
+    }
+
+    public void UpdateWeather(string cityKey, string icon, string temp, string city)
+    {
+        if (_weatherData.TryGetValue(cityKey, out var old) &&
+            old.Icon == icon && old.Temp == temp && old.City == city) return;
+        _weatherData[cityKey] = new WeatherSnapshot { Icon = icon, Temp = temp, City = city };
+        Changed?.Invoke();
+    }
+
+    private WeatherSnapshot Weather(string cityKey) =>
+        _weatherData.TryGetValue(cityKey, out var v) ? v : _emptyWeather;
 
     public void UpdateExternalText(string text)
     {
         if (text == ExternalText) return;
         ExternalText = text;
         Changed?.Invoke();
+    }
+
+    // name is assumed already validated ([a-z0-9_]) by the pipe layer.
+    public void UpdateCustom(string name, string value)
+    {
+        // Stamped unconditionally, even if value == old: a script re-sending
+        // the same reading (e.g. CPU temp holding steady at 45C) is still
+        // proof it's alive. Only the early-return below (no Changed raised)
+        // is gated on the value actually differing, to avoid a wasted re-render.
+        _customUpdatedAt[name] = DateTime.UtcNow;
+        if (_customValues.TryGetValue(name, out var old) && old == value) return;
+        _customValues[name] = value;
+        Changed?.Invoke();
+    }
+
+    // false if name was never SET at all - that's the normal "pending" state
+    // (see Resolve's "custom." case, "" fallback), not staleness; AppContext's
+    // stale checker should skip it, not warn.
+    public bool TryGetCustomAge(string name, out TimeSpan age)
+    {
+        if (_customUpdatedAt.TryGetValue(name, out var t))
+        {
+            age = DateTime.UtcNow - t;
+            return true;
+        }
+        age = default;
+        return false;
     }
 
     public void UpdatePomodoro(string time, string phase, string bar, string icon, string cycle)
@@ -103,10 +179,39 @@ sealed class LiveState
     // Resolves a single binding key to its current display value (no glyph styling).
     public string Resolve(string key, bool use24h = false) => Resolve(key, use24h, null);
 
+    // Time/date tokens that accept an optional ":<IANA id>" suffix for a
+    // foreign time zone, e.g. {time:America/New_York}, {date.month:Asia/Tokyo}.
+    // No suffix == local system time/date (unchanged behavior).
+    private static readonly HashSet<string> TimeZoneAwareKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "time", "time24", "time12", "time.hh", "time.mm", "ampm", "date", "date.day", "time.dd", "date.month",
+    };
+
     // Resolves a single binding key, applying glyph styles from cfg when provided.
     public string Resolve(string key, bool use24h, LabelConfig? cfg)
     {
         bool h24 = use24h || !Protocol.Detect12h();
+
+        // Strip a ":<IANA id>" suffix off a time/date key and compute that
+        // zone's current time. An unresolvable id is a visible typo signal
+        // (unresolved "{key}"), same convention as every other unknown token,
+        // not a silent fallback to local time.
+        string timeKey = key;
+        DateTime now    = DateTime.Now;
+        int colonIdx    = key.IndexOf(':');
+        if (colonIdx > 0 && TimeZoneAwareKeys.Contains(key[..colonIdx]))
+        {
+            string baseKey = key[..colonIdx];
+            string tzId    = key[(colonIdx + 1)..];
+            try
+            {
+                var tz = TimeZoneInfo.FindSystemTimeZoneById(tzId);
+                now     = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+                timeKey = baseKey;
+            }
+            catch (TimeZoneNotFoundException) { return $"{{{key}}}"; }
+            catch (InvalidTimeZoneException)  { return $"{{{key}}}"; }
+        }
 
         // Battery icon — respects BatteryGlyphStyle
         if (key == "battery.icon")
@@ -151,30 +256,39 @@ sealed class LiveState
         }
 
         // Sports — {sports}, {sports:NFL}, {sports.team}, {sports.team:NFL}, etc.
-        bool isSports = key.StartsWith("sports", StringComparison.OrdinalIgnoreCase);
-        string raw = isSports ? ResolveSports(key) : key switch
+        bool isSports  = key.StartsWith("sports", StringComparison.OrdinalIgnoreCase);
+        // Weather — {weather}, {weather:Madrid}, {weather.temp}, {weather.temp:Madrid}, etc.
+        bool isWeather = key.StartsWith("weather", StringComparison.OrdinalIgnoreCase);
+        bool isCustom  = key.StartsWith("custom.", StringComparison.OrdinalIgnoreCase);
+        string raw = isSports  ? ResolveSports(key)
+                   : isWeather ? ResolveWeather(key)
+                   : timeKey switch
         {
             "battery.level"   => BatteryLevel < 0 ? "--"  : $"{BatteryLevel}",
             "battery.percent" => BatteryLevel < 0 ? "--%": $"{BatteryLevel}%",
             "conn.type"       => UsbActive ? "USB" : "BLE",
             "conn.profile"    => UsbActive || BleProfile < 0 ? "?" : $"{BleProfile + 1}",
-            "time"            => DateTime.Now.ToString(h24 ? "HH:mm" : "h:mm"),
-            "time24"          => DateTime.Now.ToString("HH:mm"),
-            "time12"          => DateTime.Now.ToString("h:mm"),
-            "time.hh"         => DateTime.Now.ToString(h24 ? "HH" : "hh"),
-            "time.mm"         => DateTime.Now.ToString("mm"),
-            "ampm"            => h24 ? "" : DateTime.Now.ToString("tt"),
-            "date"            => DateTime.Now.ToString("ddd d").ToUpper(),
-            "date.day"        => DateTime.Now.Day.ToString(),
-            "time.dd"         => DateTime.Now.ToString("dd"),
-            "date.month"      => DateTime.Now.ToString("MMM").ToUpper(),
-            "weather.icon"    => WeatherIcon,
-            "weather.temp"    => WeatherTemp,
-            "weather.city"    => WeatherCity,
-            "weather"         => $"{WeatherCity} {WeatherIcon} {WeatherTemp}".Trim(),
+            "layer.number"    => Layer < 0 ? "--" : $"{Layer}", // 0-based, matches ZMK's own indexing
+            "layer.name"      => LayerName,
+            "wpm"             => Wpm   < 0 ? "--" : $"{Wpm}",  // raw, decays to 0 when idle (see UpdateWpm)
+            "time"            => now.ToString(h24 ? "HH:mm" : "h:mm"),
+            "time24"          => now.ToString("HH:mm"),
+            "time12"          => now.ToString("h:mm"),
+            "time.hh"         => now.ToString(h24 ? "HH" : "hh"),
+            "time.mm"         => now.ToString("mm"),
+            "ampm"            => h24 ? "" : now.ToString("tt"),
+            "date"            => now.ToString("ddd d").ToUpper(),
+            "date.day"        => now.Day.ToString(),
+            "time.dd"         => now.ToString("dd"),
+            "date.month"      => now.ToString("MMM").ToUpper(),
             "ext.text"        => ExternalText,
             _ when key.StartsWith("ext.text.", StringComparison.OrdinalIgnoreCase)
                               => ExtTextLine(key["ext.text.".Length..]),
+            // "" (not the unresolved-"{key}" fallback below) for a declared-but-
+            // never-set custom token: that's the normal pending state before any
+            // script has run its first `zkc --set`, not a typo to flag.
+            _ when key.StartsWith("custom.", StringComparison.OrdinalIgnoreCase)
+                              => _customValues.GetValueOrDefault(key["custom.".Length..], ""),
             _                 => $"{{{key}}}",
         };
 
@@ -185,11 +299,11 @@ sealed class LiveState
             bool alphaConvert = cfg.AlphaStyle   != "text";
             if (numConvert || alphaConvert)
             {
-                bool applyAlpha = alphaConvert && (isSports || key is "date" or "date.month" or "weather" or "weather.city");
-                bool applyNum   = numConvert   && (isSports || key is "time" or "time24" or "time12"
+                bool applyAlpha = alphaConvert && (isSports || isWeather || isCustom || timeKey is "date" or "date.month" or "layer.name");
+                bool applyNum   = numConvert   && (isSports || isWeather || isCustom || timeKey is "time" or "time24" or "time12"
                                                         or "time.hh" or "time.mm" or "time.dd"
                                                         or "date" or "date.day" or "date.month"
-                                                        or "conn.profile" or "weather" or "weather.temp");
+                                                        or "conn.profile" or "layer.number" or "wpm");
                 if (applyNum || applyAlpha)
                     raw = ApplyGlyphStyles(raw, applyNum ? cfg.NumericStyle : "text",
                                                applyAlpha ? cfg.AlphaStyle : "text");
@@ -270,7 +384,7 @@ sealed class LiveState
                 "sport"     => s.Sport,
                 "league"    => s.League,
                 "team"      => s.Team,
-                "time"      => s.Time,
+                "time"      => s.LiveTime, // "" for _next/_last: StatusState is never "in" there
                 "scheduled" => s.Scheduled,
                 "date"      => SplitScheduled(s.Scheduled, 0),
                 "gametime"  => SplitScheduled(s.Scheduled, 1),
@@ -280,16 +394,48 @@ sealed class LiveState
 
         return field switch
         {
-            "sport"     => s.Sport,
-            "league"    => s.League,
-            "team"      => s.Team,
-            "game"      => s.Game,
-            "marker"    => s.Marker,
-            "time"      => s.Time,
-            "scheduled" => s.Scheduled,
-            "date"      => SplitScheduled(s.Scheduled, 0), // "7/10"
-            "gametime"  => SplitScheduled(s.Scheduled, 1), // "7:30p"
-            _           => s.Summary,
+            "sport"       => s.Sport,
+            "league"      => s.League,
+            "team"        => s.Team,
+            "live_game"   => s.LiveGame,
+            "live_marker" => s.LiveScore,
+            "live_time"   => s.LiveTime,
+            "marker"      => s.Marker,
+            "scheduled"   => s.Scheduled,
+            "date"        => SplitScheduled(s.Scheduled, 0), // "7/10"
+            "gametime"    => SplitScheduled(s.Scheduled, 1), // "7:30p"
+            _             => s.Summary,
+        };
+    }
+
+    // Parses "weather", "weather:Madrid", "weather.icon", "weather.temp:Madrid",
+    // etc. The suffix is the exact city string the user typed when adding it
+    // via the Weather tab's picker (not a formal id — weather has no IANA-style
+    // catalog), "default" (no suffix) is whichever city is configured first.
+    private string ResolveWeather(string key)
+    {
+        string rest    = key.Length > "weather".Length ? key["weather".Length..] : "";
+        string field   = "summary";
+        string cityKey = "default";
+
+        if (rest.StartsWith('.'))
+        {
+            int colon = rest.IndexOf(':');
+            field     = colon >= 0 ? rest[1..colon] : rest[1..];
+            cityKey   = colon >= 0 ? rest[(colon + 1)..] : "default";
+        }
+        else if (rest.StartsWith(':'))
+        {
+            cityKey = rest[1..];
+        }
+
+        var w = Weather(cityKey);
+        return field switch
+        {
+            "icon" => w.Icon,
+            "temp" => w.Temp,
+            "city" => w.City,
+            _      => $"{w.City} {w.Icon} {w.Temp}".Trim(),
         };
     }
 
@@ -328,6 +474,50 @@ sealed class LiveState
             {
                 sb.Append(c);
             }
+        }
+        return sb.ToString();
+    }
+
+    // Expands \{binding\} tokens for CLI/scripting use (zkc), leaving bare {text}
+    // alone so literal braces in piped text still show as-is, same as before this
+    // existed. An unknown/malformed key resolves to "{key}" (Resolve's existing
+    // fallback) as a visible signal that it didn't match, by design, not silently
+    // dropped or blanked.
+    //
+    // Character-by-character (not IndexOf-based): "\\" must be checked first and
+    // consumed as its own escape, otherwise a literal "\\{" would have its second
+    // backslash+brace mistaken for a token opener (IndexOf("\{") matches inside
+    // "\\{" too, since it only looks at the last backslash before the brace).
+    public string ExpandEscaped(string text, bool use24h = false)
+    {
+        if (string.IsNullOrEmpty(text) || !text.Contains('\\'))
+            return text;
+
+        var sb = new StringBuilder(text.Length);
+        int i = 0;
+        while (i < text.Length)
+        {
+            if (text[i] == '\\' && i + 1 < text.Length)
+            {
+                char next = text[i + 1];
+                if (next == '\\') { sb.Append('\\'); i += 2; continue; }
+                if (next == '{')
+                {
+                    int close = text.IndexOf("\\}", i + 2, StringComparison.Ordinal);
+                    if (close < 0) { sb.Append(text[i..]); break; } // unterminated: rest is literal
+                    string key = text[(i + 2)..close];
+                    sb.Append(Resolve(key, use24h));
+                    i = close + 2;
+                    continue;
+                }
+                // Backslash not followed by '\' or '{': literal, unconsumed next char
+                // handled by the next loop iteration.
+                sb.Append('\\');
+                i += 1;
+                continue;
+            }
+            sb.Append(text[i]);
+            i += 1;
         }
         return sb.ToString();
     }

@@ -26,7 +26,11 @@ sealed class BleService : IDisposable
     // Status bytes from 0x1526:
     //   byte 0 — bit 0 = USB-HID active, bits[3:1] = BLE profile (0-4)
     //   byte 1 — bits[4:0] = bond mask (bit i = profile i+1 has a paired device); 0xFF if absent (old firmware)
-    public event Action<byte, byte>?   StatusChanged;
+    //   byte 2, active layer index (zmk_keymap_highest_layer_active()); 0xFF if absent (old firmware)
+    //   byte 3, raw zmk_wpm_get_state() clamped to 0-255, no smoothing; 0xFF if absent (old firmware)
+    //   bytes 4..N, active layer's name as raw UTF-8, no length prefix/terminator
+    //   (the notification/read length itself is the boundary); "" if absent (old firmware)
+    public event Action<byte, byte, byte, byte, string>?   StatusChanged;
 
     public bool IsConnected     => _device?.ConnectionStatus == BluetoothConnectionStatus.Connected;
     public bool HasBitmapChar   => _bitmapCharacteristic is not null;
@@ -151,7 +155,10 @@ sealed class BleService : IDisposable
                     var r = DataReader.FromBuffer(read.Value);
                     byte s = r.ReadByte();
                     byte m = r.UnconsumedBufferLength >= 1 ? r.ReadByte() : (byte)0xFF;
-                    _uiContext.Post(_ => StatusChanged?.Invoke(s, m), null);
+                    byte l = r.UnconsumedBufferLength >= 1 ? r.ReadByte() : (byte)0xFF;
+                    byte w = r.UnconsumedBufferLength >= 1 ? r.ReadByte() : (byte)0xFF;
+                    string ln = ReadTrailingUtf8(r);
+                    _uiContext.Post(_ => StatusChanged?.Invoke(s, m, l, w, ln), null);
                 }
             }
             catch { }
@@ -227,7 +234,21 @@ sealed class BleService : IDisposable
         var  r      = DataReader.FromBuffer(args.CharacteristicValue);
         byte status = r.ReadByte();
         byte bonds  = r.UnconsumedBufferLength >= 1 ? r.ReadByte() : (byte)0xFF;
-        _uiContext.Post(_ => StatusChanged?.Invoke(status, bonds), null);
+        byte layer  = r.UnconsumedBufferLength >= 1 ? r.ReadByte() : (byte)0xFF;
+        byte wpm    = r.UnconsumedBufferLength >= 1 ? r.ReadByte() : (byte)0xFF;
+        string layerName = ReadTrailingUtf8(r);
+        _uiContext.Post(_ => StatusChanged?.Invoke(status, bonds, layer, wpm, layerName), null);
+    }
+
+    // Reads whatever's left in the reader as raw UTF-8 (no length prefix in
+    // the wire format, the ATT payload length itself is the boundary). "" if
+    // nothing's left (old firmware that only sends 4 status bytes).
+    private static string ReadTrailingUtf8(DataReader r)
+    {
+        if (r.UnconsumedBufferLength == 0) return "";
+        var bytes = new byte[r.UnconsumedBufferLength];
+        r.ReadBytes(bytes);
+        return System.Text.Encoding.UTF8.GetString(bytes);
     }
 
     // ── Send ──────────────────────────────────────────────────────────────────
@@ -354,6 +375,21 @@ sealed class BleService : IDisposable
         }
         LastCellGridError = null;
         return true;
+    }
+
+    // Explicit user-requested disconnect (tray "Desconectar"). DisposeDevice()
+    // unsubscribes OnConnectionStatusChanged as its first step, so simply
+    // tearing down the connection would not otherwise raise Disconnected;
+    // callers (AppContext) rely on that event firing the same as an
+    // unexpected drop would, to update UI/state consistently either way.
+    public void Disconnect()
+    {
+        if (_device is null) return;
+        DisposeDevice();
+        DeviceName = null;
+        DisconnectCount++;
+        LastDisconnectAt = DateTime.Now;
+        _uiContext.Post(_ => Disconnected?.Invoke(), null);
     }
 
     // ── Connection events ─────────────────────────────────────────────────────

@@ -14,7 +14,24 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Resources\FiraCodeNerdFont-Regular.ttf" />
+    <!-- Three FiraCode Nerd Font variants, selectable per row in the cell-grid
+         editor (CellGridRow.FontVariant). Mono forces every glyph, including
+         icons, into a single monospace advance width, its icon/box glyphs
+         carry less ink to fit that width, which is why icon-heavy rows and
+         {conn.profilebar} looked shrunk/inconsistent once Mono became the
+         default. Regular/Propo keep each glyph's natural ink size. -->
+    <EmbeddedResource Include="Resources\FIRACODENERDFONTMONO-REGULAR.TTF" />
+    <EmbeddedResource Include="Resources\FIRACODENERDFONT-REGULAR.TTF" />
+    <EmbeddedResource Include="Resources\FIRACODENERDFONTPROPO-REGULAR.TTF" />
+    <!-- name<TAB>hex-codepoint, one per line. Derived from the official
+         nerd-fonts glyphnames.json (name+code only, metadata stripped) for
+         GlyphPickerDialog's name search. -->
+    <EmbeddedResource Include="Resources\glyphnames.tsv" />
+    <!-- WelcomeForm content, shown on first run of each app version and from
+         the tray's Help menu. Minimal Markdown subset (headings, bold,
+         bullets, plain-text URLs) rendered by Core/MarkdownRenderer.cs. -->
+    <EmbeddedResource Include="Resources\welcome.es.md" />
+    <EmbeddedResource Include="Resources\welcome.en.md" />
   </ItemGroup>
 
   <!-- Publish: framework-dependent single-file .exe (requires .NET 8 Desktop Runtime). -->
