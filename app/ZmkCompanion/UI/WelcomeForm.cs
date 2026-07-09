@@ -7,7 +7,7 @@ using ZmkCompanion.Core;
 namespace ZmkCompanion.UI;
 
 // First-run welcome / help screen. Content is loaded from the embedded
-// Resources/welcome.<lang>.md and rendered via MarkdownRenderer (see that
+// Resources/welcome-<lang>.md and rendered via MarkdownRenderer (see that
 // file for exactly what subset of Markdown is supported).
 sealed class WelcomeForm : Form
 {
@@ -73,11 +73,16 @@ sealed class WelcomeForm : Form
 
     private static string LoadWelcomeMarkdown()
     {
-        string suffix = Strings.Current == AppLanguage.Es ? "welcome.es.md" : "welcome.en.md";
+        string suffix = Strings.Current == AppLanguage.Es ? "welcome-es.md" : "welcome-en.md";
         var asm  = Assembly.GetExecutingAssembly();
         var name = asm.GetManifestResourceNames()
             .FirstOrDefault(n => n.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
-        if (name is null) return "";
+        // Falls back to a visible placeholder instead of an empty string: a
+        // silently blank dialog (what happened when this resource got
+        // diverted to an unshipped satellite assembly, see the .csproj
+        // comment) is much harder to notice/diagnose than a plainly wrong
+        // message would be.
+        if (name is null) return $"(missing embedded resource: {suffix})";
 
         using var stream = asm.GetManifestResourceStream(name)!;
         using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
