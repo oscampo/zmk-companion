@@ -3,7 +3,13 @@
 ; Build: ISCC.exe ZmkCompanion.iss   (or run build.ps1)
 
 #define AppName      "ZMK Companion"
-#define AppVersion   "1.0.0"
+; AppVersion is normally injected by CI via "ISCC /DAppVersion=X.Y.Z ..." for
+; tagged releases (see .github/workflows/build.yml), driven by the git tag,
+; not this file. The #ifndef keeps a sane default for local/manual builds
+; (plain "ISCC ZmkCompanion.iss" with no /D) without erroring on redefinition.
+#ifndef AppVersion
+  #define AppVersion "1.0.0"
+#endif
 #define AppExe       "ZmkCompanion.exe"
 #define CliExe       "zkc.exe"
 #define PublishDir   "..\app\ZmkCompanion\bin\Release\net8.0-windows10.0.19041.0\win-x64\publish"
