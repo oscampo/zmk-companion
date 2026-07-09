@@ -34,6 +34,10 @@ sealed class AppSettings
     public string PomodoroBreakIcon { get; set; } = Features.PomodoroFeature.IconBreak.ToString();
     public string PomodoroLongIcon  { get; set; } = Features.PomodoroFeature.IconLong.ToString();
 
+    // Remembered CLI tab command line (CellGridEditorForm's "Launch zkc"
+    // button). Empty = fall back to the default "zkc -h" terminal.
+    public string CliLastCommand { get; set; } = "";
+
     // Weather data source — city names for API queries, up to 4 (see
     // CellGridEditorForm's Weather tab, which enforces the cap). Empty list =
     // single IP-geolocated city (blank = auto-detect, same as before this was

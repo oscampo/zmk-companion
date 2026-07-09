@@ -608,6 +608,7 @@ sealed class CellGridEditorForm : Form
             Location        = new Point(4, 45),
             Size            = new Size(390, 20),
             PlaceholderText = "python reloj.py | zkc -w",
+            Text            = settings.CliLastCommand,
         };
         tabCli.Controls.Add(_txtCliCommand);
 
@@ -1393,6 +1394,7 @@ sealed class CellGridEditorForm : Form
             .Where(kv => !string.IsNullOrWhiteSpace(kv.Value.Text))
             .ToDictionary(kv => kv.Key, kv => kv.Value.Text.Trim().ToUpper());
         _settings.SportsTeam      = null;
+        _settings.CliLastCommand  = _txtCliCommand.Text;
 
         _onApply(_pages.Select(p => p.Clone()).ToList(), _chkCycle.Checked);
     }
