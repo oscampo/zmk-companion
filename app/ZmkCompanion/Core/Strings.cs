@@ -113,10 +113,11 @@ static class Strings
     public static string CityLabel         => Current == AppLanguage.Es ? "Ciudad:" : "City:";
     public static string TemperatureLabel  => Current == AppLanguage.Es ? "Temperatura:" : "Temperature:";
     public static string CopyButton        => Current == AppLanguage.Es ? "Copiar" : "Copy";
-    public static string OpenCliTerminalButton => Current == AppLanguage.Es ? "Abrir terminal con zkc -h" : "Open terminal with zkc -h";
+    public static string LaunchCliButton   => Current == AppLanguage.Es ? "Lanzar zkc" : "Launch zkc";
+    public static string CliCommandLabel   => Current == AppLanguage.Es ? "Comando (opcional):" : "Command (optional):";
     public static string CliHint => Current == AppLanguage.Es
-        ? "Uso: zkc \"mensaje\"  |  zkc \"línea1\\nlínea2\""
-        : "Usage: zkc \"message\"  |  zkc \"line1\\nline2\"";
+        ? "Vacío: abre \"zkc -h\". Con texto: corre ese comando tal cual\n(admite tuberías, ej. python reloj.py | zkc -w)."
+        : "Blank: opens \"zkc -h\". With text: runs that command verbatim\n(pipes allowed, e.g. python clock.py | zkc -w).";
     public static string SaveButton        => Current == AppLanguage.Es ? "Guardar" : "Save";
     public static string LoadButton        => Current == AppLanguage.Es ? "Cargar" : "Load";
     public static string ApplyButton       => Current == AppLanguage.Es ? "Aplicar" : "Apply";

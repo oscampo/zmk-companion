@@ -77,6 +77,11 @@ sealed class CellGridEditorForm : Form
     private readonly TextBox  _txtLibName;
     private readonly ListBox  _lstLibFiles;
 
+    // CLI tab: raw command line the "Launch zkc" button runs verbatim in cmd
+    // (may pipe another program into zkc, e.g. "python reloj.py | zkc -w",
+    // so it's a shell command line, not just arguments to zkc.exe itself).
+    private readonly TextBox _txtCliCommand;
+
     private static string LibraryDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "ZmkCompanion", "library");
@@ -597,15 +602,24 @@ sealed class CellGridEditorForm : Form
         btnCopyPath.Click += (_, _) => Clipboard.SetText(zkcPath);
         tabCli.Controls.Add(btnCopyPath);
 
-        var btnOpenCli = new Button { Text = Strings.OpenCliTerminalButton, Location = new Point(4, 33), Size = new Size(180, 26) };
+        tabCli.Controls.Add(new Label { Text = Strings.CliCommandLabel, Location = new Point(4, 30), Size = new Size(390, 14) });
+        _txtCliCommand = new TextBox
+        {
+            Location        = new Point(4, 45),
+            Size            = new Size(390, 20),
+            PlaceholderText = "python reloj.py | zkc -w",
+        };
+        tabCli.Controls.Add(_txtCliCommand);
+
+        var btnOpenCli = new Button { Text = Strings.LaunchCliButton, Location = new Point(4, 68), Size = new Size(140, 24) };
         btnOpenCli.Click += OnOpenCli;
         tabCli.Controls.Add(btnOpenCli);
 
         var lblCliHint = new Label
         {
             Text      = Strings.CliHint,
-            Location  = new Point(4, 66),
-            Size      = new Size(390, 18),
+            Location  = new Point(4, 94),
+            Size      = new Size(390, 20),
             ForeColor = Color.Gray,
             Font      = new Font(SystemFonts.MessageBoxFont!.FontFamily, 7.5f),
         };
@@ -1227,12 +1241,20 @@ sealed class CellGridEditorForm : Form
                 "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
+
+        // The command field holds a full shell command line, not just zkc
+        // arguments (the documented example pipes another program into zkc:
+        // "python reloj.py | zkc -w"), so run it verbatim via cmd /K rather
+        // than trying to parse/append it as zkc's argv. Blank falls back to
+        // the previous fixed "zkc -h" behavior.
+        string command  = _txtCliCommand.Text.Trim();
+        string cmdArgs  = command.Length > 0 ? command : $"\"{zkcPath}\" -h";
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
                 FileName  = "cmd.exe",
-                Arguments = $"/K \"{zkcPath}\" -h",
+                Arguments = $"/K {cmdArgs}",
                 UseShellExecute = true,
             });
         }
