@@ -215,12 +215,16 @@ build exposing the BLE GATT display service this app talks to:
   characteristic, still supported for backward compatibility.
 - `firmware/custom_status_screen.c`, reference firmware source.
 
-**This is the least beginner-friendly part of the whole setup.** It assumes
-you're already comfortable building and flashing ZMK firmware for your
-specific keyboard; this repo does not currently provide a pre-built
-firmware image, a guided setup wizard, or a way to enable the display
-service without editing and rebuilding firmware source yourself. If that
-sounds daunting and you just want to try the app, ask in
+**If you have an "eyelash_corne" board** (the reference keyboard this was
+built for): the firmware repo already builds a ready-to-flash `.uf2` with
+the display enabled automatically via GitHub Actions, fork it, push, grab
+the `eyelash_corne_left` artifact from the Actions tab, no local toolchain
+needed. See that repo's own README for flashing instructions.
+
+**Any other keyboard**: there's no pre-built option, the display service is
+currently written against this one specific board's firmware. You'd need to
+port `custom_status_screen.c` and the surrounding `Kconfig`/`CMakeLists.txt`
+wiring into your own ZMK config yourself, and be comfortable with ZMK's
+build process in general. If that sounds daunting, ask in
 [Issues](https://github.com/oscampo/zmk-companion/issues) whether anyone's
-published a ready-to-flash build for your board before attempting a build
-from scratch.
+already ported it to your board before attempting it from scratch.
