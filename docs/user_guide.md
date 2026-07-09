@@ -221,10 +221,17 @@ the display enabled automatically via GitHub Actions, fork it, push, grab
 the `eyelash_corne_left` artifact from the Actions tab, no local toolchain
 needed. See that repo's own README for flashing instructions.
 
-**Any other keyboard**: there's no pre-built option, the display service is
-currently written against this one specific board's firmware. You'd need to
-port `custom_status_screen.c` and the surrounding `Kconfig`/`CMakeLists.txt`
-wiring into your own ZMK config yourself, and be comfortable with ZMK's
-build process in general. If that sounds daunting, ask in
-[Issues](https://github.com/oscampo/zmk-companion/issues) whether anyone's
-already ported it to your board before attempting it from scratch.
+**Any other ZMK board with a `nice_view` display**: the display code itself
+has no eyelash_corne-specific dependencies (checked: no board-specific
+device tree references, just generic LVGL/ZMK APIs, and the display
+resolution matches the `nice_view` panel, not any particular PCB), and
+[`zmk-new_corne`](https://github.com/oscampo/zmk-new_corne) is already
+structured as a west module. In principle you can add it as a module in
+your own ZMK config's `west.yml` (no fork, no copying files) and build your
+own board with `-DCONFIG_KBD_BLE_DISPLAY=y`, the same flag the reference
+board's CI build already uses. **This has not been verified on any board
+other than eyelash_corne** — if you try it, please open an issue either way
+so this stops being a guess.
+
+**Any other keyboard, no `nice_view` display**: no path today, the code is
+tied to that display's resolution.
