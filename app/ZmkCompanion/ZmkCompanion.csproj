@@ -29,9 +29,15 @@
     <EmbeddedResource Include="Resources\glyphnames.tsv" />
     <!-- WelcomeForm content, shown on first run of each app version and from
          the tray's Help menu. Minimal Markdown subset (headings, bold,
-         bullets, plain-text URLs) rendered by Core/MarkdownRenderer.cs. -->
-    <EmbeddedResource Include="Resources\welcome.es.md" />
-    <EmbeddedResource Include="Resources\welcome.en.md" />
+         bullets, plain-text URLs) rendered by Core/MarkdownRenderer.cs.
+         Hyphen, not "welcome.es.md": a dot-separated "es"/"en" segment is a
+         valid .NET culture name, so the SDK's AssignCulture step silently
+         diverts a file named that way into an "es"/"en" satellite resource
+         assembly instead of embedding it in the main exe — which is never
+         shipped, so the resource looked up at runtime simply doesn't exist
+         (no crash, just an empty string from the "not found" fallback). -->
+    <EmbeddedResource Include="Resources\welcome-es.md" />
+    <EmbeddedResource Include="Resources\welcome-en.md" />
   </ItemGroup>
 
   <!-- Publish: framework-dependent single-file .exe (requires .NET 8 Desktop Runtime). -->
