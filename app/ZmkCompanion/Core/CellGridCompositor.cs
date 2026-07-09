@@ -381,7 +381,7 @@ sealed class CellGridCompositor : IDisposable
         // message per glyph: measured ~35-40ms per acked cell write vs. ~50-70ms
         // for an ENTIRE frame, so a 45-66 cell page (1.6-2.5s) collapses to
         // roughly the cost of one CLI text send. Verified against the firmware
-        // source (zmk-new_corne/config/custom_status_screen.c) that both paths
+        // source (zmk-companion-template/config/custom_status_screen.c) that both paths
         // write into the same shared canvas buffer and invalidate the same LVGL
         // object — no per-cell widgets to lose sync with, so this doesn't
         // conflict with the partial-diff path below, which still needs the
