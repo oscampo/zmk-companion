@@ -213,7 +213,7 @@ sealed class CellGridEditorForm : Form
         FormBorderStyle = FormBorderStyle.FixedSingle;
         StartPosition   = FormStartPosition.CenterScreen;
         MaximizeBox     = false;
-        ClientSize      = new Size(640, 687);
+        ClientSize      = new Size(640, 711);
 
         // ── RIGHT: preview ────────────────────────────────────────────────────
         var previewBox = new GroupBox
@@ -457,7 +457,7 @@ sealed class CellGridEditorForm : Form
         var tabData = new TabControl
         {
             Location = new Point(6, 511),
-            Size     = new Size(406, 138),
+            Size     = new Size(406, 162),
         };
 
         // ── Tab: Deportes ─────────────────────────────────────────────────────
@@ -620,7 +620,7 @@ sealed class CellGridEditorForm : Form
         {
             Text      = Strings.CliHint,
             Location  = new Point(4, 94),
-            Size      = new Size(390, 20),
+            Size      = new Size(390, 28),
             ForeColor = Color.Gray,
             Font      = new Font(SystemFonts.MessageBoxFont!.FontFamily, 7.5f),
         };
@@ -663,9 +663,9 @@ sealed class CellGridEditorForm : Form
         Controls.Add(tabData);
 
         // ── Bottom buttons ────────────────────────────────────────────────────
-        var btnApply = new Button { Text = Strings.ApplyButton, Location = new Point(270, 655), Size = new Size(74, 28), DialogResult = DialogResult.OK };
+        var btnApply = new Button { Text = Strings.ApplyButton, Location = new Point(270, 679), Size = new Size(74, 28), DialogResult = DialogResult.OK };
         btnApply.Click += OnApply;
-        var btnClose = new Button { Text = Strings.Close, Location = new Point(350, 655), Size = new Size(74, 28) };
+        var btnClose = new Button { Text = Strings.Close, Location = new Point(350, 679), Size = new Size(74, 28) };
         btnClose.Click += (_, _) => Close();
         Controls.Add(btnApply);
         Controls.Add(btnClose);
