@@ -59,6 +59,9 @@ static class CellGridProtocol
         // Two stacked icon_half rows display a full 22×22 NF icon (3 cols × 22 = 66 px).
         // Each half: ((22+7)/8)*11 = 3*11 = 33 B bitmap, 38 B message — within ATT budget.
         new(14, "icon_half",        22, 11),
+        // 68/7=9 cols (odd), fills the gap between small_impar (11 cols) and
+        // medium_impar (7 cols); no W gives exactly 10, see docs/cell_grid_protocol.md.
+        new(15, "narrow_impar",     7,  12),
     ];
 
     // LAYOUT v1.1: run-length entries (tier_id, repeat). Max 16 entries.
