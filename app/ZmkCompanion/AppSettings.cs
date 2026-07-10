@@ -38,6 +38,14 @@ sealed class AppSettings
     // button). Empty = fall back to the default "zkc -h" terminal.
     public string CliLastCommand { get; set; } = "";
 
+    // Auto-start entries (CellGridEditorForm's "Inicio automático" tab):
+    // scripts the user wants relaunched every login (a daily-phrase sender,
+    // a sensor monitor piped into zkc --set, etc). This is only the source
+    // data, AutoStartManager.Apply projects it into a single regenerated
+    // .bat in the Windows Startup folder, on explicit user action, never
+    // written silently.
+    public List<AutoStartEntry> AutoStartEntries { get; set; } = [];
+
     // WelcomeForm: the app <Version> (ZmkCompanion.csproj) for which the user
     // last checked "don't show again". Compared against the running build's
     // version on startup — different (including "never dismissed", "") means
