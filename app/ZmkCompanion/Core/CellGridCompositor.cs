@@ -43,6 +43,15 @@ sealed class CellGridCompositor : IDisposable
     private int           _textOverridePageIndex;
     private System.Windows.Forms.Timer? _textPageTimer;
 
+    // Last FullScreen override frames per page index, so a page cycling back
+    // into view after showing something else (or after LoadPageAsync's own
+    // reset below) redisplays the last text it was sent instead of falling
+    // through to cell-grid's raw, clipped {ext.text} rendering. Keyed by
+    // page index (not identity/name) to match how AppContext already tracks
+    // the active page; a settings reload naturally orphans stale entries,
+    // harmless since they're just never looked up again.
+    private readonly Dictionary<int, List<(byte[] Frame, int CharCount)>> _fullScreenCache = new();
+
     private static int PageDurationMs(int charCount) =>
         Math.Clamp(PageFloorMs + charCount * PageMsPerChar, PageFloorMs, PageCeilingMs);
     // Set eagerly from the pipe thread the instant text arrives, before the drain timer's own
@@ -114,7 +123,7 @@ sealed class CellGridCompositor : IDisposable
 
     // ── Page management ───────────────────────────────────────────────────────
 
-    public Task LoadPageAsync(CellGridPage page) => RunGatedAsync(async () =>
+    public Task LoadPageAsync(CellGridPage page, int pageIndex) => RunGatedAsync(async () =>
     {
         Stop();
         if (!_ble.IsConnected) return;
@@ -141,6 +150,21 @@ sealed class CellGridCompositor : IDisposable
         _tickCount = 0;
         Running    = true;
         _state.Changed += OnStateChanged;
+
+        // This page wants {ext.text} and already has a bitmap on file from a
+        // previous send: redisplay it instead of falling through to a fresh
+        // cell-grid render, which would show the raw, clipped ExternalText
+        // string in whatever tier the row uses. Skips CLEAR+LAYOUT_v2 entirely,
+        // ShowPersistentTextAsync's own CLEAR (entering=true, since _textOverride
+        // was just reset above) is enough to erase any leftover LVGL cell
+        // objects before the bitmap overwrites the whole frame.
+        if (TextMode == ExternalTextMode.FullScreen &&
+            _fullScreenCache.TryGetValue(pageIndex, out var cached))
+        {
+            DebugLog.Log($"CellGridCompositor: restoring cached FullScreen override for page {pageIndex}");
+            await ShowPersistentTextAsync(cached, preferSpeed: false);
+            return;
+        }
 
         var layoutArgs = _rows.Select(r => {
             var t = CellGridProtocol.Tiers[r.TierId];
@@ -215,12 +239,19 @@ sealed class CellGridCompositor : IDisposable
     // advances to the next one. Suspends cell-grid updates for the duration of
     // the override. preferSpeed=true uses WriteWithoutResponse (~30-50ms) for
     // live streaming.
-    public async Task ShowPersistentTextAsync(List<(byte[] Frame, int CharCount)> frames, bool preferSpeed = false)
+    public async Task ShowPersistentTextAsync(List<(byte[] Frame, int CharCount)> frames, bool preferSpeed = false,
+                                              int? cachePageIndex = null)
     {
         _clockTimer?.Stop();
         _textPageTimer?.Stop();
         _textPageTimer?.Dispose();
         _textPageTimer = null;
+
+        // Only set when this is a genuine new arrival from AppContext (the
+        // page that was active when the text landed), not when LoadPageAsync
+        // calls this to restore an already-cached override, that would just
+        // rewrite the same entry with itself.
+        if (cachePageIndex is int idx) _fullScreenCache[idx] = frames;
 
         bool entering = !_textOverride; // true on first call: transitioning from cell-grid to bitmap
         _textOverride          = true;
@@ -257,6 +288,11 @@ sealed class CellGridCompositor : IDisposable
             _textPageTimer.Start();
         }
     }
+
+    // Forgets every page's cached FullScreen override (zkc "" clears everything,
+    // not just what's on screen right now, so a page cycling back later doesn't
+    // resurrect text the user explicitly told the app to drop).
+    public void ClearFullScreenCache() => _fullScreenCache.Clear();
 
     // Restores cell-grid after a persistent text override.
     public Task ClearTextOverrideAsync()

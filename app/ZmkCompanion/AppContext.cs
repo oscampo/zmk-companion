@@ -113,6 +113,7 @@ sealed class ZmkAppContext : ApplicationContext
                 if (string.IsNullOrEmpty(latest))
                 {
                     _liveState.UpdateExternalText(""); // clear before restore so cell-grid renders fresh state
+                    _compositor.ClearFullScreenCache(); // don't let a page cycling back later resurrect this
                     DebugLog.Log($"drain: CLEAR (skipped={skipped})");
                     await _compositor.ClearTextOverrideAsync();
                     DebugLog.Log($"drain: CLEAR done in {sw.ElapsedMilliseconds}ms err={_ble.LastBitmapError ?? "(none)"}");
@@ -146,7 +147,7 @@ sealed class ZmkAppContext : ApplicationContext
                     var pages = BitmapTextRenderer.RenderPages(text);
                     var frames = pages.Select(p => (Frame: BitmapFrame.Pack(p.Bitmap), p.CharCount)).ToList();
                     foreach (var (pageBmp, _) in pages) pageBmp.Dispose();
-                    await _compositor.ShowPersistentTextAsync(frames, preferSpeed: true);
+                    await _compositor.ShowPersistentTextAsync(frames, preferSpeed: true, cachePageIndex: _activePage);
                     _liveState.UpdateExternalText(text); // after _textOverride=true: Changed fires on UI thread, OnStateChanged exits early
                     DebugLog.Log($"drain: SEND done in {sw.ElapsedMilliseconds}ms " +
                         $"bleMs={_ble.LastSendMs} chunks={_ble.LastChunkCount} " +
@@ -516,7 +517,7 @@ sealed class ZmkAppContext : ApplicationContext
         DebugLog.Log($"LoadPage({_activePage}) name='{page.Name}' rows={page.Rows.Count} " +
                      $"connected={_ble.IsConnected} now={DateTime.Now:HH:mm:ss.fff}");
         if (_ble.IsConnected)
-            _ = _compositor.LoadPageAsync(page);
+            _ = _compositor.LoadPageAsync(page, _activePage);
         UpdateTrayPomodoro();
     }
 
