@@ -118,25 +118,20 @@ sealed class ZmkAppContext : ApplicationContext
                     await _compositor.ClearTextOverrideAsync();
                     DebugLog.Log($"drain: CLEAR done in {sw.ElapsedMilliseconds}ms err={_ble.LastBitmapError ?? "(none)"}");
                 }
-                else if (_compositor.TextMode == ExternalTextMode.None)
+                else if (_compositor.TextMode != ExternalTextMode.FullScreen)
                 {
-                    // Active page references neither {ext.text} nor {ext.text.N}:
-                    // it doesn't want CLI text at all. Drop it, leave the page's
-                    // own content (weather, sports, whatever) untouched. Deliberately
-                    // not calling UpdateExternalText here either, so a later page
-                    // that does use {ext.text.N} shows the last value that was
-                    // actually displayed somewhere, not whatever arrived while it
-                    // was being ignored.
-                    DebugLog.Log($"drain: SEND ignored (active page has no ext.text token) len={latest.Length} skipped={skipped}");
-                }
-                else if (_compositor.TextMode == ExternalTextMode.CellGrid)
-                {
-                    // Active page has an {ext.text.N} row: route straight to the
-                    // cell-grid (positioned), never the full-frame bitmap override.
-                    // UpdateExternalText raises Changed, which OnStateChanged picks
-                    // up normally since _textOverride was never set for this path.
+                    // TextMode is CellGrid (active page has an {ext.text.N} row) or
+                    // None (active page references neither token). Store the value
+                    // either way, same as UpdateCustom already does unconditionally
+                    // for {custom.NAME} above: a different page elsewhere in the
+                    // cycle may use {ext.text.N}, and it should show this text next
+                    // time it's active rather than only if this exact page happened
+                    // to be the one on screen when the text arrived. UpdateExternalText
+                    // raises Changed, which OnStateChanged picks up normally (harmless
+                    // no-op re-render of whatever the active page's own tokens are if
+                    // it doesn't reference ext.text.N itself).
                     string text = _liveState.ExpandEscaped(latest);
-                    DebugLog.Log($"drain: SEND (cell-grid ext.text.N) len={latest.Length} skipped={skipped}");
+                    DebugLog.Log($"drain: SEND (cell-grid ext.text.N, mode={_compositor.TextMode}) len={latest.Length} skipped={skipped}");
                     _liveState.UpdateExternalText(text);
                     DebugLog.Log($"drain: SEND done in {sw.ElapsedMilliseconds}ms (cell-grid path)");
                 }

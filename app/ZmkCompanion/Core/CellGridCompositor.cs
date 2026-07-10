@@ -111,8 +111,11 @@ sealed class CellGridCompositor : IDisposable
     //                CellGrid takes priority if both appear): full-frame bitmap
     //                override, replacing the whole page for as long as text keeps
     //                arriving.
-    //   None       - neither token present: page doesn't want CLI text at all,
-    //                incoming text is dropped, page's own content is untouched.
+    //   None       - neither token present: this page's own content (weather,
+    //                sports, whatever) is untouched, but incoming text is still
+    //                stored (see AppContext's drain timer), so a different page
+    //                that does use {ext.text.N} shows it once it's that page's
+    //                turn, instead of only if this exact page was active.
     public ExternalTextMode TextMode { get; private set; }
 
     public CellGridCompositor(BleService ble, LiveState state)
