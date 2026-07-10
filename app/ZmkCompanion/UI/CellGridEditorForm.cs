@@ -16,6 +16,17 @@ sealed class CellGridEditorForm : Form
     private const int PreviewW     = BitmapFrame.Width  * PreviewScale; // 204
     private const int PreviewH     = BitmapFrame.Height * PreviewScale; // 480
 
+    // Tier picker display order: CellGridProtocol.Tiers stays indexed by Id
+    // (row.TierId is a raw array index everywhere else, e.g. Tiers[row.TierId]
+    // in CellGridCompositor), so this is a presentation-only reordering, it
+    // maps combo-box position -> actual Id, never touches the array itself.
+    // Widest-text-capacity first: large_par(4 cols) ascending to
+    // small_impar(11 cols), then icon_half(3 cols, special-cased on its own),
+    // then the *_sq_* square tiers ascending from xlarge_sq_par(4 cols) to
+    // micro(34 cols).
+    private static readonly byte[] TierDisplayOrder =
+        [5, 4, 3, 2, 1, 15, 0, 14, 13, 12, 11, 10, 9, 8, 7, 6];
+
     private readonly AppSettings                            _settings;
     private readonly LiveState                              _liveState;
     private readonly Action<List<CellGridPage>, bool>       _onApply;
@@ -339,8 +350,11 @@ sealed class CellGridEditorForm : Form
 
         _rowEditorPanel.Controls.Add(new Label { Text = Strings.TierLabel, Location = new Point(0, 4), Size = new Size(30, 18) });
         _cmbTier = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(34, 1), Size = new Size(160, 23) };
-        foreach (var t in CellGridProtocol.Tiers)
+        foreach (byte id in TierDisplayOrder)
+        {
+            var t = CellGridProtocol.Tiers[id];
             _cmbTier.Items.Add($"{t.Name}  {t.W}×{t.H}px  ({t.Cols} {(t.Cols == 1 ? "col" : "cols")})");
+        }
         _cmbTier.SelectedIndexChanged += OnTierChanged;
         _rowEditorPanel.Controls.Add(_cmbTier);
 
@@ -1049,7 +1063,7 @@ sealed class CellGridEditorForm : Form
 
         var row = _pages[_pageIndex].Rows[index];
         _suppressRowUi = true;
-        _cmbTier.SelectedIndex         = row.TierId;
+        _cmbTier.SelectedIndex         = Array.IndexOf(TierDisplayOrder, row.TierId);
         _cmbSplit.SelectedIndex        = (int)row.SplitHalf;
         _txtTemplate.Text              = row.Template;
         _chkBold.Checked               = row.Bold;
@@ -1091,7 +1105,7 @@ sealed class CellGridEditorForm : Form
     private void OnTierChanged(object? sender, EventArgs e)
     {
         if (_suppressRowUi || _rowIndex < 0 || _pageIndex < 0) return;
-        _pages[_pageIndex].Rows[_rowIndex].TierId = (byte)_cmbTier.SelectedIndex;
+        _pages[_pageIndex].Rows[_rowIndex].TierId = TierDisplayOrder[_cmbTier.SelectedIndex];
         RefreshRowList();
         SelectRow(_rowIndex);
     }
