@@ -102,7 +102,6 @@ sealed class CellGridEditorForm : Form
     private readonly TextBox              _txtAutoStartName;
     private readonly TextBox              _txtAutoStartCommand;
     private readonly CheckBox             _chkAutoStartEnabled;
-    private readonly TextBox              _txtAutoStartPreview;
 
     private static string LibraryDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -653,54 +652,45 @@ sealed class CellGridEditorForm : Form
         tabCli.Controls.Add(lblCliHint);
 
         // ── Tab: Inicio automático ────────────────────────────────────────────
+        // tabData is only 162px tall (see its Size below), so this has to fit
+        // in roughly 130px of usable client height, no room for a persistent
+        // preview box, see OnAutoStartApply for where the exact .bat content
+        // is still shown before writing (a confirm dialog, not inline).
         var tabAutoStart = new TabPage(Strings.AutoStartTab);
 
-        _lstAutoStart = new ListBox { Location = new Point(4, 4), Size = new Size(180, 90), IntegralHeight = false };
+        _lstAutoStart = new ListBox { Location = new Point(4, 2), Size = new Size(128, 90), IntegralHeight = false };
         _lstAutoStart.SelectedIndexChanged += OnAutoStartSelected;
         tabAutoStart.Controls.Add(_lstAutoStart);
 
-        tabAutoStart.Controls.Add(new Label { Text = Strings.NameLabel, Location = new Point(188, 4), Size = new Size(50, 18) });
-        _txtAutoStartName = new TextBox { Location = new Point(188, 20), Size = new Size(202, 20) };
+        tabAutoStart.Controls.Add(new Label { Text = Strings.NameLabel, Location = new Point(136, 2), Size = new Size(44, 16) });
+        _txtAutoStartName = new TextBox { Location = new Point(182, 0), Size = new Size(128, 20) };
         tabAutoStart.Controls.Add(_txtAutoStartName);
 
-        tabAutoStart.Controls.Add(new Label { Text = Strings.AutoStartCommandLabel, Location = new Point(188, 44), Size = new Size(120, 18) });
+        _chkAutoStartEnabled = new CheckBox { Text = Strings.AutoStartEnabledCheck, Location = new Point(314, 1), Size = new Size(76, 20), Checked = true };
+        tabAutoStart.Controls.Add(_chkAutoStartEnabled);
+
+        tabAutoStart.Controls.Add(new Label { Text = Strings.AutoStartCommandLabel, Location = new Point(136, 24), Size = new Size(60, 16) });
         _txtAutoStartCommand = new TextBox
         {
-            Location        = new Point(188, 60),
-            Size            = new Size(202, 20),
+            Location        = new Point(136, 40),
+            Size            = new Size(254, 20),
             PlaceholderText = "python hypenator.py \"...\" | zkc -w",
         };
         tabAutoStart.Controls.Add(_txtAutoStartCommand);
 
-        _chkAutoStartEnabled = new CheckBox { Text = Strings.AutoStartEnabledCheck, Location = new Point(188, 84), Size = new Size(80, 20), Checked = true };
-        tabAutoStart.Controls.Add(_chkAutoStartEnabled);
-
-        var btnAutoStartAdd = new Button { Text = Strings.AutoStartAddButton, Location = new Point(4, 98), Size = new Size(120, 24) };
+        var btnAutoStartAdd = new Button { Text = Strings.AutoStartAddButton, Location = new Point(136, 64), Size = new Size(100, 24) };
         btnAutoStartAdd.Click += OnAutoStartAddOrUpdate;
         tabAutoStart.Controls.Add(btnAutoStartAdd);
 
-        var btnAutoStartRemove = new Button { Text = Strings.AutoStartRemoveButton, Location = new Point(128, 98), Size = new Size(56, 24) };
+        var btnAutoStartRemove = new Button { Text = Strings.AutoStartRemoveButton, Location = new Point(240, 64), Size = new Size(60, 24) };
         btnAutoStartRemove.Click += OnAutoStartRemove;
         tabAutoStart.Controls.Add(btnAutoStartRemove);
 
-        tabAutoStart.Controls.Add(new Label { Text = Strings.AutoStartPreviewLabel, Location = new Point(4, 126), Size = new Size(386, 14) });
-        _txtAutoStartPreview = new TextBox
-        {
-            Location  = new Point(4, 142),
-            Size      = new Size(386, 60),
-            Multiline = true,
-            ReadOnly  = true,
-            ScrollBars = ScrollBars.Vertical,
-            Font      = new Font("Consolas", 7.5f),
-            BackColor = SystemColors.Control,
-        };
-        tabAutoStart.Controls.Add(_txtAutoStartPreview);
-
-        var btnAutoStartApply = new Button { Text = Strings.AutoStartApplyButton, Location = new Point(4, 206), Size = new Size(170, 24) };
+        var btnAutoStartApply = new Button { Text = Strings.AutoStartApplyButton, Location = new Point(4, 94), Size = new Size(190, 24) };
         btnAutoStartApply.Click += OnAutoStartApply;
         tabAutoStart.Controls.Add(btnAutoStartApply);
 
-        var btnAutoStartOpenFolder = new Button { Text = Strings.AutoStartOpenFolderButton, Location = new Point(178, 206), Size = new Size(140, 24) };
+        var btnAutoStartOpenFolder = new Button { Text = Strings.AutoStartOpenFolderButton, Location = new Point(198, 94), Size = new Size(196, 24) };
         btnAutoStartOpenFolder.Click += (_, _) =>
         {
             try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = AutoStartManager.StartupFolder, UseShellExecute = true }); }
@@ -708,18 +698,7 @@ sealed class CellGridEditorForm : Form
         };
         tabAutoStart.Controls.Add(btnAutoStartOpenFolder);
 
-        var lblAutoStartHint = new Label
-        {
-            Text      = Strings.AutoStartHint,
-            Location  = new Point(4, 232),
-            Size      = new Size(390, 56),
-            ForeColor = Color.Gray,
-            Font      = new Font(SystemFonts.MessageBoxFont!.FontFamily, 7.5f),
-        };
-        tabAutoStart.Controls.Add(lblAutoStartHint);
-
         RefreshAutoStartList();
-        RefreshAutoStartPreview();
 
         // ── Tab: Biblioteca ───────────────────────────────────────────────────
         var tabLib = new TabPage(Strings.LibraryTab);
@@ -1373,16 +1352,6 @@ sealed class CellGridEditorForm : Form
         if (prev >= 0 && prev < _lstAutoStart.Items.Count) _lstAutoStart.SelectedIndex = prev;
     }
 
-    private void RefreshAutoStartPreview()
-    {
-        var content = AutoStartManager.BuildBatContent(_autoStartEntries);
-        _txtAutoStartPreview.Text = content.Length > 0
-            ? content
-            : Strings.Current == AppLanguage.Es
-                ? "(sin entradas activas, no se escribirá ningún archivo)"
-                : "(no enabled entries, no file will be written)";
-    }
-
     private void OnAutoStartSelected(object? sender, EventArgs e)
     {
         _autoStartIndex = _lstAutoStart.SelectedIndex;
@@ -1416,7 +1385,6 @@ sealed class CellGridEditorForm : Form
             _autoStartEntries.Add(entry);
 
         RefreshAutoStartList();
-        RefreshAutoStartPreview();
     }
 
     private void OnAutoStartRemove(object? sender, EventArgs e)
@@ -1427,12 +1395,25 @@ sealed class CellGridEditorForm : Form
         _txtAutoStartName.Text = "";
         _txtAutoStartCommand.Text = "";
         RefreshAutoStartList();
-        RefreshAutoStartPreview();
     }
 
+    // No inline preview box (the tab has ~130px of usable height, no room for
+    // one), so the exact .bat content is shown here instead, in a confirm
+    // dialog, before anything is written, same transparency guarantee.
     private void OnAutoStartApply(object? sender, EventArgs e)
     {
-        RefreshAutoStartPreview();
+        string content = AutoStartManager.BuildBatContent(_autoStartEntries);
+        string body = content.Length > 0
+            ? content
+            : Strings.Current == AppLanguage.Es
+                ? "(sin entradas activas, se eliminará el archivo si existe)"
+                : "(no enabled entries, the file will be deleted if it exists)";
+
+        var confirm = MessageBox.Show(
+            $"{Strings.AutoStartPreviewLabel}\n\n{body}",
+            "ZMK Companion", MessageBoxButtons.OKCancel, MessageBoxIcon.Question);
+        if (confirm != DialogResult.OK) return;
+
         string? written = AutoStartManager.Apply(_autoStartEntries);
         MessageBox.Show(
             written is not null ? Strings.AutoStartApplied(written) : Strings.AutoStartRemovedFile(AutoStartManager.BatPath),
