@@ -203,23 +203,21 @@ terminal exactly as typed. Leave it blank and the button opens a terminal
 with `zkc -h` instead. Whatever you last typed there is remembered across
 sessions.
 
-### Running your scripts automatically at login
+### Running your scripts automatically
 
 `{ext.text}`/`{ext.text.N}`/`{custom.NAME}` have no data source of their
 own, unlike weather or the clock, nothing shows until whatever script feeds
 them has run at least once. The **"Inicio automático" / "Auto-start"** tab
 next to CLI lets you register named commands (a daily-phrase sender, a
-sensor script piped into `zkc --set`, anything) and write them into the
-Windows Startup folder so they relaunch every login.
+sensor script piped into `zkc --set`, anything).
 
-This does nothing on its own: entries only get written when you click
-"Escribir en inicio de Windows" / "Write to Windows startup", and the
-exact `.bat` content is shown above that button before you click it. Each
-entry runs as its own independent process (one script hanging doesn't
-block the others) with a short delay first, so the tray app is already up.
-The generated file (`ZmkCompanionAutoStart.bat` in your Startup folder) is
-fully regenerated every time, don't hand-edit it, your changes would be
-overwritten on the next click.
+Enabled entries run on their own every time `ZmkCompanion.exe` itself
+starts, not just at Windows login, closing and reopening the app (after an
+update, say) re-runs them too, so a script's effect doesn't sit stale until
+your next login. Each entry runs as its own independent process (one
+script hanging doesn't block the others). Use "Ejecutar ahora" / "Run now"
+to trigger all enabled entries immediately, without restarting the app,
+useful right after adding or editing one.
 
 ## Troubleshooting
 

@@ -182,6 +182,8 @@ sealed class ZmkAppContext : ApplicationContext
             return Task.FromResult(true);
         });
 
+        AutoStartManager.LaunchAll(_settings.AutoStartEntries);
+
         _weatherTimer = new System.Windows.Forms.Timer { Interval = 10 * 60_000 };
         _weatherTimer.Tick += async (_, _) => await RefreshWeatherAsync();
         _weatherTimer.Start();

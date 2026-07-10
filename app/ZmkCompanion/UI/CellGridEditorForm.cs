@@ -653,9 +653,10 @@ sealed class CellGridEditorForm : Form
 
         // ── Tab: Inicio automático ────────────────────────────────────────────
         // tabData is only 162px tall (see its Size below), so this has to fit
-        // in roughly 130px of usable client height, no room for a persistent
-        // preview box, see OnAutoStartApply for where the exact .bat content
-        // is still shown before writing (a confirm dialog, not inline).
+        // in roughly 130px of usable client height. Entries run on their own
+        // whenever ZmkCompanion starts (AppContext.OnFirstIdle calls
+        // AutoStartManager.LaunchAll), "Run now" here just re-triggers them
+        // on demand without restarting the app, for testing.
         var tabAutoStart = new TabPage(Strings.AutoStartTab);
 
         _lstAutoStart = new ListBox { Location = new Point(4, 2), Size = new Size(128, 90), IntegralHeight = false };
@@ -686,17 +687,19 @@ sealed class CellGridEditorForm : Form
         btnAutoStartRemove.Click += OnAutoStartRemove;
         tabAutoStart.Controls.Add(btnAutoStartRemove);
 
-        var btnAutoStartApply = new Button { Text = Strings.AutoStartApplyButton, Location = new Point(4, 94), Size = new Size(190, 24) };
-        btnAutoStartApply.Click += OnAutoStartApply;
-        tabAutoStart.Controls.Add(btnAutoStartApply);
+        var btnAutoStartRunNow = new Button { Text = Strings.AutoStartRunNowButton, Location = new Point(4, 94), Size = new Size(120, 24) };
+        btnAutoStartRunNow.Click += (_, _) => AutoStartManager.LaunchAll(_autoStartEntries);
+        tabAutoStart.Controls.Add(btnAutoStartRunNow);
 
-        var btnAutoStartOpenFolder = new Button { Text = Strings.AutoStartOpenFolderButton, Location = new Point(198, 94), Size = new Size(196, 24) };
-        btnAutoStartOpenFolder.Click += (_, _) =>
+        var lblAutoStartHint = new Label
         {
-            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = AutoStartManager.StartupFolder, UseShellExecute = true }); }
-            catch { /* best-effort, non-fatal */ }
+            Text      = Strings.AutoStartHint,
+            Location  = new Point(128, 96),
+            Size      = new Size(266, 32),
+            ForeColor = Color.Gray,
+            Font      = new Font(SystemFonts.MessageBoxFont!.FontFamily, 7.5f),
         };
-        tabAutoStart.Controls.Add(btnAutoStartOpenFolder);
+        tabAutoStart.Controls.Add(lblAutoStartHint);
 
         RefreshAutoStartList();
 
@@ -1397,28 +1400,6 @@ sealed class CellGridEditorForm : Form
         RefreshAutoStartList();
     }
 
-    // No inline preview box (the tab has ~130px of usable height, no room for
-    // one), so the exact .bat content is shown here instead, in a confirm
-    // dialog, before anything is written, same transparency guarantee.
-    private void OnAutoStartApply(object? sender, EventArgs e)
-    {
-        string content = AutoStartManager.BuildBatContent(_autoStartEntries);
-        string body = content.Length > 0
-            ? content
-            : Strings.Current == AppLanguage.Es
-                ? "(sin entradas activas, se eliminará el archivo si existe)"
-                : "(no enabled entries, the file will be deleted if it exists)";
-
-        var confirm = MessageBox.Show(
-            $"{Strings.AutoStartPreviewLabel}\n\n{body}",
-            "ZMK Companion", MessageBoxButtons.OKCancel, MessageBoxIcon.Question);
-        if (confirm != DialogResult.OK) return;
-
-        string? written = AutoStartManager.Apply(_autoStartEntries);
-        MessageBox.Show(
-            written is not null ? Strings.AutoStartApplied(written) : Strings.AutoStartRemovedFile(AutoStartManager.BatPath),
-            "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Information);
-    }
 
     // ── Library ───────────────────────────────────────────────────────────────
 

@@ -39,11 +39,9 @@ sealed class AppSettings
     public string CliLastCommand { get; set; } = "";
 
     // Auto-start entries (CellGridEditorForm's "Inicio automático" tab):
-    // scripts the user wants relaunched every login (a daily-phrase sender,
-    // a sensor monitor piped into zkc --set, etc). This is only the source
-    // data, AutoStartManager.Apply projects it into a single regenerated
-    // .bat in the Windows Startup folder, on explicit user action, never
-    // written silently.
+    // scripts the user wants relaunched every time ZmkCompanion itself
+    // starts (a daily-phrase sender, a sensor monitor piped into zkc --set,
+    // etc), see AppContext.OnFirstIdle -> AutoStartManager.LaunchAll.
     public List<AutoStartEntry> AutoStartEntries { get; set; } = [];
 
     // WelcomeForm: the app <Version> (ZmkCompanion.csproj) for which the user

@@ -127,22 +127,12 @@ static class Strings
     public static string AutoStartEnabledCheck  => Current == AppLanguage.Es ? "Activo" : "Enabled";
     public static string AutoStartAddButton     => Current == AppLanguage.Es ? "Agregar/actualizar" : "Add/update";
     public static string AutoStartRemoveButton  => Current == AppLanguage.Es ? "Quitar" : "Remove";
-    public static string AutoStartPreviewLabel  => Current == AppLanguage.Es
-        ? "Esto es exactamente lo que se ejecutará en cada inicio de sesión:"
-        : "This is exactly what will run on every login:";
-    public static string AutoStartApplyButton   => Current == AppLanguage.Es
-        ? "Escribir en inicio de Windows" : "Write to Windows startup";
-    public static string AutoStartOpenFolderButton => Current == AppLanguage.Es
-        ? "Abrir carpeta de inicio" : "Open startup folder";
+    public static string AutoStartRunNowButton  => Current == AppLanguage.Es ? "Ejecutar ahora" : "Run now";
     public static string AutoStartHint => Current == AppLanguage.Es
-        ? "Cada entrada corre de forma independiente (una no bloquea a las demás),\ncon 15s de espera para que la app ya esté lista. \"Escribir en inicio de\nWindows\" regenera por completo ZmkCompanionAutoStart.bat en tu carpeta\nde inicio, no lo edites a mano, se sobrescribe."
-        : "Each entry runs independently (one doesn't block the others), with a\n15s delay so the app is already up. \"Write to Windows startup\" fully\nregenerates ZmkCompanionAutoStart.bat in your startup folder, don't\nedit it by hand, it gets overwritten.";
+        ? "Las entradas activas corren solas cada vez que abres ZmkCompanion."
+        : "Enabled entries run on their own every time ZmkCompanion opens.";
     public static string AutoStartNameRequired => Current == AppLanguage.Es
         ? "Ponle un nombre a la entrada." : "Give the entry a name.";
-    public static string AutoStartApplied(string path) => Current == AppLanguage.Es
-        ? $"Escrito en:\n{path}" : $"Written to:\n{path}";
-    public static string AutoStartRemovedFile(string path) => Current == AppLanguage.Es
-        ? $"Sin entradas activas, se eliminó:\n{path}" : $"No enabled entries, deleted:\n{path}";
     public static string DefaultPageName(int n) => Current == AppLanguage.Es ? $"Página {n}" : $"Page {n}";
     public static string TeamPlaceholder   => Current == AppLanguage.Es ? "equipo" : "team";
     public static string QueryingWeather   => Current == AppLanguage.Es ? "consultando…" : "querying…";
