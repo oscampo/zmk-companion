@@ -183,6 +183,16 @@ Whether a page shows `zkc` text as a full-screen override or routes it into
 a specific row depends entirely on which token (`{ext.text}` vs.
 `{ext.text.N}`) that page's template uses, see the tokens list above.
 
+- **Changing text while pages are cycling**: a `zkc` send only takes effect
+  if the page using `{ext.text}`/`{ext.text.N}` is the one on screen at that
+  exact moment. If a different page is active when you run it, the new text
+  is dropped, not queued, the display keeps showing whatever it already had.
+  If you're not sure which page is active, either run the command again once
+  it's that page's turn, or send it twice a few seconds apart so one of the
+  two lands during its window. This doesn't apply to a continuous stream
+  (`zkc --watch` fed by a script that updates every second or so, a clock,
+  for example): a miss just means the next update a moment later corrects it.
+
 The Canvas editor's **CLI** tab also has a command field and a "Lanzar
 zkc"/"Launch zkc" button: type a full command line there (it can be
 anything a shell would run, including a pipeline like
