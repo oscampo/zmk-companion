@@ -226,6 +226,14 @@ useful right after adding or editing one.
 - **Settings file**: `%APPDATA%\ZmkCompanion\settings.json`, if the app
   won't start, corrupting or deleting this (back it up first) resets it to
   defaults.
+- **Erratic flashing / blank pages after powering the keyboard on**: pages
+  flash briefly and go blank in no obvious order right after connecting.
+  Confirmed cause: power-cycling only ONE half of the split (central or
+  peripheral) while leaving the other one already on. The two halves'
+  internal sync gets left in a mismatched state, this is a firmware-level
+  central/peripheral issue, not something `zmk-companion` can detect or fix,
+  its own log shows every send succeeding even while this happens. **Always
+  power off and back on BOTH halves together** before starting the app.
 
 ## Firmware
 
