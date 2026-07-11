@@ -24,8 +24,10 @@ zmk-companion has three parts:
   to implement to receive any of this. Requires a custom firmware build,
   this is not something stock ZMK supports out of the box.
 
-For a full walkthrough (installing, first run, the Canvas editor, tokens,
-the CLI) see **[`docs/user_guide.md`](docs/user_guide.md)**.
+Setting up a keyboard and this app from zero? Start with
+**[`docs/getting_started.md`](docs/getting_started.md)**. For everything
+else (the Canvas editor, tokens, the CLI) see
+**[`docs/user_guide.md`](docs/user_guide.md)**.
 
 ## Install
 
@@ -49,11 +51,12 @@ use) and [`docs/protocol.md`](docs/protocol.md) for the older plain-text-only
 characteristic, still supported for backward compatibility but not what new
 firmware should target.
 
-If you're setting up your own keyboard's firmware for the first time, budget
-real time for this part, it's the least beginner-friendly step in the whole
-setup and currently requires following the ZMK firmware build process by
-hand. See [`docs/user_guide.md`](docs/user_guide.md#firmware) for what's
-involved.
+If your board is an `eyelash_corne` (or any ZMK board with a `nice_view`
+display), [`zmk-companion-template`](https://github.com/oscampo/zmk-companion-template)
+gets you a ready-to-flash `.uf2` via GitHub Actions, no local toolchain,
+see [`docs/getting_started.md`](docs/getting_started.md). Any other board
+still means following ZMK's own firmware build process by hand, see
+[`docs/user_guide.md`](docs/user_guide.md#firmware) for what's involved.
 
 ## Repository structure
 

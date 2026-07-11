@@ -121,6 +121,18 @@ static class Strings
     public static string SaveButton        => Current == AppLanguage.Es ? "Guardar" : "Save";
     public static string LoadButton        => Current == AppLanguage.Es ? "Cargar" : "Load";
     public static string ApplyButton       => Current == AppLanguage.Es ? "Aplicar" : "Apply";
+
+    public static string AutoStartTab           => Current == AppLanguage.Es ? "Inicio automático" : "Auto-start";
+    public static string AutoStartCommandLabel  => Current == AppLanguage.Es ? "Comando:" : "Command:";
+    public static string AutoStartEnabledCheck  => Current == AppLanguage.Es ? "Activo" : "Enabled";
+    public static string AutoStartAddButton     => Current == AppLanguage.Es ? "Agregar/actualizar" : "Add/update";
+    public static string AutoStartRemoveButton  => Current == AppLanguage.Es ? "Quitar" : "Remove";
+    public static string AutoStartRunNowButton  => Current == AppLanguage.Es ? "Ejecutar ahora" : "Run now";
+    public static string AutoStartHint => Current == AppLanguage.Es
+        ? "Las entradas activas corren solas cada vez que abres ZmkCompanion."
+        : "Enabled entries run on their own every time ZmkCompanion opens.";
+    public static string AutoStartNameRequired => Current == AppLanguage.Es
+        ? "Ponle un nombre a la entrada." : "Give the entry a name.";
     public static string DefaultPageName(int n) => Current == AppLanguage.Es ? $"Página {n}" : $"Page {n}";
     public static string TeamPlaceholder   => Current == AppLanguage.Es ? "equipo" : "team";
     public static string QueryingWeather   => Current == AppLanguage.Es ? "consultando…" : "querying…";

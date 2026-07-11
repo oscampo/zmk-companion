@@ -43,6 +43,15 @@ sealed class CellGridCompositor : IDisposable
     private int           _textOverridePageIndex;
     private System.Windows.Forms.Timer? _textPageTimer;
 
+    // Last FullScreen override frames per page index, so a page cycling back
+    // into view after showing something else (or after LoadPageAsync's own
+    // reset below) redisplays the last text it was sent instead of falling
+    // through to cell-grid's raw, clipped {ext.text} rendering. Keyed by
+    // page index (not identity/name) to match how AppContext already tracks
+    // the active page; a settings reload naturally orphans stale entries,
+    // harmless since they're just never looked up again.
+    private readonly Dictionary<int, List<(byte[] Frame, int CharCount)>> _fullScreenCache = new();
+
     private static int PageDurationMs(int charCount) =>
         Math.Clamp(PageFloorMs + charCount * PageMsPerChar, PageFloorMs, PageCeilingMs);
     // Set eagerly from the pipe thread the instant text arrives, before the drain timer's own
@@ -102,9 +111,36 @@ sealed class CellGridCompositor : IDisposable
     //                CellGrid takes priority if both appear): full-frame bitmap
     //                override, replacing the whole page for as long as text keeps
     //                arriving.
-    //   None       - neither token present: page doesn't want CLI text at all,
-    //                incoming text is dropped, page's own content is untouched.
+    //   None       - neither token present: this page's own content (weather,
+    //                sports, whatever) is untouched, but incoming text is still
+    //                stored (see AppContext's drain timer), so a different page
+    //                that does use {ext.text.N} shows it once it's that page's
+    //                turn, instead of only if this exact page was active.
     public ExternalTextMode TextMode { get; private set; }
+
+    // Shared by LoadPageAsync (the active page) and AppContext (scanning
+    // every configured page to find which one, if any, wants a FullScreen
+    // bitmap kept warm even while a different page is on screen). Bare
+    // {ext.text} has no trailing dot; {ext.text.N} does, this substring
+    // check alone is enough to tell the two token forms apart. CellGrid wins
+    // if a page somehow has both (unlikely, undefined by design otherwise).
+    public static ExternalTextMode ModeFor(IEnumerable<CellGridRow> rows)
+    {
+        bool hasIndexed = rows.Any(r =>
+            r.Template.Contains("ext.text.", StringComparison.OrdinalIgnoreCase));
+        bool hasBare = rows.Any(r =>
+            r.Template.Contains("{ext.text}", StringComparison.OrdinalIgnoreCase));
+        return hasIndexed ? ExternalTextMode.CellGrid
+             : hasBare    ? ExternalTextMode.FullScreen
+                          : ExternalTextMode.None;
+    }
+
+    // Pure cache store, no BLE traffic, no display change: used to keep a
+    // FullScreen page's bitmap ready for when its turn comes around, while a
+    // different page is the one actually on screen right now. See
+    // AppContext's drain timer.
+    public void CacheFullScreenFrames(int pageIndex, List<(byte[] Frame, int CharCount)> frames) =>
+        _fullScreenCache[pageIndex] = frames;
 
     public CellGridCompositor(BleService ble, LiveState state)
     {
@@ -114,7 +150,7 @@ sealed class CellGridCompositor : IDisposable
 
     // ── Page management ───────────────────────────────────────────────────────
 
-    public Task LoadPageAsync(CellGridPage page) => RunGatedAsync(async () =>
+    public Task LoadPageAsync(CellGridPage page, int pageIndex) => RunGatedAsync(async () =>
     {
         Stop();
         if (!_ble.IsConnected) return;
@@ -127,20 +163,26 @@ sealed class CellGridCompositor : IDisposable
         _rows          = page.Rows.Select(r => r.Clone()).ToList();
         _textOverride  = false;
         _textOverrideFrame = [];
-        // Bare {ext.text} has no trailing dot; {ext.text.N} does, this substring
-        // check alone is enough to tell the two token forms apart. CellGrid wins
-        // if a page somehow has both (unlikely, undefined by design otherwise).
-        bool hasIndexed = _rows.Any(r =>
-            r.Template.Contains("ext.text.", StringComparison.OrdinalIgnoreCase));
-        bool hasBare = _rows.Any(r =>
-            r.Template.Contains("{ext.text}", StringComparison.OrdinalIgnoreCase));
-        TextMode = hasIndexed ? ExternalTextMode.CellGrid
-                 : hasBare    ? ExternalTextMode.FullScreen
-                              : ExternalTextMode.None;
+        TextMode = ModeFor(_rows);
         _sent.Clear();
         _tickCount = 0;
         Running    = true;
         _state.Changed += OnStateChanged;
+
+        // This page wants {ext.text} and already has a bitmap on file from a
+        // previous send: redisplay it instead of falling through to a fresh
+        // cell-grid render, which would show the raw, clipped ExternalText
+        // string in whatever tier the row uses. Skips CLEAR+LAYOUT_v2 entirely,
+        // ShowPersistentTextAsync's own CLEAR (entering=true, since _textOverride
+        // was just reset above) is enough to erase any leftover LVGL cell
+        // objects before the bitmap overwrites the whole frame.
+        if (TextMode == ExternalTextMode.FullScreen &&
+            _fullScreenCache.TryGetValue(pageIndex, out var cached))
+        {
+            DebugLog.Log($"CellGridCompositor: restoring cached FullScreen override for page {pageIndex}");
+            await ShowPersistentTextAsync(cached, preferSpeed: false);
+            return;
+        }
 
         var layoutArgs = _rows.Select(r => {
             var t = CellGridProtocol.Tiers[r.TierId];
@@ -215,12 +257,19 @@ sealed class CellGridCompositor : IDisposable
     // advances to the next one. Suspends cell-grid updates for the duration of
     // the override. preferSpeed=true uses WriteWithoutResponse (~30-50ms) for
     // live streaming.
-    public async Task ShowPersistentTextAsync(List<(byte[] Frame, int CharCount)> frames, bool preferSpeed = false)
+    public async Task ShowPersistentTextAsync(List<(byte[] Frame, int CharCount)> frames, bool preferSpeed = false,
+                                              int? cachePageIndex = null)
     {
         _clockTimer?.Stop();
         _textPageTimer?.Stop();
         _textPageTimer?.Dispose();
         _textPageTimer = null;
+
+        // Only set when this is a genuine new arrival from AppContext (the
+        // page that was active when the text landed), not when LoadPageAsync
+        // calls this to restore an already-cached override, that would just
+        // rewrite the same entry with itself.
+        if (cachePageIndex is int idx) _fullScreenCache[idx] = frames;
 
         bool entering = !_textOverride; // true on first call: transitioning from cell-grid to bitmap
         _textOverride          = true;
@@ -257,6 +306,11 @@ sealed class CellGridCompositor : IDisposable
             _textPageTimer.Start();
         }
     }
+
+    // Forgets every page's cached FullScreen override (zkc "" clears everything,
+    // not just what's on screen right now, so a page cycling back later doesn't
+    // resurrect text the user explicitly told the app to drop).
+    public void ClearFullScreenCache() => _fullScreenCache.Clear();
 
     // Restores cell-grid after a persistent text override.
     public Task ClearTextOverrideAsync()
@@ -381,7 +435,7 @@ sealed class CellGridCompositor : IDisposable
         // message per glyph: measured ~35-40ms per acked cell write vs. ~50-70ms
         // for an ENTIRE frame, so a 45-66 cell page (1.6-2.5s) collapses to
         // roughly the cost of one CLI text send. Verified against the firmware
-        // source (zmk-new_corne/config/custom_status_screen.c) that both paths
+        // source (zmk-companion-template/config/custom_status_screen.c) that both paths
         // write into the same shared canvas buffer and invalidate the same LVGL
         // object — no per-cell widgets to lose sync with, so this doesn't
         // conflict with the partial-diff path below, which still needs the

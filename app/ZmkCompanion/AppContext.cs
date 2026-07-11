@@ -113,30 +113,46 @@ sealed class ZmkAppContext : ApplicationContext
                 if (string.IsNullOrEmpty(latest))
                 {
                     _liveState.UpdateExternalText(""); // clear before restore so cell-grid renders fresh state
+                    _compositor.ClearFullScreenCache(); // don't let a page cycling back later resurrect this
                     DebugLog.Log($"drain: CLEAR (skipped={skipped})");
                     await _compositor.ClearTextOverrideAsync();
                     DebugLog.Log($"drain: CLEAR done in {sw.ElapsedMilliseconds}ms err={_ble.LastBitmapError ?? "(none)"}");
                 }
-                else if (_compositor.TextMode == ExternalTextMode.None)
+                else if (_compositor.TextMode != ExternalTextMode.FullScreen)
                 {
-                    // Active page references neither {ext.text} nor {ext.text.N}:
-                    // it doesn't want CLI text at all. Drop it, leave the page's
-                    // own content (weather, sports, whatever) untouched. Deliberately
-                    // not calling UpdateExternalText here either, so a later page
-                    // that does use {ext.text.N} shows the last value that was
-                    // actually displayed somewhere, not whatever arrived while it
-                    // was being ignored.
-                    DebugLog.Log($"drain: SEND ignored (active page has no ext.text token) len={latest.Length} skipped={skipped}");
-                }
-                else if (_compositor.TextMode == ExternalTextMode.CellGrid)
-                {
-                    // Active page has an {ext.text.N} row: route straight to the
-                    // cell-grid (positioned), never the full-frame bitmap override.
-                    // UpdateExternalText raises Changed, which OnStateChanged picks
-                    // up normally since _textOverride was never set for this path.
+                    // TextMode is CellGrid (active page has an {ext.text.N} row) or
+                    // None (active page references neither token). Store the value
+                    // either way, same as UpdateCustom already does unconditionally
+                    // for {custom.NAME} above: a different page elsewhere in the
+                    // cycle may use {ext.text.N}, and it should show this text next
+                    // time it's active rather than only if this exact page happened
+                    // to be the one on screen when the text arrived. UpdateExternalText
+                    // raises Changed, which OnStateChanged picks up normally (harmless
+                    // no-op re-render of whatever the active page's own tokens are if
+                    // it doesn't reference ext.text.N itself).
                     string text = _liveState.ExpandEscaped(latest);
-                    DebugLog.Log($"drain: SEND (cell-grid ext.text.N) len={latest.Length} skipped={skipped}");
+                    DebugLog.Log($"drain: SEND (cell-grid ext.text.N, mode={_compositor.TextMode}) len={latest.Length} skipped={skipped}");
                     _liveState.UpdateExternalText(text);
+
+                    // The active page doesn't want a FullScreen override right now,
+                    // but a different configured page might (the "frase del dia" case:
+                    // text arrives while Reloj/Clima/whatever is on screen). Keep that
+                    // page's bitmap warm so LoadPageAsync's cache hit fires once it's
+                    // that page's turn, instead of falling through to a raw, tier-clipped
+                    // render of the ExternalText we just stored above. Only the first
+                    // match is used, deliberately, {custom.NAME} is the recommended tool
+                    // for more than one independent FullScreen page, see user_guide.md.
+                    int fsPageIndex = _settings.DisplayPages.FindIndex(p =>
+                        CellGridCompositor.ModeFor(p.Rows) == ExternalTextMode.FullScreen);
+                    if (fsPageIndex >= 0)
+                    {
+                        var fsPages  = BitmapTextRenderer.RenderPages(text);
+                        var fsFrames = fsPages.Select(p => (Frame: BitmapFrame.Pack(p.Bitmap), p.CharCount)).ToList();
+                        foreach (var (pageBmp, _) in fsPages) pageBmp.Dispose();
+                        _compositor.CacheFullScreenFrames(fsPageIndex, fsFrames);
+                        DebugLog.Log($"drain: pre-cached FullScreen bitmap for page {fsPageIndex} (not the active page)");
+                    }
+
                     DebugLog.Log($"drain: SEND done in {sw.ElapsedMilliseconds}ms (cell-grid path)");
                 }
                 else // ExternalTextMode.FullScreen
@@ -146,7 +162,7 @@ sealed class ZmkAppContext : ApplicationContext
                     var pages = BitmapTextRenderer.RenderPages(text);
                     var frames = pages.Select(p => (Frame: BitmapFrame.Pack(p.Bitmap), p.CharCount)).ToList();
                     foreach (var (pageBmp, _) in pages) pageBmp.Dispose();
-                    await _compositor.ShowPersistentTextAsync(frames, preferSpeed: true);
+                    await _compositor.ShowPersistentTextAsync(frames, preferSpeed: true, cachePageIndex: _activePage);
                     _liveState.UpdateExternalText(text); // after _textOverride=true: Changed fires on UI thread, OnStateChanged exits early
                     DebugLog.Log($"drain: SEND done in {sw.ElapsedMilliseconds}ms " +
                         $"bleMs={_ble.LastSendMs} chunks={_ble.LastChunkCount} " +
@@ -185,6 +201,8 @@ sealed class ZmkAppContext : ApplicationContext
             _customQueue.Enqueue((name, value));
             return Task.FromResult(true);
         });
+
+        AutoStartManager.LaunchAll(_settings.AutoStartEntries);
 
         _weatherTimer = new System.Windows.Forms.Timer { Interval = 10 * 60_000 };
         _weatherTimer.Tick += async (_, _) => await RefreshWeatherAsync();
@@ -516,7 +534,7 @@ sealed class ZmkAppContext : ApplicationContext
         DebugLog.Log($"LoadPage({_activePage}) name='{page.Name}' rows={page.Rows.Count} " +
                      $"connected={_ble.IsConnected} now={DateTime.Now:HH:mm:ss.fff}");
         if (_ble.IsConnected)
-            _ = _compositor.LoadPageAsync(page);
+            _ = _compositor.LoadPageAsync(page, _activePage);
         UpdateTrayPomodoro();
     }
 

@@ -16,6 +16,17 @@ sealed class CellGridEditorForm : Form
     private const int PreviewW     = BitmapFrame.Width  * PreviewScale; // 204
     private const int PreviewH     = BitmapFrame.Height * PreviewScale; // 480
 
+    // Tier picker display order: CellGridProtocol.Tiers stays indexed by Id
+    // (row.TierId is a raw array index everywhere else, e.g. Tiers[row.TierId]
+    // in CellGridCompositor), so this is a presentation-only reordering, it
+    // maps combo-box position -> actual Id, never touches the array itself.
+    // Widest-text-capacity first: large_par(4 cols) ascending to
+    // small_impar(11 cols), then icon_half(3 cols, special-cased on its own),
+    // then the *_sq_* square tiers ascending from xlarge_sq_par(4 cols) to
+    // micro(34 cols).
+    private static readonly byte[] TierDisplayOrder =
+        [5, 4, 3, 2, 1, 15, 0, 14, 13, 12, 11, 10, 9, 8, 7, 6];
+
     private readonly AppSettings                            _settings;
     private readonly LiveState                              _liveState;
     private readonly Action<List<CellGridPage>, bool>       _onApply;
@@ -81,6 +92,16 @@ sealed class CellGridEditorForm : Form
     // (may pipe another program into zkc, e.g. "python reloj.py | zkc -w",
     // so it's a shell command line, not just arguments to zkc.exe itself).
     private readonly TextBox _txtCliCommand;
+
+    // Auto-start tab: working copy, only written to _settings/disk on OnApply
+    // or an explicit "Escribir en inicio de Windows" click, same pattern as
+    // _pages/_editWeatherCities elsewhere in this form.
+    private readonly List<AutoStartEntry> _autoStartEntries;
+    private          int                  _autoStartIndex = -1;
+    private readonly ListBox              _lstAutoStart;
+    private readonly TextBox              _txtAutoStartName;
+    private readonly TextBox              _txtAutoStartCommand;
+    private readonly CheckBox             _chkAutoStartEnabled;
 
     private static string LibraryDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -201,6 +222,7 @@ sealed class CellGridEditorForm : Form
         _editLeagues = settings.SelectedLeagues.ToList();
         _editTimeZones = settings.SelectedTimeZones.ToList();
         _editWeatherCities = settings.WeatherCities.ToList();
+        _autoStartEntries = settings.AutoStartEntries.Select(a => a.Clone()).ToList();
         _customCategories = settings.CustomTokens
             .Select(t => t.Category)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -339,8 +361,11 @@ sealed class CellGridEditorForm : Form
 
         _rowEditorPanel.Controls.Add(new Label { Text = Strings.TierLabel, Location = new Point(0, 4), Size = new Size(30, 18) });
         _cmbTier = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(34, 1), Size = new Size(160, 23) };
-        foreach (var t in CellGridProtocol.Tiers)
+        foreach (byte id in TierDisplayOrder)
+        {
+            var t = CellGridProtocol.Tiers[id];
             _cmbTier.Items.Add($"{t.Name}  {t.W}×{t.H}px  ({t.Cols} {(t.Cols == 1 ? "col" : "cols")})");
+        }
         _cmbTier.SelectedIndexChanged += OnTierChanged;
         _rowEditorPanel.Controls.Add(_cmbTier);
 
@@ -626,6 +651,58 @@ sealed class CellGridEditorForm : Form
         };
         tabCli.Controls.Add(lblCliHint);
 
+        // ── Tab: Inicio automático ────────────────────────────────────────────
+        // tabData is only 162px tall (see its Size below), so this has to fit
+        // in roughly 130px of usable client height. Entries run on their own
+        // whenever ZmkCompanion starts (AppContext.OnFirstIdle calls
+        // AutoStartManager.LaunchAll), "Run now" here just re-triggers them
+        // on demand without restarting the app, for testing.
+        var tabAutoStart = new TabPage(Strings.AutoStartTab);
+
+        _lstAutoStart = new ListBox { Location = new Point(4, 2), Size = new Size(128, 90), IntegralHeight = false };
+        _lstAutoStart.SelectedIndexChanged += OnAutoStartSelected;
+        tabAutoStart.Controls.Add(_lstAutoStart);
+
+        tabAutoStart.Controls.Add(new Label { Text = Strings.NameLabel, Location = new Point(136, 2), Size = new Size(44, 16) });
+        _txtAutoStartName = new TextBox { Location = new Point(182, 0), Size = new Size(128, 20) };
+        tabAutoStart.Controls.Add(_txtAutoStartName);
+
+        _chkAutoStartEnabled = new CheckBox { Text = Strings.AutoStartEnabledCheck, Location = new Point(314, 1), Size = new Size(76, 20), Checked = true };
+        tabAutoStart.Controls.Add(_chkAutoStartEnabled);
+
+        tabAutoStart.Controls.Add(new Label { Text = Strings.AutoStartCommandLabel, Location = new Point(136, 24), Size = new Size(60, 16) });
+        _txtAutoStartCommand = new TextBox
+        {
+            Location        = new Point(136, 40),
+            Size            = new Size(254, 20),
+            PlaceholderText = "python hypenator.py \"...\" | zkc -w",
+        };
+        tabAutoStart.Controls.Add(_txtAutoStartCommand);
+
+        var btnAutoStartAdd = new Button { Text = Strings.AutoStartAddButton, Location = new Point(136, 64), Size = new Size(100, 24) };
+        btnAutoStartAdd.Click += OnAutoStartAddOrUpdate;
+        tabAutoStart.Controls.Add(btnAutoStartAdd);
+
+        var btnAutoStartRemove = new Button { Text = Strings.AutoStartRemoveButton, Location = new Point(240, 64), Size = new Size(60, 24) };
+        btnAutoStartRemove.Click += OnAutoStartRemove;
+        tabAutoStart.Controls.Add(btnAutoStartRemove);
+
+        var btnAutoStartRunNow = new Button { Text = Strings.AutoStartRunNowButton, Location = new Point(4, 94), Size = new Size(120, 24) };
+        btnAutoStartRunNow.Click += (_, _) => AutoStartManager.LaunchAll(_autoStartEntries);
+        tabAutoStart.Controls.Add(btnAutoStartRunNow);
+
+        var lblAutoStartHint = new Label
+        {
+            Text      = Strings.AutoStartHint,
+            Location  = new Point(128, 96),
+            Size      = new Size(266, 32),
+            ForeColor = Color.Gray,
+            Font      = new Font(SystemFonts.MessageBoxFont!.FontFamily, 7.5f),
+        };
+        tabAutoStart.Controls.Add(lblAutoStartHint);
+
+        RefreshAutoStartList();
+
         // ── Tab: Biblioteca ───────────────────────────────────────────────────
         var tabLib = new TabPage(Strings.LibraryTab);
         tabLib.Controls.Add(new Label { Text = Strings.NameLabel, Location = new Point(4, 8), AutoSize = true });
@@ -660,6 +737,7 @@ sealed class CellGridEditorForm : Form
         tabData.TabPages.Add(tabWeather);
         tabData.TabPages.Add(tabSports);
         tabData.TabPages.Add(tabCli);
+        tabData.TabPages.Add(tabAutoStart);
         Controls.Add(tabData);
 
         // ── Bottom buttons ────────────────────────────────────────────────────
@@ -1049,7 +1127,7 @@ sealed class CellGridEditorForm : Form
 
         var row = _pages[_pageIndex].Rows[index];
         _suppressRowUi = true;
-        _cmbTier.SelectedIndex         = row.TierId;
+        _cmbTier.SelectedIndex         = Array.IndexOf(TierDisplayOrder, row.TierId);
         _cmbSplit.SelectedIndex        = (int)row.SplitHalf;
         _txtTemplate.Text              = row.Template;
         _chkBold.Checked               = row.Bold;
@@ -1091,7 +1169,7 @@ sealed class CellGridEditorForm : Form
     private void OnTierChanged(object? sender, EventArgs e)
     {
         if (_suppressRowUi || _rowIndex < 0 || _pageIndex < 0) return;
-        _pages[_pageIndex].Rows[_rowIndex].TierId = (byte)_cmbTier.SelectedIndex;
+        _pages[_pageIndex].Rows[_rowIndex].TierId = TierDisplayOrder[_cmbTier.SelectedIndex];
         RefreshRowList();
         SelectRow(_rowIndex);
     }
@@ -1266,6 +1344,63 @@ sealed class CellGridEditorForm : Form
         }
     }
 
+    // ── Inicio automático ─────────────────────────────────────────────────────
+
+    private void RefreshAutoStartList()
+    {
+        int prev = _lstAutoStart.SelectedIndex;
+        _lstAutoStart.Items.Clear();
+        foreach (var a in _autoStartEntries)
+            _lstAutoStart.Items.Add($"{a.Name} {(a.Enabled ? "" : $"({Strings.AutoStartEnabledCheck}: -)")}");
+        if (prev >= 0 && prev < _lstAutoStart.Items.Count) _lstAutoStart.SelectedIndex = prev;
+    }
+
+    private void OnAutoStartSelected(object? sender, EventArgs e)
+    {
+        _autoStartIndex = _lstAutoStart.SelectedIndex;
+        if (_autoStartIndex < 0) return;
+        var a = _autoStartEntries[_autoStartIndex];
+        _txtAutoStartName.Text        = a.Name;
+        _txtAutoStartCommand.Text     = a.Command;
+        _chkAutoStartEnabled.Checked  = a.Enabled;
+    }
+
+    private void OnAutoStartAddOrUpdate(object? sender, EventArgs e)
+    {
+        string name = _txtAutoStartName.Text.Trim();
+        if (name.Length == 0)
+        {
+            MessageBox.Show(Strings.AutoStartNameRequired,
+                "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var entry = new AutoStartEntry
+        {
+            Name    = name,
+            Command = _txtAutoStartCommand.Text.Trim(),
+            Enabled = _chkAutoStartEnabled.Checked,
+        };
+
+        if (_autoStartIndex >= 0 && _autoStartIndex < _autoStartEntries.Count)
+            _autoStartEntries[_autoStartIndex] = entry;
+        else
+            _autoStartEntries.Add(entry);
+
+        RefreshAutoStartList();
+    }
+
+    private void OnAutoStartRemove(object? sender, EventArgs e)
+    {
+        if (_autoStartIndex < 0 || _autoStartIndex >= _autoStartEntries.Count) return;
+        _autoStartEntries.RemoveAt(_autoStartIndex);
+        _autoStartIndex = -1;
+        _txtAutoStartName.Text = "";
+        _txtAutoStartCommand.Text = "";
+        RefreshAutoStartList();
+    }
+
+
     // ── Library ───────────────────────────────────────────────────────────────
 
     private void RefreshLibraryList()
@@ -1395,6 +1530,7 @@ sealed class CellGridEditorForm : Form
             .ToDictionary(kv => kv.Key, kv => kv.Value.Text.Trim().ToUpper());
         _settings.SportsTeam      = null;
         _settings.CliLastCommand  = _txtCliCommand.Text;
+        _settings.AutoStartEntries = _autoStartEntries.Select(a => a.Clone()).ToList();
 
         _onApply(_pages.Select(p => p.Clone()).ToList(), _chkCycle.Checked);
     }

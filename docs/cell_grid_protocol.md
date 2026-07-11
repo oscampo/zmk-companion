@@ -62,6 +62,14 @@ change on both sides.
 | 4 | `large_impar` | 13×22 | 5 | 7 | 44 | 48 |
 | 5 | `large_par` | 16×28 | 4 | 5 | 56 | 60 |
 | 6 | `micro` | 2×2 | 34 | 80 | 2 | 6 |
+| 15 | `narrow_impar` | 7×12 | 9 | 13 | 12 | 16 |
+
+`narrow_impar` (added post-v1.2) is app-only: it's sent via LAYOUT_v2
+(explicit W/H), so it needs no matching firmware tier-table entry despite
+being listed here for reference. 68px doesn't divide evenly by any single
+glyph width into exactly 10 columns (9 and 11 are the nearest achievable),
+so this fills the gap between `small_impar` (11 cols) and `medium_impar`
+(7 cols).
 
 `large_impar` (5 columns) is the exact fit for `HH:mm`. `large_par`
 (4 columns) suits 4-character content; at 16px wide × 4 columns it spans

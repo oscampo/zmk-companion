@@ -183,6 +183,14 @@ Whether a page shows `zkc` text as a full-screen override or routes it into
 a specific row depends entirely on which token (`{ext.text}` vs.
 `{ext.text.N}`) that page's template uses, see the tokens list above.
 
+- **Changing text while pages are cycling**: both `{ext.text.N}` and bare
+  `{ext.text}` pick up whatever you last sent the next time their page comes
+  around in the cycle, even if a different page was on screen when you ran
+  `zkc`. Only one page's worth of bare `{ext.text}` is kept warm this way,
+  if you have more than one page that would want it independently, use
+  `{custom.NAME}` (`zkc --set`) instead, one name per page, see the tokens
+  list above.
+
 The Canvas editor's **CLI** tab also has a command field and a "Lanzar
 zkc"/"Launch zkc" button: type a full command line there (it can be
 anything a shell would run, including a pipeline like
@@ -190,6 +198,22 @@ anything a shell would run, including a pipeline like
 terminal exactly as typed. Leave it blank and the button opens a terminal
 with `zkc -h` instead. Whatever you last typed there is remembered across
 sessions.
+
+### Running your scripts automatically
+
+`{ext.text}`/`{ext.text.N}`/`{custom.NAME}` have no data source of their
+own, unlike weather or the clock, nothing shows until whatever script feeds
+them has run at least once. The **"Inicio automático" / "Auto-start"** tab
+next to CLI lets you register named commands (a daily-phrase sender, a
+sensor script piped into `zkc --set`, anything).
+
+Enabled entries run on their own every time `ZmkCompanion.exe` itself
+starts, not just at Windows login, closing and reopening the app (after an
+update, say) re-runs them too, so a script's effect doesn't sit stale until
+your next login. Each entry runs as its own independent process (one
+script hanging doesn't block the others). Use "Ejecutar ahora" / "Run now"
+to trigger all enabled entries immediately, without restarting the app,
+useful right after adding or editing one.
 
 ## Troubleshooting
 
@@ -202,6 +226,14 @@ sessions.
 - **Settings file**: `%APPDATA%\ZmkCompanion\settings.json`, if the app
   won't start, corrupting or deleting this (back it up first) resets it to
   defaults.
+- **Erratic flashing / blank pages after powering the keyboard on**: pages
+  flash briefly and go blank in no obvious order right after connecting.
+  Confirmed cause: power-cycling only ONE half of the split (central or
+  peripheral) while leaving the other one already on. The two halves'
+  internal sync gets left in a mismatched state, this is a firmware-level
+  central/peripheral issue, not something `zmk-companion` can detect or fix,
+  its own log shows every send succeeding even while this happens. **Always
+  power off and back on BOTH halves together** before starting the app.
 
 ## Firmware
 
@@ -216,22 +248,24 @@ build exposing the BLE GATT display service this app talks to:
 - `firmware/custom_status_screen.c`, reference firmware source.
 
 **If you have an "eyelash_corne" board** (the reference keyboard this was
-built for): the firmware repo already builds a ready-to-flash `.uf2` with
-the display enabled automatically via GitHub Actions, fork it, push, grab
-the `eyelash_corne_left` artifact from the Actions tab, no local toolchain
-needed. See that repo's own README for flashing instructions.
+built for): fork
+[`zmk-companion-template`](https://github.com/oscampo/zmk-companion-template),
+push, and GitHub Actions builds a ready-to-flash `.uf2` with the display
+already enabled, no local toolchain needed. Full walkthrough, including
+customizing your own keymap, in
+[`getting_started.md`](getting_started.md).
 
 **Any other ZMK board with a `nice_view` display**: the display code itself
 has no eyelash_corne-specific dependencies (checked: no board-specific
 device tree references, just generic LVGL/ZMK APIs, and the display
 resolution matches the `nice_view` panel, not any particular PCB), and
-[`zmk-new_corne`](https://github.com/oscampo/zmk-new_corne) is already
-structured as a west module. In principle you can add it as a module in
-your own ZMK config's `west.yml` (no fork, no copying files) and build your
-own board with `-DCONFIG_KBD_BLE_DISPLAY=y`, the same flag the reference
-board's CI build already uses. **This has not been verified on any board
-other than eyelash_corne** — if you try it, please open an issue either way
-so this stops being a guess.
+[`zmk-companion-template`](https://github.com/oscampo/zmk-companion-template)
+is already structured as a west module. In principle you can add it as a
+module in your own ZMK config's `west.yml` (no fork, no copying files) and
+build your own board with `-DCONFIG_KBD_BLE_DISPLAY=y`, the same flag the
+reference board's CI build already uses. **This has not been verified on
+any board other than eyelash_corne** — if you try it, please open an issue
+either way so this stops being a guess.
 
 **Any other keyboard, no `nice_view` display**: no path today, the code is
 tied to that display's resolution.
