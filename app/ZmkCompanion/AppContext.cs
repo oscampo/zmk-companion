@@ -15,6 +15,7 @@ sealed class ZmkAppContext : ApplicationContext
     private readonly PipeServer           _pipe;
     private readonly LiveState            _liveState = new();
     private readonly PomodoroFeature      _pomodoro  = new();
+    private readonly HotkeyManager        _hotkeys   = new();
 
     private readonly CancellationTokenSource _cts = new();
 
@@ -70,6 +71,7 @@ sealed class ZmkAppContext : ApplicationContext
         _tray.ManualDisconnectRequested += OnManualDisconnect;
         _tray.LanguageChangeRequested += OnLanguageChanged;
         _tray.HelpRequested += () => ShowWelcome(force: true);
+        _hotkeys.PageRequested += OnPageHotkey;
 
         _pomodoro.StateChanged     += OnPomodoroStateChanged;
         _pomodoro.SessionCompleted += OnPomodoroCompleted;
@@ -203,6 +205,7 @@ sealed class ZmkAppContext : ApplicationContext
         });
 
         AutoStartManager.LaunchAll(_settings.AutoStartEntries);
+        RegisterPageHotkeys();
 
         _weatherTimer = new System.Windows.Forms.Timer { Interval = 10 * 60_000 };
         _weatherTimer.Tick += async (_, _) => await RefreshWeatherAsync();
@@ -611,8 +614,27 @@ sealed class ZmkAppContext : ApplicationContext
         _settings.Save();
         LoadPage(_activePage < pages.Count ? _activePage : 0);
         RestartPageCycle();
+        RegisterPageHotkeys(); // page count may have changed (added/removed pages)
         _ = RefreshWeatherAsync();
         _ = RefreshSportsAsync();
+    }
+
+    // ── Page hotkeys (F13-F21, see HotkeyManager) ─────────────────────────────
+
+    private void RegisterPageHotkeys()
+    {
+        var failed = _hotkeys.RegisterAll(_settings.DisplayPages.Count);
+        foreach (int pageNumber in failed)
+            DebugLog.Log($"HotkeyManager: {HotkeyManager.LabelFor(pageNumber)} " +
+                $"(page {pageNumber}) already claimed by another app, not registered");
+    }
+
+    private void OnPageHotkey(int pageIndex)
+    {
+        if (pageIndex < 0 || pageIndex >= _settings.DisplayPages.Count) return;
+        DebugLog.Log($"hotkey: jump to page {pageIndex} ('{_settings.DisplayPages[pageIndex].Name}')");
+        LoadPage(pageIndex);
+        RestartPageCycle();
     }
 
     // ── Connection lifecycle ──────────────────────────────────────────────────
@@ -728,6 +750,7 @@ sealed class ZmkAppContext : ApplicationContext
             _connectionWatchdog?.Dispose();
             _pipe.Dispose();
             _pomodoro.Dispose();
+            _hotkeys.Dispose();
             _compositor.Dispose();
             _tray.Dispose();
             _ble.Dispose();
