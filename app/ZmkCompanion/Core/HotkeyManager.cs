@@ -6,18 +6,26 @@ namespace ZmkCompanion.Core;
 // System-wide hotkeys for jumping straight to a Canvas page on demand, even
 // while some other app has focus (the user consults page 3 mid-work, then
 // page 1, without waiting for the auto-cycle to get there). Bound to
-// F13-F21 (VK 0x7C-0x84), bare, no modifiers deliberately: almost no
-// physical keyboard has F13+ keys and almost no software binds them, so
-// registering these is very unlikely to steal a shortcut the user already
-// relies on elsewhere, unlike Ctrl+Shift+<digit> which plenty of apps
-// already use. The intended source is a ZMK macro (&kp F13, &kp F14, ...)
-// on the keyboard's own spare layer, see zmk-companion-template's keymap
-// and docs/user_guide.md for the assignment.
+// Ctrl+Alt+Shift+Win+<1-9>, a 4-modifier "Hyper key" combo: normal
+// keyboard/modifier HID usages, not the F13-F24 range this project tried
+// first, that range depends on ZMK/Zephyr's HID report descriptor covering
+// extended keycodes and turned out NOT to reach Windows at all on a real
+// build (confirmed independently via keycode.info, unrelated to this app's
+// code), even though the keymap compiled and flashed cleanly. Four
+// modifiers together is rare enough in everyday shortcuts to stay a safe
+// choice without needing an exotic keycode range. The intended source is a
+// ZMK macro nesting all four modifiers around &kp N1..N9 on the keyboard's
+// own spare layer, see zmk-companion-template's keymap and
+// docs/user_guide.md for the assignment.
 sealed class HotkeyManager : IDisposable
 {
     private const int WM_HOTKEY = 0x0312;
-    private const uint VkF13    = 0x7C; // F13..F24 are contiguous VK codes
-    public const int MaxPages   = 9;    // F13..F21
+
+    // MOD_ALT | MOD_CONTROL | MOD_SHIFT | MOD_WIN | MOD_NOREPEAT (the last
+    // one is Vista+, stops a held key from re-firing WM_HOTKEY repeatedly).
+    private const uint HyperMods = 0x0001 | 0x0002 | 0x0004 | 0x0008 | 0x4000;
+    private const uint Vk1       = 0x31; // '1'..'9' are their own VK codes
+    public const int MaxPages    = 9;
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
@@ -52,8 +60,8 @@ sealed class HotkeyManager : IDisposable
 
     public HotkeyManager() => _window.HotkeyPressed += id => PageRequested?.Invoke(id - 1);
 
-    // Friendly label for logging/UI, "F13".."F21", matching page N -> F(12+N).
-    public static string LabelFor(int pageNumber1Based) => $"F{12 + pageNumber1Based}";
+    // Friendly label for logging/UI, "Ctrl+Alt+Shift+Win+1".."+9".
+    public static string LabelFor(int pageNumber1Based) => $"Ctrl+Alt+Shift+Win+{pageNumber1Based}";
 
     // Re-registers for the current page count, unregistering everything
     // first so a shrunk page list (edited in the Canvas editor) doesn't
@@ -69,8 +77,8 @@ sealed class HotkeyManager : IDisposable
         for (int i = 0; i < n; i++)
         {
             int id = i + 1;
-            uint vk = VkF13 + (uint)i;
-            if (RegisterHotKey(_window.Handle, id, 0 /* no modifiers */, vk))
+            uint vk = Vk1 + (uint)i;
+            if (RegisterHotKey(_window.Handle, id, HyperMods, vk))
                 _registered.Add(id);
             else
                 failed.Add(id);

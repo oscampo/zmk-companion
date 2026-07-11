@@ -58,25 +58,30 @@ A display is a list of **pages**, each with a name and a duration in
 seconds. If "Cycle pages" is checked, the app rotates through all of them
 automatically; otherwise it stays on whichever page you last selected.
 
-**Jumping to a page on demand**: pressing `F13` through `F21` jumps
-straight to page 1 through 9 (in the order they're listed in the editor),
-even while some other app has focus, no need to wait for the auto-cycle to
-get there. These are global system hotkeys with no modifier key, registered
-by the app the moment it starts (and re-registered whenever you add/remove
-pages). Jumping restarts the cycle at that page, then continues forward
-from there as normal, it doesn't pause anything you have to manually
-resume.
+**Jumping to a page on demand**: pressing `Ctrl+Alt+Shift+Win+1` through
+`+9` jumps straight to page 1 through 9 (in the order they're listed in the
+editor), even while some other app has focus, no need to wait for the
+auto-cycle to get there. These are global system hotkeys, registered by the
+app the moment it starts (and re-registered whenever you add/remove pages).
+Jumping restarts the cycle at that page, then continues forward from there
+as normal, it doesn't pause anything you have to manually resume.
 
-Almost no physical keyboard has F13+ keys and almost no other software
-binds them, so this is very unlikely to collide with a shortcut you already
-use, unlike something like `Ctrl+Shift+3`. The intended way to press one is
-from the keyboard itself: assign `&kp F13`, `&kp F14`, ... `&kp F21` to
-spare keys on an unused layer in your ZMK keymap (`adjust_layer` in
+Four modifiers held together is rare enough in everyday shortcuts that this
+is very unlikely to collide with something you already use, unlike, say,
+`Ctrl+Shift+3`. (An earlier version of this feature used bare `F13`-`F21`
+instead, betting on almost nothing binding those, but that depends on the
+keyboard firmware's HID setup actually being able to send them at all,
+which turned out not to hold on a real build, confirmed independently with
+a browser keycode tester, not something this app can detect or fix. Regular
+modifier+digit combos don't have that dependency, they're exactly how you
+already type every day.) The intended way to press one is from the keyboard
+itself: assign `&kp LC(LA(LS(LG(N1))))` through `N9` to spare keys on an
+unused layer in your ZMK keymap (`adjust_layer` in
 [`zmk-companion-template`](https://github.com/oscampo/zmk-companion-template),
 already reserved and empty), one key per page you want instant access to.
 If `zmk-companion`'s debug log shows a page's hotkey "already claimed by
-another app", something else on your system is already using that F-key,
-that page just won't have a working shortcut, the rest still do.
+another app", something else on your system is already using that exact
+combo, that page just won't have a working shortcut, the rest still do.
 
 ### Rows
 
