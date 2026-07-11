@@ -623,15 +623,27 @@ sealed class ZmkAppContext : ApplicationContext
 
     private void RegisterPageHotkeys()
     {
+        int n = Math.Min(_settings.DisplayPages.Count, HotkeyManager.MaxPages);
         var failed = _hotkeys.RegisterAll(_settings.DisplayPages.Count);
-        foreach (int pageNumber in failed)
-            DebugLog.Log($"HotkeyManager: {HotkeyManager.LabelFor(pageNumber)} " +
-                $"(page {pageNumber}) already claimed by another app, not registered");
+        var ok = Enumerable.Range(1, n).Except(failed).ToList();
+        DebugLog.Log($"HotkeyManager: registered [{string.Join(", ", ok.Select(HotkeyManager.LabelFor))}]" +
+            (failed.Count > 0
+                ? $", FAILED (already claimed by another app) [{string.Join(", ", failed.Select(HotkeyManager.LabelFor))}]"
+                : ""));
     }
 
+    // Logs unconditionally, even for an out-of-range id, so the debug log can
+    // distinguish "WM_HOTKEY never arrived at all" from "arrived but this
+    // page no longer exists" (e.g. pages were removed after the keymap was
+    // flashed with a stale binding).
     private void OnPageHotkey(int pageIndex)
     {
-        if (pageIndex < 0 || pageIndex >= _settings.DisplayPages.Count) return;
+        DebugLog.Log($"hotkey: WM_HOTKEY received for page index {pageIndex}");
+        if (pageIndex < 0 || pageIndex >= _settings.DisplayPages.Count)
+        {
+            DebugLog.Log($"hotkey: ignored, no page at index {pageIndex} (pageCount={_settings.DisplayPages.Count})");
+            return;
+        }
         DebugLog.Log($"hotkey: jump to page {pageIndex} ('{_settings.DisplayPages[pageIndex].Name}')");
         LoadPage(pageIndex);
         RestartPageCycle();
