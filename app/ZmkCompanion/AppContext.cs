@@ -133,6 +133,26 @@ sealed class ZmkAppContext : ApplicationContext
                     string text = _liveState.ExpandEscaped(latest);
                     DebugLog.Log($"drain: SEND (cell-grid ext.text.N, mode={_compositor.TextMode}) len={latest.Length} skipped={skipped}");
                     _liveState.UpdateExternalText(text);
+
+                    // The active page doesn't want a FullScreen override right now,
+                    // but a different configured page might (the "frase del dia" case:
+                    // text arrives while Reloj/Clima/whatever is on screen). Keep that
+                    // page's bitmap warm so LoadPageAsync's cache hit fires once it's
+                    // that page's turn, instead of falling through to a raw, tier-clipped
+                    // render of the ExternalText we just stored above. Only the first
+                    // match is used, deliberately, {custom.NAME} is the recommended tool
+                    // for more than one independent FullScreen page, see user_guide.md.
+                    int fsPageIndex = _settings.DisplayPages.FindIndex(p =>
+                        CellGridCompositor.ModeFor(p.Rows) == ExternalTextMode.FullScreen);
+                    if (fsPageIndex >= 0)
+                    {
+                        var fsPages  = BitmapTextRenderer.RenderPages(text);
+                        var fsFrames = fsPages.Select(p => (Frame: BitmapFrame.Pack(p.Bitmap), p.CharCount)).ToList();
+                        foreach (var (pageBmp, _) in fsPages) pageBmp.Dispose();
+                        _compositor.CacheFullScreenFrames(fsPageIndex, fsFrames);
+                        DebugLog.Log($"drain: pre-cached FullScreen bitmap for page {fsPageIndex} (not the active page)");
+                    }
+
                     DebugLog.Log($"drain: SEND done in {sw.ElapsedMilliseconds}ms (cell-grid path)");
                 }
                 else // ExternalTextMode.FullScreen

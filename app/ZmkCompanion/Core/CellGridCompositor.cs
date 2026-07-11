@@ -118,6 +118,30 @@ sealed class CellGridCompositor : IDisposable
     //                turn, instead of only if this exact page was active.
     public ExternalTextMode TextMode { get; private set; }
 
+    // Shared by LoadPageAsync (the active page) and AppContext (scanning
+    // every configured page to find which one, if any, wants a FullScreen
+    // bitmap kept warm even while a different page is on screen). Bare
+    // {ext.text} has no trailing dot; {ext.text.N} does, this substring
+    // check alone is enough to tell the two token forms apart. CellGrid wins
+    // if a page somehow has both (unlikely, undefined by design otherwise).
+    public static ExternalTextMode ModeFor(IEnumerable<CellGridRow> rows)
+    {
+        bool hasIndexed = rows.Any(r =>
+            r.Template.Contains("ext.text.", StringComparison.OrdinalIgnoreCase));
+        bool hasBare = rows.Any(r =>
+            r.Template.Contains("{ext.text}", StringComparison.OrdinalIgnoreCase));
+        return hasIndexed ? ExternalTextMode.CellGrid
+             : hasBare    ? ExternalTextMode.FullScreen
+                          : ExternalTextMode.None;
+    }
+
+    // Pure cache store, no BLE traffic, no display change: used to keep a
+    // FullScreen page's bitmap ready for when its turn comes around, while a
+    // different page is the one actually on screen right now. See
+    // AppContext's drain timer.
+    public void CacheFullScreenFrames(int pageIndex, List<(byte[] Frame, int CharCount)> frames) =>
+        _fullScreenCache[pageIndex] = frames;
+
     public CellGridCompositor(BleService ble, LiveState state)
     {
         _ble   = ble;
@@ -139,16 +163,7 @@ sealed class CellGridCompositor : IDisposable
         _rows          = page.Rows.Select(r => r.Clone()).ToList();
         _textOverride  = false;
         _textOverrideFrame = [];
-        // Bare {ext.text} has no trailing dot; {ext.text.N} does, this substring
-        // check alone is enough to tell the two token forms apart. CellGrid wins
-        // if a page somehow has both (unlikely, undefined by design otherwise).
-        bool hasIndexed = _rows.Any(r =>
-            r.Template.Contains("ext.text.", StringComparison.OrdinalIgnoreCase));
-        bool hasBare = _rows.Any(r =>
-            r.Template.Contains("{ext.text}", StringComparison.OrdinalIgnoreCase));
-        TextMode = hasIndexed ? ExternalTextMode.CellGrid
-                 : hasBare    ? ExternalTextMode.FullScreen
-                              : ExternalTextMode.None;
+        TextMode = ModeFor(_rows);
         _sent.Clear();
         _tickCount = 0;
         Running    = true;
