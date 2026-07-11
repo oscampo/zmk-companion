@@ -670,7 +670,7 @@ sealed class CellGridEditorForm : Form
         _chkAutoStartEnabled = new CheckBox { Text = Strings.AutoStartEnabledCheck, Location = new Point(314, 1), Size = new Size(76, 20), Checked = true };
         tabAutoStart.Controls.Add(_chkAutoStartEnabled);
 
-        tabAutoStart.Controls.Add(new Label { Text = Strings.AutoStartCommandLabel, Location = new Point(136, 24), Size = new Size(60, 16) });
+        tabAutoStart.Controls.Add(new Label { Text = Strings.AutoStartCommandLabel, Location = new Point(136, 24), Size = new Size(70, 16) });
         _txtAutoStartCommand = new TextBox
         {
             Location        = new Point(136, 40),
@@ -683,9 +683,16 @@ sealed class CellGridEditorForm : Form
         btnAutoStartAdd.Click += OnAutoStartAddOrUpdate;
         tabAutoStart.Controls.Add(btnAutoStartAdd);
 
-        var btnAutoStartRemove = new Button { Text = Strings.AutoStartRemoveButton, Location = new Point(240, 64), Size = new Size(60, 24) };
+        var btnAutoStartRemove = new Button { Text = Strings.AutoStartRemoveButton, Location = new Point(240, 64), Size = new Size(56, 24) };
         btnAutoStartRemove.Click += OnAutoStartRemove;
         tabAutoStart.Controls.Add(btnAutoStartRemove);
+
+        // Selecting an entry (OnAutoStartSelected) has no built-in way back to
+        // "adding a new one": "Add/update" would just overwrite the selected
+        // entry instead, since it targets _autoStartIndex whenever it's >= 0.
+        var btnAutoStartNew = new Button { Text = Strings.AutoStartNewButton, Location = new Point(300, 64), Size = new Size(90, 24) };
+        btnAutoStartNew.Click += OnAutoStartNewEntry;
+        tabAutoStart.Controls.Add(btnAutoStartNew);
 
         var btnAutoStartRunNow = new Button { Text = Strings.AutoStartRunNowButton, Location = new Point(4, 94), Size = new Size(120, 24) };
         btnAutoStartRunNow.Click += (_, _) => AutoStartManager.LaunchAll(_autoStartEntries);
@@ -1400,6 +1407,15 @@ sealed class CellGridEditorForm : Form
         RefreshAutoStartList();
     }
 
+    private void OnAutoStartNewEntry(object? sender, EventArgs e)
+    {
+        _lstAutoStart.ClearSelected(); // fires OnAutoStartSelected, which no-ops on index < 0
+        _autoStartIndex = -1;
+        _txtAutoStartName.Text = "";
+        _txtAutoStartCommand.Text = "";
+        _chkAutoStartEnabled.Checked = true;
+        _txtAutoStartName.Focus();
+    }
 
     // ── Library ───────────────────────────────────────────────────────────────
 
