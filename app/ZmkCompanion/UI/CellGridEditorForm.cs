@@ -93,12 +93,11 @@ sealed class CellGridEditorForm : Form
     // so it's a shell command line, not just arguments to zkc.exe itself).
     private readonly TextBox _txtCliCommand;
 
-    // Auto-start tab: working copy, only written to _settings/disk on OnApply
-    // or an explicit "Escribir en inicio de Windows" click, same pattern as
-    // _pages/_editWeatherCities elsewhere in this form.
+    // Auto-start tab: working copy, only written to _settings/disk on OnApply,
+    // same pattern as _pages/_editWeatherCities elsewhere in this form.
     private readonly List<AutoStartEntry> _autoStartEntries;
     private          int                  _autoStartIndex = -1;
-    private readonly ListBox              _lstAutoStart;
+    private readonly CheckedListBox       _lstAutoStart;
     private readonly TextBox              _txtAutoStartName;
     private readonly TextBox              _txtAutoStartCommand;
     private readonly CheckBox             _chkAutoStartEnabled;
@@ -659,8 +658,13 @@ sealed class CellGridEditorForm : Form
         // on demand without restarting the app, for testing.
         var tabAutoStart = new TabPage(Strings.AutoStartTab);
 
-        _lstAutoStart = new ListBox { Location = new Point(4, 2), Size = new Size(128, 90), IntegralHeight = false };
+        // CheckedListBox: each entry gets its own checkbox, so toggling
+        // Enabled is a single click on the list itself, no need to select
+        // the entry, flip the Enabled checkbox on the right, and click
+        // "Add/update" just to turn one entry on or off.
+        _lstAutoStart = new CheckedListBox { Location = new Point(4, 2), Size = new Size(128, 90), IntegralHeight = false, CheckOnClick = true };
         _lstAutoStart.SelectedIndexChanged += OnAutoStartSelected;
+        _lstAutoStart.ItemCheck += OnAutoStartItemCheck;
         tabAutoStart.Controls.Add(_lstAutoStart);
 
         tabAutoStart.Controls.Add(new Label { Text = Strings.NameLabel, Location = new Point(136, 2), Size = new Size(44, 16) });
@@ -1356,9 +1360,13 @@ sealed class CellGridEditorForm : Form
     private void RefreshAutoStartList()
     {
         int prev = _lstAutoStart.SelectedIndex;
+        _lstAutoStart.ItemCheck -= OnAutoStartItemCheck; // suppress while repopulating
         _lstAutoStart.Items.Clear();
         foreach (var a in _autoStartEntries)
-            _lstAutoStart.Items.Add($"{a.Name} {(a.Enabled ? "" : $"({Strings.AutoStartEnabledCheck}: -)")}");
+            _lstAutoStart.Items.Add(a.Name);
+        for (int i = 0; i < _autoStartEntries.Count; i++)
+            _lstAutoStart.SetItemChecked(i, _autoStartEntries[i].Enabled);
+        _lstAutoStart.ItemCheck += OnAutoStartItemCheck;
         if (prev >= 0 && prev < _lstAutoStart.Items.Count) _lstAutoStart.SelectedIndex = prev;
     }
 
@@ -1370,6 +1378,17 @@ sealed class CellGridEditorForm : Form
         _txtAutoStartName.Text        = a.Name;
         _txtAutoStartCommand.Text     = a.Command;
         _chkAutoStartEnabled.Checked  = a.Enabled;
+    }
+
+    // Fires the instant the user clicks an entry's checkbox (CheckOnClick),
+    // no need to select the entry or press "Add/update" first. e.NewValue
+    // is the state it's ABOUT to become, not yet applied to the control.
+    private void OnAutoStartItemCheck(object? sender, ItemCheckEventArgs e)
+    {
+        if (e.Index < 0 || e.Index >= _autoStartEntries.Count) return;
+        bool enabled = e.NewValue == CheckState.Checked;
+        _autoStartEntries[e.Index].Enabled = enabled;
+        if (e.Index == _autoStartIndex) _chkAutoStartEnabled.Checked = enabled;
     }
 
     private void OnAutoStartAddOrUpdate(object? sender, EventArgs e)
