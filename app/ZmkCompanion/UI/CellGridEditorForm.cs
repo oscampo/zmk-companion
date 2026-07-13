@@ -100,7 +100,6 @@ sealed class CellGridEditorForm : Form
     private readonly CheckedListBox       _lstAutoStart;
     private readonly TextBox              _txtAutoStartName;
     private readonly TextBox              _txtAutoStartCommand;
-    private readonly CheckBox             _chkAutoStartEnabled;
 
     private static string LibraryDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -668,11 +667,8 @@ sealed class CellGridEditorForm : Form
         tabAutoStart.Controls.Add(_lstAutoStart);
 
         tabAutoStart.Controls.Add(new Label { Text = Strings.NameLabel, Location = new Point(136, 2), Size = new Size(44, 16) });
-        _txtAutoStartName = new TextBox { Location = new Point(182, 0), Size = new Size(128, 20) };
+        _txtAutoStartName = new TextBox { Location = new Point(182, 0), Size = new Size(208, 20) };
         tabAutoStart.Controls.Add(_txtAutoStartName);
-
-        _chkAutoStartEnabled = new CheckBox { Text = Strings.AutoStartEnabledCheck, Location = new Point(314, 1), Size = new Size(76, 20), Checked = true };
-        tabAutoStart.Controls.Add(_chkAutoStartEnabled);
 
         tabAutoStart.Controls.Add(new Label { Text = Strings.AutoStartCommandLabel, Location = new Point(136, 24), Size = new Size(70, 16) });
         _txtAutoStartCommand = new TextBox
@@ -1377,7 +1373,6 @@ sealed class CellGridEditorForm : Form
         var a = _autoStartEntries[_autoStartIndex];
         _txtAutoStartName.Text        = a.Name;
         _txtAutoStartCommand.Text     = a.Command;
-        _chkAutoStartEnabled.Checked  = a.Enabled;
     }
 
     // Fires the instant the user clicks an entry's checkbox (CheckOnClick),
@@ -1386,9 +1381,7 @@ sealed class CellGridEditorForm : Form
     private void OnAutoStartItemCheck(object? sender, ItemCheckEventArgs e)
     {
         if (e.Index < 0 || e.Index >= _autoStartEntries.Count) return;
-        bool enabled = e.NewValue == CheckState.Checked;
-        _autoStartEntries[e.Index].Enabled = enabled;
-        if (e.Index == _autoStartIndex) _chkAutoStartEnabled.Checked = enabled;
+        _autoStartEntries[e.Index].Enabled = e.NewValue == CheckState.Checked;
     }
 
     private void OnAutoStartAddOrUpdate(object? sender, EventArgs e)
@@ -1401,11 +1394,17 @@ sealed class CellGridEditorForm : Form
             return;
         }
 
+        // Preserve the existing entry's checkbox state on update; a brand
+        // new entry (no selection) defaults to enabled.
+        bool enabled = _autoStartIndex >= 0 && _autoStartIndex < _autoStartEntries.Count
+            ? _autoStartEntries[_autoStartIndex].Enabled
+            : true;
+
         var entry = new AutoStartEntry
         {
             Name    = name,
             Command = _txtAutoStartCommand.Text.Trim(),
-            Enabled = _chkAutoStartEnabled.Checked,
+            Enabled = enabled,
         };
 
         if (_autoStartIndex >= 0 && _autoStartIndex < _autoStartEntries.Count)
@@ -1432,7 +1431,6 @@ sealed class CellGridEditorForm : Form
         _autoStartIndex = -1;
         _txtAutoStartName.Text = "";
         _txtAutoStartCommand.Text = "";
-        _chkAutoStartEnabled.Checked = true;
         _txtAutoStartName.Focus();
     }
 
