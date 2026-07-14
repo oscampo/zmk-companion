@@ -124,9 +124,9 @@ static class Strings
 
     public static string AutoStartTab           => Current == AppLanguage.Es ? "Inicio automático" : "Auto-start";
     public static string AutoStartCommandLabel  => Current == AppLanguage.Es ? "Comando:" : "Command:";
-    public static string AutoStartEnabledCheck  => Current == AppLanguage.Es ? "Activo" : "Enabled";
     public static string AutoStartAddButton     => Current == AppLanguage.Es ? "Agregar/actualizar" : "Add/update";
     public static string AutoStartRemoveButton  => Current == AppLanguage.Es ? "Quitar" : "Remove";
+    public static string AutoStartNewButton     => Current == AppLanguage.Es ? "Nuevo" : "New";
     public static string AutoStartRunNowButton  => Current == AppLanguage.Es ? "Ejecutar ahora" : "Run now";
     public static string AutoStartHint => Current == AppLanguage.Es
         ? "Las entradas activas corren solas cada vez que abres ZmkCompanion."

@@ -15,6 +15,7 @@ sealed class ZmkAppContext : ApplicationContext
     private readonly PipeServer           _pipe;
     private readonly LiveState            _liveState = new();
     private readonly PomodoroFeature      _pomodoro  = new();
+    private readonly HotkeyManager        _hotkeys   = new();
 
     private readonly CancellationTokenSource _cts = new();
 
@@ -70,6 +71,7 @@ sealed class ZmkAppContext : ApplicationContext
         _tray.ManualDisconnectRequested += OnManualDisconnect;
         _tray.LanguageChangeRequested += OnLanguageChanged;
         _tray.HelpRequested += () => ShowWelcome(force: true);
+        _hotkeys.PageRequested += OnPageHotkey;
 
         _pomodoro.StateChanged     += OnPomodoroStateChanged;
         _pomodoro.SessionCompleted += OnPomodoroCompleted;
@@ -159,13 +161,20 @@ sealed class ZmkAppContext : ApplicationContext
                 {
                     string text = _liveState.ExpandEscaped(latest);
                     DebugLog.Log($"drain: SEND len={latest.Length} skipped={skipped}");
+                    // Isolated from the overall `sw` below to tell GDI+ render cost (this
+                    // process, synchronous, runs before the first await) apart from BLE
+                    // cost (bleMs, already logged separately) - see whether dense Unicode
+                    // glyphs (block/box-drawing chars) trigger slow font-fallback in
+                    // RenderPages/Pack vs. plain ASCII text.
+                    var renderSw = System.Diagnostics.Stopwatch.StartNew();
                     var pages = BitmapTextRenderer.RenderPages(text);
                     var frames = pages.Select(p => (Frame: BitmapFrame.Pack(p.Bitmap), p.CharCount)).ToList();
                     foreach (var (pageBmp, _) in pages) pageBmp.Dispose();
+                    long renderMs = renderSw.ElapsedMilliseconds;
                     await _compositor.ShowPersistentTextAsync(frames, preferSpeed: true, cachePageIndex: _activePage);
                     _liveState.UpdateExternalText(text); // after _textOverride=true: Changed fires on UI thread, OnStateChanged exits early
                     DebugLog.Log($"drain: SEND done in {sw.ElapsedMilliseconds}ms " +
-                        $"bleMs={_ble.LastSendMs} chunks={_ble.LastChunkCount} " +
+                        $"renderMs={renderMs} bleMs={_ble.LastSendMs} chunks={_ble.LastChunkCount} " +
                         $"mtu={_ble.LastMtu} withResp={_ble.LastWithResponse} " +
                         $"err={_ble.LastBitmapError ?? "(none)"}");
                 }
@@ -203,6 +212,7 @@ sealed class ZmkAppContext : ApplicationContext
         });
 
         AutoStartManager.LaunchAll(_settings.AutoStartEntries);
+        RegisterPageHotkeys();
 
         _weatherTimer = new System.Windows.Forms.Timer { Interval = 10 * 60_000 };
         _weatherTimer.Tick += async (_, _) => await RefreshWeatherAsync();
@@ -611,8 +621,39 @@ sealed class ZmkAppContext : ApplicationContext
         _settings.Save();
         LoadPage(_activePage < pages.Count ? _activePage : 0);
         RestartPageCycle();
+        RegisterPageHotkeys(); // page count may have changed (added/removed pages)
         _ = RefreshWeatherAsync();
         _ = RefreshSportsAsync();
+    }
+
+    // ── Page hotkeys (F13-F21, see HotkeyManager) ─────────────────────────────
+
+    private void RegisterPageHotkeys()
+    {
+        int n = Math.Min(_settings.DisplayPages.Count, HotkeyManager.MaxPages);
+        var failed = _hotkeys.RegisterAll(_settings.DisplayPages.Count);
+        var ok = Enumerable.Range(1, n).Except(failed).ToList();
+        DebugLog.Log($"HotkeyManager: registered [{string.Join(", ", ok.Select(HotkeyManager.LabelFor))}]" +
+            (failed.Count > 0
+                ? $", FAILED (already claimed by another app) [{string.Join(", ", failed.Select(HotkeyManager.LabelFor))}]"
+                : ""));
+    }
+
+    // Logs unconditionally, even for an out-of-range id, so the debug log can
+    // distinguish "WM_HOTKEY never arrived at all" from "arrived but this
+    // page no longer exists" (e.g. pages were removed after the keymap was
+    // flashed with a stale binding).
+    private void OnPageHotkey(int pageIndex)
+    {
+        DebugLog.Log($"hotkey: WM_HOTKEY received for page index {pageIndex}");
+        if (pageIndex < 0 || pageIndex >= _settings.DisplayPages.Count)
+        {
+            DebugLog.Log($"hotkey: ignored, no page at index {pageIndex} (pageCount={_settings.DisplayPages.Count})");
+            return;
+        }
+        DebugLog.Log($"hotkey: jump to page {pageIndex} ('{_settings.DisplayPages[pageIndex].Name}')");
+        LoadPage(pageIndex);
+        RestartPageCycle();
     }
 
     // ── Connection lifecycle ──────────────────────────────────────────────────
@@ -728,6 +769,7 @@ sealed class ZmkAppContext : ApplicationContext
             _connectionWatchdog?.Dispose();
             _pipe.Dispose();
             _pomodoro.Dispose();
+            _hotkeys.Dispose();
             _compositor.Dispose();
             _tray.Dispose();
             _ble.Dispose();

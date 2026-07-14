@@ -58,6 +58,31 @@ A display is a list of **pages**, each with a name and a duration in
 seconds. If "Cycle pages" is checked, the app rotates through all of them
 automatically; otherwise it stays on whichever page you last selected.
 
+**Jumping to a page on demand**: pressing `Ctrl+Alt+Shift+Win+1` through
+`+9` jumps straight to page 1 through 9 (in the order they're listed in the
+editor), even while some other app has focus, no need to wait for the
+auto-cycle to get there. These are global system hotkeys, registered by the
+app the moment it starts (and re-registered whenever you add/remove pages).
+Jumping restarts the cycle at that page, then continues forward from there
+as normal, it doesn't pause anything you have to manually resume.
+
+Four modifiers held together is rare enough in everyday shortcuts that this
+is very unlikely to collide with something you already use, unlike, say,
+`Ctrl+Shift+3`. (An earlier version of this feature used bare `F13`-`F21`
+instead, betting on almost nothing binding those, but that depends on the
+keyboard firmware's HID setup actually being able to send them at all,
+which turned out not to hold on a real build, confirmed independently with
+a browser keycode tester, not something this app can detect or fix. Regular
+modifier+digit combos don't have that dependency, they're exactly how you
+already type every day.) The intended way to press one is from the keyboard
+itself: assign `&kp LC(LA(LS(LG(N1))))` through `N9` to spare keys on an
+unused layer in your ZMK keymap (`adjust_layer` in
+[`zmk-companion-template`](https://github.com/oscampo/zmk-companion-template),
+already reserved and empty), one key per page you want instant access to.
+If `zmk-companion`'s debug log shows a page's hotkey "already claimed by
+another app", something else on your system is already using that exact
+combo, that page just won't have a working shortcut, the rest still do.
+
 ### Rows
 
 Each page is a stack of **rows**, top to bottom. A row has:
@@ -258,14 +283,18 @@ customizing your own keymap, in
 **Any other ZMK board with a `nice_view` display**: the display code itself
 has no eyelash_corne-specific dependencies (checked: no board-specific
 device tree references, just generic LVGL/ZMK APIs, and the display
-resolution matches the `nice_view` panel, not any particular PCB), and
-[`zmk-companion-template`](https://github.com/oscampo/zmk-companion-template)
-is already structured as a west module. In principle you can add it as a
-module in your own ZMK config's `west.yml` (no fork, no copying files) and
-build your own board with `-DCONFIG_KBD_BLE_DISPLAY=y`, the same flag the
-reference board's CI build already uses. **This has not been verified on
-any board other than eyelash_corne** — if you try it, please open an issue
-either way so this stops being a guess.
+resolution matches the `nice_view` panel, not any particular PCB), and it
+lives in its own west module,
+[`oscampo/zmk-companion`](https://github.com/oscampo/zmk-companion)
+(`firmware/`), not embedded in `zmk-companion-template`'s `config/` anymore.
+You can add it directly to your own ZMK config's `west.yml` (no fork, no
+copying files) and build your own board with
+`-DCONFIG_ZMK_COMPANION_DISPLAY=y`, the same flag the reference board's CI
+build already uses, see
+[`getting_started.md`](getting_started.md#1-firmware-one-time) for the exact
+manifest snippet. **This has not been verified on any board other than
+eyelash_corne**, if you try it, please open an issue either way so this
+stops being a guess.
 
 **Any other keyboard, no `nice_view` display**: no path today, the code is
 tied to that display's resolution.
