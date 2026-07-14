@@ -46,19 +46,39 @@ Requires Windows 10 2004+ (build 19041) or later, and the
 ## Firmware requirement
 
 Your ZMK keyboard needs a custom build with the display GATT service
-enabled, this app can't do anything with stock ZMK firmware. See
-[`docs/cell_grid_protocol.md`](docs/cell_grid_protocol.md) for the current
-protocol (cell-grid + bitmap, what the Canvas editor and `zkc.exe` actually
-use) and [`docs/protocol.md`](docs/protocol.md) for the older plain-text-only
-characteristic, still supported for backward compatibility but not what new
-firmware should target.
+enabled, this app can't do anything with stock ZMK firmware. What to do
+depends on your board:
 
-If your board is an `eyelash_corne` (or any ZMK board with a `nice_view`
-display), [`zmk-companion-template`](https://github.com/oscampo/zmk-companion-template)
-gets you a ready-to-flash `.uf2` via GitHub Actions, no local toolchain,
-see [`docs/getting_started.md`](docs/getting_started.md). Any other board
-still means following ZMK's own firmware build process by hand, see
-[`docs/user_guide.md`](docs/user_guide.md#firmware) for what's involved.
+- **You have an `eyelash_corne` (or any ZMK board with a `nice_view`
+  display) and no existing ZMK config**: fork
+  [`zmk-companion-template`](https://github.com/oscampo/zmk-companion-template),
+  push, download the `.uf2` GitHub Actions builds for you, flash it. No
+  local toolchain needed. Full steps:
+  **[`docs/getting_started.md`](docs/getting_started.md)**.
+- **You already have your own ZMK config repo, any board with a
+  `nice_view` display**: add `oscampo/zmk-companion` as a west module to
+  your existing `west.yml`, no fork needed. Exact manifest snippet:
+  **[`docs/getting_started.md`](docs/getting_started.md#1-firmware-one-time)**.
+- **Your board has no `nice_view` display**: no path today, the display
+  code is tied to that display's resolution.
+
+The rest of this section is technical background, not something you need to
+read to get set up.
+
+<details>
+<summary>Protocol details</summary>
+
+This app talks to the firmware over a BLE GATT service. Two protocol
+versions exist:
+
+- [`docs/cell_grid_protocol.md`](docs/cell_grid_protocol.md): current
+  protocol (cell-grid + bitmap), what the Canvas editor and `zkc.exe`
+  actually use, and what both firmware paths above already implement.
+- [`docs/protocol.md`](docs/protocol.md): older plain-text-only
+  characteristic, still supported for backward compatibility but not what
+  new firmware should target.
+
+</details>
 
 ## Repository structure
 
