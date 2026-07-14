@@ -1,4 +1,16 @@
 # Instrucciones para Claude
+
+## firmware/
+
+Módulo ZMK instalable vía west (no un simple directorio de referencia):
+`zephyr/module.yml` en la raíz de este repo apunta a `firmware/CMakeLists.txt`
+y `firmware/Kconfig`, que activan `custom_status_screen.c` (más
+`mono_16.c`/`mono_8.c`/`mono_icon.c`) bajo el flag `CONFIG_ZMK_COMPANION_DISPLAY`
+(antes `CONFIG_KBD_BLE_DISPLAY`, renombrado por falta de namespace). Cualquier
+`zmk-config` (incluyendo `oscampo/zmk-companion-template`) lo consume
+agregando este repo como remote+project en su propio `config/west.yml`, sin
+necesidad de fork ni de copiar archivos.
+
 Nunca incluyas " — " en tus respuestas. Reemplázala siempre por ","
 
 Antes de validar cualquier código, diseño o decisión, identifica activamente al menos una falla, supuesto no verificado o riesgo. Pregúntate a tí mismo "¿por qué así y no de otra forma?" ante decisiones de arquitectura. No celebres el trabajo antes de señalar un punto débil. Sé conciso, no condescendiente.

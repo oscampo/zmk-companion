@@ -5,10 +5,18 @@ For someone setting up ZMK Companion for the first time on an `eyelash_corne`
 
 ## 1. Firmware (one time)
 
+The BLE display feature (`custom_status_screen.c`) lives in its own west
+module, [`oscampo/zmk-companion`](https://github.com/oscampo/zmk-companion)
+(`firmware/`), enabled with `CONFIG_ZMK_COMPANION_DISPLAY=y`. Pick the path
+that matches where you're starting from:
+
+### (a) Starting from zero
+
 1. Fork [`oscampo/zmk-companion-template`](https://github.com/oscampo/zmk-companion-template)
    to your own GitHub account. This is a neutral starting keymap
    (plain QWERTY + number/nav layers, no one else's personal macros or
-   combos) with the BLE display feature already wired up and enabled.
+   combos) with the module already added to `config/west.yml` and the flag
+   already enabled in `build.yaml`.
 2. In your fork, open the **Actions** tab and enable workflows if GitHub
    asks you to.
 3. Wait for the "Build ZMK firmware" workflow to finish (a few minutes,
@@ -25,6 +33,36 @@ For someone setting up ZMK Companion for the first time on an `eyelash_corne`
    documentation or ask in
    [zmk-companion-template's issues](https://github.com/oscampo/zmk-companion-template/issues)
    before assuming a generic "double-tap reset" works here.
+
+### (b) You already have your own `zmk-config`
+
+No need to fork anything, add the module directly:
+
+1. In your `config/west.yml`, add a remote and project pointing at
+   `oscampo/zmk-companion`:
+
+   ```yaml
+   manifest:
+     remotes:
+       - name: oscampo
+         url-base: https://github.com/oscampo
+     projects:
+       - name: zmk-companion
+         remote: oscampo
+         revision: main
+   ```
+
+2. Enable the flag for your central-half board (the display only runs on the
+   split's central half), either in that board's `.conf` file
+   (`CONFIG_ZMK_COMPANION_DISPLAY=y`) or as a `cmake-args:
+   -DCONFIG_ZMK_COMPANION_DISPLAY=y` entry in your `build.yaml`, matching
+   whichever pattern your `zmk-config` already uses for other options.
+3. Push, let your existing build workflow run, flash as usual.
+
+   **Unverified**: only tried so far on the `eyelash_corne` board this
+   template targets. The display code itself has no board-specific
+   dependencies (just the standard `nice_view` shield and a split board), if
+   you try it elsewhere, please open an issue either way, working or not.
 
 ## 2. Customize your keymap (whenever you want)
 

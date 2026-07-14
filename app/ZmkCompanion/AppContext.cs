@@ -161,13 +161,20 @@ sealed class ZmkAppContext : ApplicationContext
                 {
                     string text = _liveState.ExpandEscaped(latest);
                     DebugLog.Log($"drain: SEND len={latest.Length} skipped={skipped}");
+                    // Isolated from the overall `sw` below to tell GDI+ render cost (this
+                    // process, synchronous, runs before the first await) apart from BLE
+                    // cost (bleMs, already logged separately) - see whether dense Unicode
+                    // glyphs (block/box-drawing chars) trigger slow font-fallback in
+                    // RenderPages/Pack vs. plain ASCII text.
+                    var renderSw = System.Diagnostics.Stopwatch.StartNew();
                     var pages = BitmapTextRenderer.RenderPages(text);
                     var frames = pages.Select(p => (Frame: BitmapFrame.Pack(p.Bitmap), p.CharCount)).ToList();
                     foreach (var (pageBmp, _) in pages) pageBmp.Dispose();
+                    long renderMs = renderSw.ElapsedMilliseconds;
                     await _compositor.ShowPersistentTextAsync(frames, preferSpeed: true, cachePageIndex: _activePage);
                     _liveState.UpdateExternalText(text); // after _textOverride=true: Changed fires on UI thread, OnStateChanged exits early
                     DebugLog.Log($"drain: SEND done in {sw.ElapsedMilliseconds}ms " +
-                        $"bleMs={_ble.LastSendMs} chunks={_ble.LastChunkCount} " +
+                        $"renderMs={renderMs} bleMs={_ble.LastSendMs} chunks={_ble.LastChunkCount} " +
                         $"mtu={_ble.LastMtu} withResp={_ble.LastWithResponse} " +
                         $"err={_ble.LastBitmapError ?? "(none)"}");
                 }
