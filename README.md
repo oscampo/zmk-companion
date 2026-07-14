@@ -21,8 +21,10 @@ zmk-companion has three parts:
   reference.
 - **Firmware side** (`firmware/`, [`docs/cell_grid_protocol.md`](docs/cell_grid_protocol.md)):
   the BLE GATT service and message protocol a ZMK keyboard's firmware needs
-  to implement to receive any of this. Requires a custom firmware build,
-  this is not something stock ZMK supports out of the box.
+  to implement to receive any of this. It's a proper west module (see
+  `zephyr/module.yml`), any ZMK `zmk-config` can pull it in directly via
+  `west.yml`, no forking or copying files. Requires a custom firmware
+  build either way, this is not something stock ZMK supports out of the box.
 
 Setting up a keyboard and this app from zero? Start with
 **[`docs/getting_started.md`](docs/getting_started.md)**. For everything
@@ -67,8 +69,10 @@ zmk-companion/
 │   ├── ZmkCompanionCli/     # zkc.exe — talks to the tray app over a named pipe
 │   └── ZmkCompanion.Tests/
 ├── installer/               # Inno Setup script, builds the .exe installer
-├── firmware/                # Reference firmware source for the display service
+├── firmware/                # West module: the display service (zephyr/module.yml at repo root)
 ├── docs/
+│   ├── getting_started.md     # First-time setup, firmware + app, start here
+│   ├── user_guide.md          # Canvas editor, tokens, the CLI, troubleshooting
 │   ├── cell_grid_protocol.md  # Current BLE protocol (cell-grid + bitmap)
 │   └── protocol.md            # Legacy plain-text-only characteristic
 └── clients/                 # Older cross-platform Python clients (see below)

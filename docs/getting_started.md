@@ -66,13 +66,17 @@ No need to fork anything, add the module directly:
 
 ## 2. Customize your keymap (whenever you want)
 
+This step is for path (a) above (the `zmk-companion-template` fork). If you
+went with path (b) and your own `zmk-config`, you already have your own
+keymap workflow, skip to step 3.
+
 The template's keymap is intentionally minimal, you'll want to make it your
 own. Easiest way:
 [nickcoutsos.github.io/keymap-editor](https://nickcoutsos.github.io/keymap-editor/),
 pointed at **your fork** (not the template). Every change there commits
 directly to `config/eyelash_corne.keymap` and triggers a new automatic
-build. Repeat step 5 above with the new `.uf2` files whenever you want to
-update your keyboard with a new build.
+build. Whenever you want to update your keyboard with a new build, repeat
+step 1(a).4-5 above (download the new `.uf2` artifacts, flash both halves).
 
 ## 3. Install ZMK Companion
 

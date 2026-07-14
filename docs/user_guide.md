@@ -270,7 +270,8 @@ build exposing the BLE GATT display service this app talks to:
   `zkc.exe` actually use.
 - [`docs/protocol.md`](protocol.md), the older plain-text-only
   characteristic, still supported for backward compatibility.
-- `firmware/custom_status_screen.c`, reference firmware source.
+- `firmware/`, the actual source, packaged as a west module (see "Any other
+  ZMK board" below).
 
 **If you have an "eyelash_corne" board** (the reference keyboard this was
 built for): fork
