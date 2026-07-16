@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- Windows 10 2004+ required for WinRT BLE APIs -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>ZmkCompanion</AssemblyName>
+    <RootNamespace>ZmkCompanion</RootNamespace>
+    <Version>1.0.0</Version>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Three FiraCode Nerd Font variants, selectable per row in the cell-grid
+         editor (CellGridRow.FontVariant). Mono forces every glyph, including
+         icons, into a single monospace advance width, its icon/box glyphs
+         carry less ink to fit that width, which is why icon-heavy rows and
+         {conn.profilebar} looked shrunk/inconsistent once Mono became the
+         default. Regular/Propo keep each glyph's natural ink size. -->
+    <EmbeddedResource Include="Resources\FIRACODENERDFONTMONO-REGULAR.TTF" />
+    <EmbeddedResource Include="Resources\FIRACODENERDFONT-REGULAR.TTF" />
+    <EmbeddedResource Include="Resources\FIRACODENERDFONTPROPO-REGULAR.TTF" />
+    <!-- name<TAB>hex-codepoint, one per line. Derived from the official
+         nerd-fonts glyphnames.json (name+code only, metadata stripped) for
+         GlyphPickerDialog's name search. -->
+    <EmbeddedResource Include="Resources\glyphnames.tsv" />
+    <!-- WelcomeForm content, shown on first run of each app version and from
+         the tray's Help menu. Minimal Markdown subset (headings, bold,
+         bullets, plain-text URLs) rendered by Core/MarkdownRenderer.cs.
+         Hyphen, not "welcome.es.md": a dot-separated "es"/"en" segment is a
+         valid .NET culture name, so the SDK's AssignCulture step silently
+         diverts a file named that way into an "es"/"en" satellite resource
+         assembly instead of embedding it in the main exe — which is never
+         shipped, so the resource looked up at runtime simply doesn't exist
+         (no crash, just an empty string from the "not found" fallback). -->
+    <EmbeddedResource Include="Resources\welcome-es.md" />
+    <EmbeddedResource Include="Resources\welcome-en.md" />
+  </ItemGroup>
+
+  <!-- Publish: framework-dependent single-file .exe (requires .NET 8 Desktop Runtime). -->
+  <!-- RollForward=LatestPatch: use highest available 8.0.x patch, even if minimum patch is -->
+  <!-- absent/corrupted. Ensures the app finds 8.0.28+ when 8.0.27 exists but is broken.   -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <RollForward>LatestPatch</RollForward>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,121 @@
+name: Build
+
+on:
+  push:
+    branches: ["main", "claude/**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write # only needed for the tag-triggered release step below
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Single source of truth for the version: the git tag, not any of the
+      # 3 files that used to hardcode "1.0.0" independently (both .csproj's
+      # <Version> and installer/ZmkCompanion.iss's AppVersion). Only tag
+      # pushes matching "v*" set is_release=true and override the version;
+      # everything else (branch pushes, PRs, manual runs) keeps building with
+      # whatever's already in those files, unchanged.
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" && "${{ github.ref_name }}" == v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('app/**/*.csproj') }}
+          restore-keys: nuget-
+
+      - name: Test
+        run: dotnet test app/ZmkCompanion.sln --configuration Release --logger "console;verbosity=normal"
+
+      - name: Publish tray app
+        run: >
+          dotnet publish app/ZmkCompanion/ZmkCompanion.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained false
+          -p:PublishSingleFile=true
+          -p:RollForward=LatestPatch
+          ${{ steps.version.outputs.is_release == 'true' && format('-p:Version={0}', steps.version.outputs.version) || '' }}
+
+      - name: Publish CLI
+        run: >
+          dotnet publish app/ZmkCompanionCli/ZmkCompanionCli.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained false
+          -p:PublishSingleFile=true
+          -p:RollForward=LatestPatch
+          ${{ steps.version.outputs.is_release == 'true' && format('-p:Version={0}', steps.version.outputs.version) || '' }}
+
+      - name: Install Inno Setup 6
+        run: choco install innosetup --no-progress --yes
+
+      - name: Build installer
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          New-Item -ItemType Directory -Force -Path installer\output | Out-Null
+          $extraArgs = @()
+          if ("${{ steps.version.outputs.is_release }}" -eq "true") {
+            $extraArgs += "/DAppVersion=${{ steps.version.outputs.version }}"
+          }
+          & $iscc @extraArgs installer\ZmkCompanion.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        shell: pwsh
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZmkCompanion-Setup
+          path: installer/output/ZmkCompanion-Setup-*.exe
+          retention-days: 30
+
+      # release-notes/vX.Y.Z.md, curated by a maintainer ahead of tagging, not
+      # auto-generated — write one before pushing the tag. Falls back to
+      # generate_release_notes if that file doesn't exist for this version,
+      # so tagging without notes still produces something instead of failing.
+      - name: Determine release notes
+        id: notes
+        if: steps.version.outputs.is_release == 'true'
+        shell: bash
+        run: |
+          f="release-notes/v${{ steps.version.outputs.version }}.md"
+          if [[ -f "$f" ]]; then
+            echo "path=$f" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Only on a "v*" tag push: publish a real, permanent GitHub Release with
+      # the installer attached, instead of the 30-day workflow artifact above.
+      # Do NOT create the GitHub Release by hand in the web UI before pushing
+      # the tag — this step both creates it and attaches the installer in one
+      # shot, and generate_release_notes would fight with hand-written notes.
+      - name: Create GitHub Release
+        if: steps.version.outputs.is_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/output/ZmkCompanion-Setup-*.exe
+          body_path: ${{ steps.notes.outputs.path }}
+          generate_release_notes: ${{ steps.notes.outputs.path == '' }}

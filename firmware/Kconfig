@@ -1,0 +1,3 @@
+config ZMK_COMPANION_DISPLAY
+	bool "Custom keyboard display with BLE text service"
+	default n
