@@ -1,0 +1,511 @@
+{
+  "DisplayPages": [
+    {
+      "Name": "Welcome",
+      "DurationSeconds": 5,
+      "Rows": [
+        {
+          "TierId": 2,
+          "Template": "Welcome",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 3,
+          "Template": "",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 4,
+          "Template": "ZMK",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": true,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 0,
+          "Template": "Companion",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 3,
+          "Template": "",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 15,
+          "Template": "make your",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 0,
+          "Template": "display",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 1,
+          "Template": "a hub to",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 1,
+          "Template": "show the",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 0,
+          "Template": "information",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 1,
+          "Template": "you need",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        }
+      ],
+      "TotalHeight": 158
+    },
+    {
+      "Name": "Posibilities",
+      "DurationSeconds": 5,
+      "Rows": [
+        {
+          "TierId": 4,
+          "Template": "󰅐  ",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 2
+        },
+        {
+          "TierId": 0,
+          "Template": "World Clock",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 2
+        },
+        {
+          "TierId": 4,
+          "Template": "󰉝  ",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 2
+        },
+        {
+          "TierId": 1,
+          "Template": "Sports",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 2
+        },
+        {
+          "TierId": 3,
+          "Template": "",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 2
+        },
+        {
+          "TierId": 1,
+          "Template": "Pomodoro",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 4,
+          "Template": "{*}",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 1,
+          "Template": "almost",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 1,
+          "Template": "any data",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 0,
+          "Template": "via CLI",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        }
+      ],
+      "TotalHeight": 158
+    },
+    {
+      "Name": "Weather",
+      "DurationSeconds": 5,
+      "Rows": [
+        {
+          "TierId": 1,
+          "Template": "",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 2,
+          "Template": "the",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 2,
+          "Template": "Weather",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 1,
+          "Template": "in",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 0,
+          "Template": "{weather.city}",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 1,
+          "Template": "is",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 4,
+          "Template": "",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 4,
+          "Template": "{weather.temp}",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 14,
+          "Template": "{weather.icon}",
+          "Align": "center",
+          "SplitHalf": 1,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 2
+        },
+        {
+          "TierId": 14,
+          "Template": "{weather.icon}",
+          "Align": "center",
+          "SplitHalf": 2,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 2
+        }
+      ],
+      "TotalHeight": 145
+    },
+    {
+      "Name": "Data from APIs",
+      "DurationSeconds": 8,
+      "Rows": [
+        {
+          "TierId": 4,
+          "Template": "{ext.text}",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        }
+      ],
+      "TotalHeight": 22
+    },
+    {
+      "Name": "End",
+      "DurationSeconds": 5,
+      "Rows": [
+        {
+          "TierId": 4,
+          "Template": "ZMK",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": true,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 0,
+          "Template": "Companion",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 0,
+          "Template": "",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 4,
+          "Template": "{time.hh}:{time.mm}",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": true,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 2
+        },
+        {
+          "TierId": 5,
+          "Template": "{date.day}",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "box_multiple",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 2
+        },
+        {
+          "TierId": 14,
+          "Template": "{date.month}",
+          "Align": "right",
+          "SplitHalf": 1,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "circle_outline",
+          "AntiAlias": false,
+          "FontVariant": 2
+        },
+        {
+          "TierId": 14,
+          "Template": "{date.month}",
+          "Align": "center",
+          "SplitHalf": 2,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "circle_outline",
+          "AntiAlias": false,
+          "FontVariant": 2
+        },
+        {
+          "TierId": 4,
+          "Template": "{battery.icon}   {conn.icon}",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 0
+        },
+        {
+          "TierId": 4,
+          "Template": "{conn.profilebar}",
+          "Align": "center",
+          "SplitHalf": 0,
+          "Bold": false,
+          "NumericStyle": "text",
+          "AlphaStyle": "text",
+          "AntiAlias": false,
+          "FontVariant": 2
+        }
+      ],
+      "TotalHeight": 158
+    }
+  ],
+  "CycleDisplayPages": true,
+  "PomodoroWorkMin": 25,
+  "PomodoroBreakMin": 5,
+  "PomodoroCycles": 4,
+  "PomodoroLongBreakMin": 15,
+  "PomodoroWorkIcon": "",
+  "PomodoroBreakIcon": "",
+  "PomodoroLongIcon": "",
+  "CliLastCommand": "",
+  "AutoStartEntries": [],
+  "WelcomeDismissedVersion": "",
+  "WeatherCities": [],
+  "WeatherUnit": "celsius",
+  "SelectedLeagues": [
+    "football/nfl"
+  ],
+  "SportsTeams": {},
+  "SelectedTimeZones": [],
+  "CustomTokens": [],
+  "Language": "en",
+  "CyclePages": false
+}

@@ -59,6 +59,30 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; \
 Source: "{#PublishDir}\{#AppExe}";    DestDir: "{app}"; Flags: ignoreversion
 Source: "{#CliPublishDir}\{#CliExe}"; DestDir: "{app}"; Flags: ignoreversion
 
+; Demo content for the "presentacion en sociedad" build: a ready-to-cycle
+; Canvas (clock/weather/API ticker/etc.) so a fresh install already shows
+; something instead of a single blank clock page.
+;
+; api_ticker.ps1 ships in {app} (next to the two exes above), same as any
+; other app-managed asset (ignoreversion = always overwrite on update, this
+; is our script, not the user's). AutoStartManager launches commands via
+; cmd.exe with no explicit WorkingDirectory, so it inherits ZmkCompanion.exe's
+; own cwd, {app}, which is exactly where settings.json's AutoStartEntries
+; command ("powershell -File api_ticker.ps1 | zkc --watch") expects to find
+; it via that relative path.
+Source: "demo\api_ticker.ps1"; DestDir: "{app}"; Flags: ignoreversion
+
+; settings.json/library\demo.json go to {userappdata}\ZmkCompanion, matching
+; AppSettings' own storage path (Environment.SpecialFolder.ApplicationData)
+; and CellGridEditorForm's LibraryDir. onlyifdoesntexist on both: only a
+; genuinely fresh install (no prior settings.json at all) gets seeded, an
+; upgrade or reinstall never overwrites a real user's own configuration or
+; library presets.
+Source: "demo\settings.json"; DestDir: "{userappdata}\ZmkCompanion"; \
+  Flags: onlyifdoesntexist
+Source: "demo\demo.json"; DestDir: "{userappdata}\ZmkCompanion\library"; \
+  Flags: onlyifdoesntexist
+
 [Icons]
 Name: "{group}\{#AppName}";          Filename: "{app}\{#AppExe}"
 Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
