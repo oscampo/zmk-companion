@@ -19,6 +19,12 @@ static class AutoStartManager
     // delay the way the old Windows-Startup-.bat's 15s wait had to be.
     private const int LaunchDelaySeconds = 2;
 
+    // Tracks every cmd.exe wrapper launched via Launch(), so a later StopAll()
+    // (Library "Load" switching to a different Canvas's Auto-start set) can
+    // kill them. Only the wrapper's own PID is known here, not any child
+    // process it spawns (powershell.exe, python.exe, ...), see StopAll().
+    private static readonly List<System.Diagnostics.Process> _running = new();
+
     public static void LaunchAll(IEnumerable<AutoStartEntry> entries)
     {
         foreach (var e in entries)
@@ -33,14 +39,47 @@ static class AutoStartManager
     {
         try
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
                 FileName        = "cmd.exe",
                 Arguments       = $"/c timeout /t {LaunchDelaySeconds} /nobreak >nul & {command}",
                 UseShellExecute = true,
                 WindowStyle     = System.Diagnostics.ProcessWindowStyle.Minimized,
             });
+            if (p != null) _running.Add(p);
         }
         catch { /* a malformed command is the user's problem to fix, not a reason to crash the app */ }
+    }
+
+    // Kills every process this manager has launched, used when switching to a
+    // different Canvas (Library "Load") whose own Auto-start set should
+    // replace whatever was running before, not run alongside it - two
+    // scripts feeding the same {ext.text}/{custom.NAME} token from different
+    // Canvases would otherwise fight over it.
+    //
+    // "taskkill /T" (kill the whole process tree), not Process.Kill(): the
+    // tracked process is the cmd.exe wrapper, which by design spawns a real
+    // child (powershell.exe, python.exe, ...) to do the actual work. Killing
+    // only the wrapper leaves that child running, orphaned but still
+    // sending data. taskkill's /T walks the tree Windows already tracks via
+    // parent PID, cheaper than standing up a Job Object for this.
+    public static void StopAll()
+    {
+        foreach (var p in _running)
+        {
+            try
+            {
+                if (p.HasExited) continue;
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName        = "taskkill.exe",
+                    Arguments       = $"/PID {p.Id} /T /F",
+                    UseShellExecute = false,
+                    CreateNoWindow  = true,
+                });
+            }
+            catch { /* already exited or unkillable - nothing more to do about it */ }
+        }
+        _running.Clear();
     }
 }

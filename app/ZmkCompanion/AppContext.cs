@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO.Compression;
 using System.Windows.Forms;
 using ZmkCompanion.Core;
 using ZmkCompanion.Features;
@@ -71,6 +72,9 @@ sealed class ZmkAppContext : ApplicationContext
         _tray.ManualDisconnectRequested += OnManualDisconnect;
         _tray.LanguageChangeRequested += OnLanguageChanged;
         _tray.HelpRequested += () => ShowWelcome(force: true);
+        _tray.ExportSettingsRequested += OnExportSettings;
+        _tray.ImportSettingsRequested += OnImportSettings;
+        _tray.CheckUpdatesRequested += () => _ = CheckForUpdatesAsync(manual: true);
         _hotkeys.PageRequested += OnPageHotkey;
 
         _pomodoro.StateChanged     += OnPomodoroStateChanged;
@@ -213,6 +217,7 @@ sealed class ZmkAppContext : ApplicationContext
 
         AutoStartManager.LaunchAll(_settings.AutoStartEntries);
         RegisterPageHotkeys();
+        _ = CheckForUpdatesAsync(manual: false);
 
         _weatherTimer = new System.Windows.Forms.Timer { Interval = 10 * 60_000 };
         _weatherTimer.Tick += async (_, _) => await RefreshWeatherAsync();
@@ -612,6 +617,194 @@ sealed class ZmkAppContext : ApplicationContext
         if (dlg.ShowDialog() != DialogResult.OK) return;
         _settings.CustomTokens = dlg.Tokens.ToList();
         _settings.Save();
+    }
+
+    // manual=false (startup): stays quiet if this version was already shown
+    // once (UpdateCheckDismissedVersion), and says nothing at all if already
+    // current, no point announcing "you're up to date" unprompted every
+    // launch. manual=true (tray menu): always shows something, either the
+    // update balloon (bypassing the "already shown" gate, the user is
+    // explicitly asking right now) or an explicit "up to date" balloon.
+    private async Task CheckForUpdatesAsync(bool manual)
+    {
+        var update = await UpdateChecker.CheckAsync();
+
+        if (update is not { } info)
+        {
+            if (manual)
+                _tray.ShowBalloonTip(3000, "ZMK Companion", Strings.UpToDateBalloon, ToolTipIcon.Info);
+            return;
+        }
+
+        if (manual || _settings.UpdateCheckDismissedVersion != info.Version)
+        {
+            _settings.UpdateCheckDismissedVersion = info.Version;
+            _settings.Save();
+            _tray.ShowUpdateAvailable(info.Version, info.Url);
+        }
+    }
+
+    // Bundles settings.json + every Library preset + the recommended
+    // Auto-start scripts folder into one .zip, so a user can carry their
+    // whole setup between two machines (work/home) without hand-copying
+    // three different folders. Scripts referenced by an absolute path
+    // outside ScriptsDir can't be detected reliably from a free-form shell
+    // command string, so those just don't get bundled - see
+    // CollectPortabilityWarnings for the best-effort warning about it.
+    private void OnExportSettings()
+    {
+        _settings.Save(); // make sure the on-disk file matches what's in memory
+
+        using var dlg = new SaveFileDialog
+        {
+            Title    = Strings.ExportSettingsDialogTitle,
+            Filter   = "ZIP (*.zip)|*.zip",
+            FileName = $"{Strings.ExportSettingsDefaultName}-{DateTime.Now:yyyyMMdd}.zip",
+        };
+        if (dlg.ShowDialog() != DialogResult.OK) return;
+
+        string stagingDir = Path.Combine(Path.GetTempPath(), "ZmkCompanionExport_" + Guid.NewGuid());
+        try
+        {
+            Directory.CreateDirectory(stagingDir);
+
+            if (File.Exists(AppSettings.SettingsPath))
+                File.Copy(AppSettings.SettingsPath, Path.Combine(stagingDir, "settings.json"));
+
+            if (Directory.Exists(AppSettings.LibraryDir))
+            {
+                string libOut = Path.Combine(stagingDir, "library");
+                Directory.CreateDirectory(libOut);
+                foreach (var f in Directory.GetFiles(AppSettings.LibraryDir, "*.json"))
+                    File.Copy(f, Path.Combine(libOut, Path.GetFileName(f)));
+            }
+
+            if (Directory.Exists(AppSettings.ScriptsDir))
+            {
+                string scriptsOut = Path.Combine(stagingDir, "scripts");
+                Directory.CreateDirectory(scriptsOut);
+                foreach (var f in Directory.GetFiles(AppSettings.ScriptsDir))
+                    File.Copy(f, Path.Combine(scriptsOut, Path.GetFileName(f)));
+            }
+
+            if (File.Exists(dlg.FileName)) File.Delete(dlg.FileName);
+            ZipFile.CreateFromDirectory(stagingDir, dlg.FileName);
+
+            var warnings = CollectPortabilityWarnings();
+            if (warnings.Count > 0)
+                MessageBox.Show(Strings.ExportSettingsPortabilityWarning(string.Join("\n", warnings)),
+                    "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+
+            MessageBox.Show(Strings.ExportSettingsDone(dlg.FileName),
+                "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(Strings.SettingsIoError(ex.Message),
+                "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            try { Directory.Delete(stagingDir, true); } catch { /* best effort cleanup */ }
+        }
+    }
+
+    // Best-effort only: flags enabled entries whose Command doesn't mention
+    // "scripts\" or "scripts/" anywhere, across both the live settings and
+    // every saved Library preset. Can't reliably parse an arbitrary shell
+    // command line for "is this a file path", so this is a heuristic
+    // reminder, not a guarantee the flagged ones will actually break.
+    private List<string> CollectPortabilityWarnings()
+    {
+        var offenders = new List<string>();
+
+        void Check(IEnumerable<AutoStartEntry> entries)
+        {
+            foreach (var e in entries)
+                if (e.Enabled && e.Command.Trim().Length > 0 &&
+                    !e.Command.Contains("scripts\\", StringComparison.OrdinalIgnoreCase) &&
+                    !e.Command.Contains("scripts/", StringComparison.OrdinalIgnoreCase))
+                    offenders.Add(e.Name);
+        }
+
+        Check(_settings.AutoStartEntries);
+
+        if (Directory.Exists(AppSettings.LibraryDir))
+        {
+            foreach (var f in Directory.GetFiles(AppSettings.LibraryDir, "*.json"))
+            {
+                try
+                {
+                    var opts = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                    var snap = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(f), opts);
+                    if (snap != null) Check(snap.AutoStartEntries);
+                }
+                catch { /* a malformed library file isn't this warning's problem */ }
+            }
+        }
+
+        return offenders.Distinct().ToList();
+    }
+
+    // Imports a .zip made by OnExportSettings: settings.json overwrites the
+    // live one outright, Library presets and scripts are copied in
+    // additively (same filename overwrites, anything else already there is
+    // left alone) rather than wiping the destination folders first, so
+    // importing on a machine that already has its own presets/scripts
+    // doesn't silently delete them.
+    private void OnImportSettings()
+    {
+        using var dlg = new OpenFileDialog
+        {
+            Title  = Strings.ImportSettingsDialogTitle,
+            Filter = "ZIP (*.zip)|*.zip",
+        };
+        if (dlg.ShowDialog() != DialogResult.OK) return;
+
+        if (MessageBox.Show(Strings.ImportSettingsConfirm, "ZMK Companion",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+            return;
+
+        string stagingDir = Path.Combine(Path.GetTempPath(), "ZmkCompanionImport_" + Guid.NewGuid());
+        try
+        {
+            ZipFile.ExtractToDirectory(dlg.FileName, stagingDir);
+
+            string incomingSettings = Path.Combine(stagingDir, "settings.json");
+            if (File.Exists(incomingSettings))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(AppSettings.SettingsPath)!);
+                File.Copy(incomingSettings, AppSettings.SettingsPath, overwrite: true);
+            }
+
+            string incomingLib = Path.Combine(stagingDir, "library");
+            if (Directory.Exists(incomingLib))
+            {
+                Directory.CreateDirectory(AppSettings.LibraryDir);
+                foreach (var f in Directory.GetFiles(incomingLib, "*.json"))
+                    File.Copy(f, Path.Combine(AppSettings.LibraryDir, Path.GetFileName(f)), overwrite: true);
+            }
+
+            string incomingScripts = Path.Combine(stagingDir, "scripts");
+            if (Directory.Exists(incomingScripts))
+            {
+                Directory.CreateDirectory(AppSettings.ScriptsDir);
+                foreach (var f in Directory.GetFiles(incomingScripts))
+                    File.Copy(f, Path.Combine(AppSettings.ScriptsDir, Path.GetFileName(f)), overwrite: true);
+            }
+
+            MessageBox.Show(Strings.ImportSettingsDone, "ZMK Companion",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(Strings.SettingsIoError(ex.Message),
+                "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            try { Directory.Delete(stagingDir, true); } catch { /* best effort cleanup */ }
+        }
     }
 
     internal void ApplyDisplayPages(List<CellGridPage> pages, bool cycle)

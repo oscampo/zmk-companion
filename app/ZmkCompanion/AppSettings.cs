@@ -11,6 +11,18 @@ sealed class AppSettings
         "ZmkCompanion",
         "settings.json");
 
+    // Shared with CellGridEditorForm (Library tab) and the tray's Export/Import
+    // Settings feature, single source of truth for where each piece lives.
+    public static string SettingsPath => _path;
+    public static string LibraryDir => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "ZmkCompanion", "library");
+    // Where Auto-start scripts are recommended to live (see docs): next to
+    // the app's own exes, in their own subfolder so "export my settings" can
+    // just zip this directory instead of parsing arbitrary Command strings
+    // for file paths.
+    public static string ScriptsDir => Path.Combine(AppContext.BaseDirectory, "scripts");
+
     private static readonly JsonSerializerOptions _json = new()
     {
         WriteIndented = true,
@@ -51,6 +63,12 @@ sealed class AppSettings
     // announce whatever changed. This only works if releases actually bump
     // that version; nothing enforces it today.
     public string WelcomeDismissedVersion { get; set; } = "";
+
+    // UpdateChecker: the latest GitHub release version the user has already
+    // been notified about (automatically, on startup). Once shown, the
+    // automatic check stays quiet about that same version, a manual "Check
+    // for updates…" always shows something regardless of this field.
+    public string UpdateCheckDismissedVersion { get; set; } = "";
 
     // Weather data source — city names for API queries, up to 4 (see
     // CellGridEditorForm's Weather tab, which enforces the cap). Empty list =

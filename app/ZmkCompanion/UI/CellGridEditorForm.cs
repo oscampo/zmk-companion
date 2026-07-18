@@ -101,9 +101,7 @@ sealed class CellGridEditorForm : Form
     private readonly TextBox              _txtAutoStartName;
     private readonly TextBox              _txtAutoStartCommand;
 
-    private static string LibraryDir => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "ZmkCompanion", "library");
+    private static string LibraryDir => AppSettings.LibraryDir;
 
     private const int DeportesCategory = 2;
 
@@ -1489,6 +1487,19 @@ sealed class CellGridEditorForm : Form
             _radTempC.Checked = !f;
             _radTempF.Checked =  f;
 
+            // Loading a Canvas swaps its Auto-start set in immediately, not just
+            // on the window's own "Apply": stop whatever the PREVIOUS Canvas had
+            // running (a different Canvas's scripts feeding the same {ext.text}/
+            // {custom.NAME} token would otherwise fight over it), then launch
+            // only the entries this one has checked. Older library presets saved
+            // before this existed have an empty AutoStartEntries list, which is
+            // exactly "nothing to launch", not an error.
+            _autoStartEntries.Clear();
+            _autoStartEntries.AddRange(snap.AutoStartEntries.Select(a => a.Clone()));
+            RefreshAutoStartList();
+            AutoStartManager.StopAll();
+            AutoStartManager.LaunchAll(_autoStartEntries);
+
             RebuildTeamInputs();
             RebuildTimeZoneLabels();
             RebuildWeatherCityLabels();
@@ -1526,6 +1537,7 @@ sealed class CellGridEditorForm : Form
         PomodoroBreakMin     = _settings.PomodoroBreakMin,
         PomodoroCycles       = _settings.PomodoroCycles,
         PomodoroLongBreakMin = _settings.PomodoroLongBreakMin,
+        AutoStartEntries     = _autoStartEntries.Select(a => a.Clone()).ToList(),
     };
 
     // ── Preview ───────────────────────────────────────────────────────────────
