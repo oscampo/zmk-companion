@@ -42,8 +42,11 @@ icon:
 | **Configure Pomodoro…** | Durations, cycle count, and per-phase icons. |
 | **Reconnect / Disconnect** | Manual BLE connection control. |
 | **Idioma / Language** | Switches the whole app's UI between Spanish and English immediately. |
+| **Exportar configuración… / Export settings…** | Bundles `settings.json`, every Library preset, and your Auto-start `scripts\` folder into one `.zip`, see [Backing up / moving your setup](#backing-up--moving-your-setup). |
+| **Importar configuración… / Import settings…** | Reverses the above on another machine. |
 | **Debug Log** | Opens the plain-text log file used for troubleshooting. |
 | **Help…** | Reopens the welcome screen. |
+| **Buscar actualizaciones… / Check for updates…** | Checks GitHub for a newer release right now; a balloon tells you either way. Also checked automatically once per version on startup, quietly (no "you're up to date" balloon unless you ask). |
 | **Acerca de… / About…** | Version number. |
 | **Salir / Exit** | Quits the tray app (and disconnects). |
 

@@ -74,6 +74,7 @@ sealed class ZmkAppContext : ApplicationContext
         _tray.HelpRequested += () => ShowWelcome(force: true);
         _tray.ExportSettingsRequested += OnExportSettings;
         _tray.ImportSettingsRequested += OnImportSettings;
+        _tray.CheckUpdatesRequested += () => _ = CheckForUpdatesAsync(manual: true);
         _hotkeys.PageRequested += OnPageHotkey;
 
         _pomodoro.StateChanged     += OnPomodoroStateChanged;
@@ -216,6 +217,7 @@ sealed class ZmkAppContext : ApplicationContext
 
         AutoStartManager.LaunchAll(_settings.AutoStartEntries);
         RegisterPageHotkeys();
+        _ = CheckForUpdatesAsync(manual: false);
 
         _weatherTimer = new System.Windows.Forms.Timer { Interval = 10 * 60_000 };
         _weatherTimer.Tick += async (_, _) => await RefreshWeatherAsync();
@@ -615,6 +617,31 @@ sealed class ZmkAppContext : ApplicationContext
         if (dlg.ShowDialog() != DialogResult.OK) return;
         _settings.CustomTokens = dlg.Tokens.ToList();
         _settings.Save();
+    }
+
+    // manual=false (startup): stays quiet if this version was already shown
+    // once (UpdateCheckDismissedVersion), and says nothing at all if already
+    // current, no point announcing "you're up to date" unprompted every
+    // launch. manual=true (tray menu): always shows something, either the
+    // update balloon (bypassing the "already shown" gate, the user is
+    // explicitly asking right now) or an explicit "up to date" balloon.
+    private async Task CheckForUpdatesAsync(bool manual)
+    {
+        var update = await UpdateChecker.CheckAsync();
+
+        if (update is not { } info)
+        {
+            if (manual)
+                _tray.ShowBalloonTip(3000, "ZMK Companion", Strings.UpToDateBalloon, ToolTipIcon.Info);
+            return;
+        }
+
+        if (manual || _settings.UpdateCheckDismissedVersion != info.Version)
+        {
+            _settings.UpdateCheckDismissedVersion = info.Version;
+            _settings.Save();
+            _tray.ShowUpdateAvailable(info.Version, info.Url);
+        }
     }
 
     // Bundles settings.json + every Library preset + the recommended

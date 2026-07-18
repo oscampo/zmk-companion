@@ -64,6 +64,12 @@ sealed class AppSettings
     // that version; nothing enforces it today.
     public string WelcomeDismissedVersion { get; set; } = "";
 
+    // UpdateChecker: the latest GitHub release version the user has already
+    // been notified about (automatically, on startup). Once shown, the
+    // automatic check stays quiet about that same version, a manual "Check
+    // for updates…" always shows something regardless of this field.
+    public string UpdateCheckDismissedVersion { get; set; } = "";
+
     // Weather data source — city names for API queries, up to 4 (see
     // CellGridEditorForm's Weather tab, which enforces the cap). Empty list =
     // single IP-geolocated city (blank = auto-detect, same as before this was

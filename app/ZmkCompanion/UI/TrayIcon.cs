@@ -26,12 +26,18 @@ sealed class TrayIcon : IDisposable
     public event Action? HelpRequested;
     public event Action? ExportSettingsRequested;
     public event Action? ImportSettingsRequested;
+    public event Action? CheckUpdatesRequested;
 
     // Controlled by AppContext: reflects whether any page has a Pomodoro widget.
     public bool HasPomodoroWidget { get; set; }
 
     private bool    _pomodoroRunning;
     private string? _pomodoroLabel;   // null = not running; non-null = displayed in menu item
+
+    // Set only by ShowUpdateAvailable, cleared by any other balloon (see
+    // ShowBalloonTip/ShowError below) so a click always opens whatever
+    // balloon is actually on screen, not a stale update link from earlier.
+    private string? _pendingUpdateUrl;
 
     public TrayIcon(BleService ble)
     {
@@ -44,6 +50,7 @@ sealed class TrayIcon : IDisposable
             Icon    = MakeIcon(Color.OrangeRed),
         };
         _notify.ContextMenuStrip = BuildMenu();
+        _notify.BalloonTipClicked += OnBalloonTipClicked;
         Strings.LanguageChanged += RebuildMenu;
     }
 
@@ -60,14 +67,38 @@ sealed class TrayIcon : IDisposable
 
     // ── Connection state ──────────────────────────────────────────────────────
 
-    public void ShowBalloonTip(int ms, string title, string text, ToolTipIcon icon) =>
+    public void ShowBalloonTip(int ms, string title, string text, ToolTipIcon icon)
+    {
+        _pendingUpdateUrl = null;
         _notify.ShowBalloonTip(ms, title, text, icon);
+    }
 
-    public void ShowError(string title, string message) =>
+    public void ShowError(string title, string message)
+    {
+        _pendingUpdateUrl = null;
         _notify.ShowBalloonTip(5000, title, message, ToolTipIcon.Error);
+    }
+
+    // UpdateChecker found a newer release. Clicking the balloon opens it in
+    // the browser; letting it time out unclicked is fine too, it just won't
+    // open anything (AppContext already recorded this version as "shown").
+    public void ShowUpdateAvailable(string version, string url)
+    {
+        _pendingUpdateUrl = url;
+        _notify.ShowBalloonTip(8000, "ZMK Companion", Strings.UpdateAvailableBalloon(version), ToolTipIcon.Info);
+    }
+
+    private void OnBalloonTipClicked(object? sender, EventArgs e)
+    {
+        if (_pendingUpdateUrl is not { } url) return;
+        _pendingUpdateUrl = null;
+        try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); }
+        catch { /* best effort - worst case the user opens the releases page manually */ }
+    }
 
     public void SetConnected(string deviceName)
     {
+        _pendingUpdateUrl = null;
         _notify.Icon = MakeIcon(Color.LimeGreen);
         _notify.Text = Strings.ConnectedTo(deviceName);
         _notify.ShowBalloonTip(2000, "ZMK Companion", Strings.ConnectedBalloon(deviceName), ToolTipIcon.Info);
@@ -76,6 +107,7 @@ sealed class TrayIcon : IDisposable
 
     public void SetDisconnected()
     {
+        _pendingUpdateUrl = null;
         _notify.Icon = MakeIcon(Color.OrangeRed);
         _notify.Text = Strings.DisconnectedTray;
         _notify.ShowBalloonTip(2000, "ZMK Companion", Strings.KeyboardDisconnected, ToolTipIcon.Warning);
@@ -152,6 +184,8 @@ sealed class TrayIcon : IDisposable
 
         strip.Items.Add(new ToolStripMenuItem(Strings.DebugLogMenu, null, (_, _) => OnDebugLog()));
         strip.Items.Add(new ToolStripMenuItem(Strings.HelpMenu, null, (_, _) => HelpRequested?.Invoke()));
+        strip.Items.Add(new ToolStripMenuItem(Strings.CheckUpdatesMenu, null,
+            (_, _) => CheckUpdatesRequested?.Invoke()));
         strip.Items.Add(new ToolStripMenuItem(Strings.AboutMenu, null, (_, _) => OnAbout()));
         strip.Items.Add(new ToolStripMenuItem(Strings.ExitMenu, null, (_, _) => ExitRequested?.Invoke()));
     }
@@ -210,6 +244,7 @@ sealed class TrayIcon : IDisposable
     public void Dispose()
     {
         Strings.LanguageChanged -= RebuildMenu;
+        _notify.BalloonTipClicked -= OnBalloonTipClicked;
         _notify.Visible = false;
         _notify.Dispose();
     }

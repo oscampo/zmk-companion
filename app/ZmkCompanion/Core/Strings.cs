@@ -219,6 +219,13 @@ static class Strings
     public static string SettingsIoError(string message) => Current == AppLanguage.Es
         ? $"Ocurrió un error: {message}"
         : $"Something went wrong: {message}";
+    public static string CheckUpdatesMenu => Current == AppLanguage.Es ? "Buscar actualizaciones…" : "Check for updates…";
+    public static string UpdateAvailableBalloon(string version) => Current == AppLanguage.Es
+        ? $"Versión {version} disponible, haz clic para descargarla."
+        : $"Version {version} available, click to download.";
+    public static string UpToDateBalloon => Current == AppLanguage.Es
+        ? "Ya tienes la última versión."
+        : "You're already on the latest version.";
     public static string DebugLogMenu     => "Debug Log";
     public static string HelpMenu         => Current == AppLanguage.Es ? "Ayuda…" : "Help…";
     public static string AboutMenu        => Current == AppLanguage.Es ? "Acerca de…" : "About…";
