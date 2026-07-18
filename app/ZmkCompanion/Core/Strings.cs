@@ -199,6 +199,26 @@ static class Strings
     public static string PomodoroStop     => Current == AppLanguage.Es ? "Pomodoro — Detener" : "Pomodoro — Stop";
     public static string PomodoroStart    => Current == AppLanguage.Es ? "Pomodoro — Iniciar" : "Pomodoro — Start";
     public static string PomodoroConfigMenu => Current == AppLanguage.Es ? "Configurar Pomodoro…" : "Configure Pomodoro…";
+    public static string ExportSettingsMenu => Current == AppLanguage.Es ? "Exportar configuración…" : "Export settings…";
+    public static string ImportSettingsMenu => Current == AppLanguage.Es ? "Importar configuración…" : "Import settings…";
+    public static string ExportSettingsDialogTitle => Current == AppLanguage.Es ? "Exportar configuración" : "Export settings";
+    public static string ImportSettingsDialogTitle => Current == AppLanguage.Es ? "Importar configuración" : "Import settings";
+    public static string ExportSettingsDefaultName => "ZmkCompanion-settings";
+    public static string ImportSettingsConfirm => Current == AppLanguage.Es
+        ? "Esto reemplaza tu configuración actual (settings.json), y agrega/reemplaza los presets de Library y los scripts de Auto-start con los del archivo importado. ¿Continuar?"
+        : "This replaces your current configuration (settings.json), and adds/overwrites Library presets and Auto-start scripts with the ones from the imported file. Continue?";
+    public static string ExportSettingsDone(string path) => Current == AppLanguage.Es
+        ? $"Configuración exportada a:\n{path}"
+        : $"Settings exported to:\n{path}";
+    public static string ImportSettingsDone => Current == AppLanguage.Es
+        ? "Configuración importada. Reinicia ZMK Companion para aplicar los cambios."
+        : "Settings imported. Restart ZMK Companion to apply the changes.";
+    public static string ExportSettingsPortabilityWarning(string names) => Current == AppLanguage.Es
+        ? $"Estos scripts de Auto-start no parecen vivir en la carpeta \"scripts\" recomendada, es posible que no funcionen en otra máquina tras importar:\n{names}"
+        : $"These Auto-start scripts don't look like they live in the recommended \"scripts\" folder, they may not work on another machine after importing:\n{names}";
+    public static string SettingsIoError(string message) => Current == AppLanguage.Es
+        ? $"Ocurrió un error: {message}"
+        : $"Something went wrong: {message}";
     public static string DebugLogMenu     => "Debug Log";
     public static string HelpMenu         => Current == AppLanguage.Es ? "Ayuda…" : "Help…";
     public static string AboutMenu        => Current == AppLanguage.Es ? "Acerca de…" : "About…";

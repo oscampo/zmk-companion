@@ -142,7 +142,10 @@ it stays in sync with the app automatically. Broad categories:
 
 ### Data source tabs (bottom-left)
 
-- **Library**: save/load/delete whole page sets as named presets.
+- **Library**: save/load/delete whole page sets, including their Auto-start
+  scripts, as named presets (a "Sports" Canvas with its own scripts, an
+  "Economics" one with different ones, etc.), see
+  [Running your scripts automatically](#running-your-scripts-automatically).
 - **Time Zone**: pick additional IANA time zones to make available as
   `{time:ID}`/`{date:ID}` tokens.
 - **Weather**: add up to 4 cities, and choose °C/°F.
@@ -239,6 +242,37 @@ your next login. Each entry runs as its own independent process (one
 script hanging doesn't block the others). Use "Ejecutar ahora" / "Run now"
 to trigger all enabled entries immediately, without restarting the app,
 useful right after adding or editing one.
+
+**Keep your scripts in `%LOCALAPPDATA%\ZmkCompanion\scripts\`**: reference
+them from a Command with a relative path (`powershell -File
+scripts\my_script.ps1 | zkc -w`), not an absolute one elsewhere on disk.
+This is where a fresh install's own demo script already lives, and it's
+what makes [exporting your settings](#backing-up--moving-your-setup)
+actually portable, a script outside that folder can't be detected and
+bundled automatically.
+
+**Auto-start is tied to whichever Canvas (Library preset) is loaded**:
+each preset saved in the Library tab carries its own Auto-start entries
+along with its pages. Clicking **Load** on a different preset stops every
+script the previous one had running and starts only the ones checked in
+the one you just loaded, so a "Sports" Canvas only ever shows sports data,
+an "Economics" one only economic data, even if both happen to feed the
+same token. The per-entry checkboxes still work exactly as before, "Load"
+just applies them immediately instead of waiting for the window's
+**Apply** button.
+
+### Backing up / moving your setup
+
+Right-click the tray icon → **Export settings…** bundles `settings.json`,
+every Library preset, and everything in your `scripts\` folder into one
+`.zip`. **Import settings…** does the reverse on another machine (work vs.
+home PC, say): it overwrites `settings.json`, and adds/overwrites Library
+presets and scripts without touching anything else already there. Restart
+the app after importing.
+
+If an enabled Auto-start entry's command doesn't look like it points into
+`scripts\`, export warns you it may not survive the move, it still exports,
+just flags what to double-check.
 
 ## Troubleshooting
 

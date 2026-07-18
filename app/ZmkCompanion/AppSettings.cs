@@ -11,6 +11,18 @@ sealed class AppSettings
         "ZmkCompanion",
         "settings.json");
 
+    // Shared with CellGridEditorForm (Library tab) and the tray's Export/Import
+    // Settings feature, single source of truth for where each piece lives.
+    public static string SettingsPath => _path;
+    public static string LibraryDir => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "ZmkCompanion", "library");
+    // Where Auto-start scripts are recommended to live (see docs): next to
+    // the app's own exes, in their own subfolder so "export my settings" can
+    // just zip this directory instead of parsing arbitrary Command strings
+    // for file paths.
+    public static string ScriptsDir => Path.Combine(AppContext.BaseDirectory, "scripts");
+
     private static readonly JsonSerializerOptions _json = new()
     {
         WriteIndented = true,

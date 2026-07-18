@@ -499,7 +499,7 @@
   "AutoStartEntries": [
     {
       "Name": "Data from APIs",
-      "Command": "powershell -File api_ticker.ps1 | zkc --watch",
+      "Command": "powershell -File scripts\\api_ticker.ps1 | zkc --watch",
       "Enabled": true
     }
   ],

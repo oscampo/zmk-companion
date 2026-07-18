@@ -496,7 +496,13 @@
   "PomodoroBreakIcon": "",
   "PomodoroLongIcon": "",
   "CliLastCommand": "",
-  "AutoStartEntries": [],
+  "AutoStartEntries": [
+    {
+      "Name": "Data from APIs",
+      "Command": "powershell -File scripts\\api_ticker.ps1 | zkc --watch",
+      "Enabled": true
+    }
+  ],
   "WelcomeDismissedVersion": "",
   "WeatherCities": [],
   "WeatherUnit": "celsius",
