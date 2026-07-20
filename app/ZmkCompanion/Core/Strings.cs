@@ -134,7 +134,7 @@ static class Strings
     public static string AutoStartNameRequired => Current == AppLanguage.Es
         ? "Ponle un nombre a la entrada." : "Give the entry a name.";
     public static string DefaultPageName(int n) => Current == AppLanguage.Es ? $"Página {n}" : $"Page {n}";
-    public static string TeamPlaceholder   => Current == AppLanguage.Es ? "equipo" : "team";
+    public static string TeamPlaceholder   => "GB,KC"; // team abbreviations aren't translated
     public static string QueryingWeather   => Current == AppLanguage.Es ? "consultando…" : "querying…";
     public static string WeatherHttpError(int code) => Current == AppLanguage.Es
         ? $"HTTP {code} — red/proxy" : $"HTTP {code} — network/proxy";

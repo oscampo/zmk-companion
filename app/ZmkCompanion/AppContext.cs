@@ -356,30 +356,48 @@ sealed class ZmkAppContext : ApplicationContext
         {
             try
             {
-                string team = _settings.SportsTeams.TryGetValue(lg.EspnPath, out var t) ? t : "";
-                var live = await SportsFeature.FetchLiveAsync(lg, team);
-                var next = await SportsFeature.FetchScheduleAsync(lg, team);
-                var last = await SportsFeature.FetchResultsAsync(lg, team);
+                // "GB,KC" → independent per-team feeds, plus the league-wide (unfiltered) feed
+                // under target "". One paginated walk per league resolves every target together
+                // (see SportsFeature.FetchWeekBasedMultiAsync) instead of one walk per team.
+                string teamsCsv = _settings.SportsTeams.TryGetValue(lg.EspnPath, out var t) ? t : "";
+                var teams = teamsCsv
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(x => x.ToUpper())
+                    .Distinct()
+                    .ToList();
 
-                // Primary: live > next scheduled > last result.
-                SportsGame? primary = live.Count > 0 ? live[0] : next.Count > 0 ? next[0] : last.Count > 0 ? last[0] : null;
-                var snap     = BuildSportsSnapshot(lg, primary,                          team);
-                var snapNext = BuildSportsSnapshot(lg, next.Count > 0 ? next[0] : null, team);
-                var snapLast = BuildSportsSnapshot(lg, last.Count > 0 ? last[0] : null, team);
+                var live = await SportsFeature.FetchLiveMultiAsync(lg, teams);
+                var next = await SportsFeature.FetchScheduleMultiAsync(lg, teams);
+                var last = await SportsFeature.FetchResultsMultiAsync(lg, teams);
 
-                _liveState.UpdateSports(lg.ShortName,           snap);
-                _liveState.UpdateSports(lg.ShortName + "_next", snapNext);
-                _liveState.UpdateSports(lg.ShortName + "_last", snapLast);
-
-                // Always update "default*" for the first league so switching leagues
-                // never leaves stale data from the previous league in the live state.
-                if (first)
+                foreach (var target in new[] { "" }.Concat(teams))
                 {
-                    _liveState.UpdateSports("default",      snap);
-                    _liveState.UpdateSports("default_next", snapNext);
-                    _liveState.UpdateSports("default_last", snapLast);
-                    first = false;
+                    // Primary: live > next scheduled > last result.
+                    SportsGame? primary = live.GetValueOrDefault(target)
+                        ?? next.GetValueOrDefault(target)
+                        ?? last.GetValueOrDefault(target);
+
+                    var snap     = BuildSportsSnapshot(lg, primary,                        target);
+                    var snapNext = BuildSportsSnapshot(lg, next.GetValueOrDefault(target), target);
+                    var snapLast = BuildSportsSnapshot(lg, last.GetValueOrDefault(target), target);
+
+                    // "" → {sports.*:NFL} (league-wide). "GB" → {sports.*:NFL.GB} (team-specific).
+                    string key = target.Length == 0 ? lg.ShortName : $"{lg.ShortName}.{target}";
+                    _liveState.UpdateSports(key,           snap);
+                    _liveState.UpdateSports(key + "_next", snapNext);
+                    _liveState.UpdateSports(key + "_last", snapLast);
+
+                    // "default*" mirrors the first league's unfiltered (league-wide) feed, so an
+                    // unqualified {sports.*} token means exactly the same thing as {sports.*:<liga>}
+                    // for the first configured league.
+                    if (first && target.Length == 0)
+                    {
+                        _liveState.UpdateSports("default",      snap);
+                        _liveState.UpdateSports("default_next", snapNext);
+                        _liveState.UpdateSports("default_last", snapLast);
+                    }
                 }
+                first = false;
             }
             catch { }
         }

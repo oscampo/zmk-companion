@@ -832,11 +832,22 @@ sealed class CellGridEditorForm : Form
             ("Next time",            "{sports.next_gametime}"),
         };
 
-        if (_editLeagues.Count > 1)
+        foreach (var path in _editLeagues)
         {
-            foreach (var path in _editLeagues)
+            var lg = SportsFeature.FindOrCreate(path);
+            string teamsCsv = _teamBoxes.TryGetValue(path, out var tb) ? tb.Text.Trim()
+                            : _settings.SportsTeams.TryGetValue(path, out var e) ? e : "";
+            var teams = teamsCsv
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(x => x.ToUpper())
+                .Distinct()
+                .ToList();
+
+            // League-qualified, unfiltered tokens: needed to tell this league apart from others,
+            // or (once favorite teams are set below) to tell "the league in general" apart from
+            // "my team" for the SAME league.
+            if (_editLeagues.Count > 1 || teams.Count > 0)
             {
-                var lg = SportsFeature.FindOrCreate(path);
                 string q = ":" + lg.ShortName;
                 if (es)
                 {
@@ -857,6 +868,28 @@ sealed class CellGridEditorForm : Form
                     items.Add(($"[{lg.ShortName}] Next time",   $"{{sports.next_gametime{q}}}"));
                     items.Add(($"[{lg.ShortName}] League",      $"{{sports.league{q}}}"));
                     items.Add(($"[{lg.ShortName}] Team",        $"{{sports.team{q}}}"));
+                }
+            }
+
+            // Team-specific tokens: {sports.next_game:NFL.GB}, one set per favorite team.
+            foreach (var team in teams)
+            {
+                string q = $":{lg.ShortName}.{team}";
+                if (es)
+                {
+                    items.Add(($"[{lg.ShortName} {team}] Últ. partido",  $"{{sports.last_game{q}}}"));
+                    items.Add(($"[{lg.ShortName} {team}] Últ. marcador", $"{{sports.last_marker{q}}}"));
+                    items.Add(($"[{lg.ShortName} {team}] Próx. partido", $"{{sports.next_game{q}}}"));
+                    items.Add(($"[{lg.ShortName} {team}] Próx. fecha",   $"{{sports.next_date{q}}}"));
+                    items.Add(($"[{lg.ShortName} {team}] Próx. hora",    $"{{sports.next_gametime{q}}}"));
+                }
+                else
+                {
+                    items.Add(($"[{lg.ShortName} {team}] Last game",  $"{{sports.last_game{q}}}"));
+                    items.Add(($"[{lg.ShortName} {team}] Last score", $"{{sports.last_marker{q}}}"));
+                    items.Add(($"[{lg.ShortName} {team}] Next game",  $"{{sports.next_game{q}}}"));
+                    items.Add(($"[{lg.ShortName} {team}] Next date",  $"{{sports.next_date{q}}}"));
+                    items.Add(($"[{lg.ShortName} {team}] Next time",  $"{{sports.next_gametime{q}}}"));
                 }
             }
         }
@@ -906,8 +939,8 @@ sealed class CellGridEditorForm : Form
         _teamsPanel.Controls.Clear();
 
         int col = 0, row = 0;
-        const int slotW = 130, rowH = 28;
-        const int colsPerRow = 3;
+        const int slotW = 160, rowH = 28;
+        const int colsPerRow = 2;
 
         foreach (var path in _editLeagues)
         {
@@ -919,7 +952,9 @@ sealed class CellGridEditorForm : Form
             int py = row * rowH;
 
             var lbl = new Label { Text = lg.ShortName + ":", Location = new Point(px, py + 4), Size = new Size(54, 18), AutoSize = false };
-            var tb  = new TextBox { Text = team, Location = new Point(px + 56, py), Size = new Size(68, 22), PlaceholderText = Strings.TeamPlaceholder };
+            // Comma-separated list of team abbreviations (e.g. "GB,KC"): each gets its own
+            // {sports.*:<liga>.<equipo>} token, independent of the league-wide {sports.*:<liga>}.
+            var tb  = new TextBox { Text = team, Location = new Point(px + 56, py), Size = new Size(98, 22), PlaceholderText = Strings.TeamPlaceholder };
             _teamBoxes[path] = tb;
             _teamsPanel.Controls.AddRange([lbl, tb]);
 

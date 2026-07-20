@@ -78,115 +78,126 @@ public sealed class SportsFeature
         return new SportsLeague(espnPath, slug, slug, sk, WeekBased: sk == SportKind.Football && slug == "nfl");
     }
 
-    // Fetches games currently in progress for a league (no week/day walking needed).
-    public static async Task<List<SportsGame>> FetchLiveAsync(SportsLeague league, string teamFilter = "")
+    // Fetches games currently in progress for a league, resolving the league-wide primary game
+    // ("" key) and each team's game in the SAME response — live games need no page walking, so
+    // there is no per-target cost to avoid here.
+    public static async Task<Dictionary<string, SportsGame?>> FetchLiveMultiAsync(SportsLeague league, IReadOnlyList<string> teams)
     {
         string url  = $"{BaseUrl}/{league.EspnPath}/scoreboard?limit=100";
         var    data = await GetJsonAsync(url);
-        if (data is null) return [];
-        return ParseGames(data, league, teamFilter).Where(g => g.StatusState == "in").ToList();
+        var live = data is null ? [] : ParseGames(data, league).Where(g => g.StatusState == "in").ToList();
+        return ResolveTargets(live, teams);
     }
 
-    // Fetches the most recent completed games for a league (optionally filtered by team abbreviation).
-    public static Task<List<SportsGame>> FetchResultsAsync(SportsLeague league, string teamFilter = "") =>
+    // Fetches the most recent completed game for a league ("" key) and for each team, walking
+    // weeks/dates backward. All targets share the same page walk (see FetchWeekBasedMultiAsync).
+    public static Task<Dictionary<string, SportsGame?>> FetchResultsMultiAsync(SportsLeague league, IReadOnlyList<string> teams) =>
         league.WeekBased
-            ? FetchResultsWeekBasedAsync(league, teamFilter)
-            : FetchResultsCalendarAsync(league, teamFilter);
+            ? FetchWeekBasedMultiAsync(league, teams, wantState: "post", forward: false)
+            : FetchCalendarMultiAsync(league, teams, wantState: "post", forward: false);
 
-    // Fetches next upcoming games for a league (optionally filtered by team abbreviation).
-    public static Task<List<SportsGame>> FetchScheduleAsync(SportsLeague league, string teamFilter = "") =>
+    // Fetches the next upcoming game for a league ("" key) and for each team, walking weeks/dates
+    // forward. All targets share the same page walk (see FetchWeekBasedMultiAsync).
+    public static Task<Dictionary<string, SportsGame?>> FetchScheduleMultiAsync(SportsLeague league, IReadOnlyList<string> teams) =>
         league.WeekBased
-            ? FetchScheduleWeekBasedAsync(league, teamFilter)
-            : FetchScheduleCalendarAsync(league, teamFilter);
+            ? FetchWeekBasedMultiAsync(league, teams, wantState: "pre", forward: true)
+            : FetchCalendarMultiAsync(league, teams, wantState: "pre", forward: true);
+
+    private static Dictionary<string, SportsGame?> ResolveTargets(List<SportsGame> games, IReadOnlyList<string> teams)
+    {
+        var result = new Dictionary<string, SportsGame?> { [""] = games.FirstOrDefault() };
+        foreach (var t in teams.Select(t => t.ToUpper()).Distinct())
+            result[t] = games.FirstOrDefault(g => g.Away == t || g.Home == t);
+        return result;
+    }
 
     // ── Week-based navigation (NFL) ───────────────────────────────────────────
 
-    private static async Task<List<SportsGame>> FetchResultsWeekBasedAsync(SportsLeague league, string teamFilter)
+    // Walks weeks one page at a time, resolving the league-wide game AND every team's game from
+    // the SAME fetched page. A team on a bye week only pushes the walk further for that team, not
+    // for the league or for other teams — network cost is bounded by the slowest target to
+    // resolve, not by (targets × steps).
+    private static async Task<Dictionary<string, SportsGame?>> FetchWeekBasedMultiAsync(
+        SportsLeague league, IReadOnlyList<string> teams, string wantState, bool forward)
     {
+        var targets = new List<string> { "" };
+        targets.AddRange(teams.Select(t => t.ToUpper()).Distinct());
+        var pending  = new HashSet<string>(targets);
+        var resolved = new Dictionary<string, SportsGame?>();
+
         string url  = $"{BaseUrl}/{league.EspnPath}/scoreboard?limit=100";
         var    data = await GetJsonAsync(url);
-        if (data is null) return [];
+        if (data is null)
+        {
+            foreach (var t in targets) resolved[t] = null;
+            return resolved;
+        }
 
-        int season     = data["season"]?["year"]?.GetValue<int>() ?? 2024;
-        int weekNum    = data["week"]?["number"]?.GetValue<int>() ?? 18;
-        int seasonType = data["season"]?["type"]?.GetValue<int>() ?? 2;
+        int season     = data["season"]?["year"]?.GetValue<int>()   ?? (forward ? 2025 : 2024);
+        int weekNum    = data["week"]?["number"]?.GetValue<int>()   ?? (forward ? 1    : 18);
+        int seasonType = data["season"]?["type"]?.GetValue<int>()   ?? 2;
 
-        for (int step = 0; step < 25; step++)
+        int maxSteps = forward ? 10 : 25;
+        for (int step = 0; step < maxSteps && pending.Count > 0; step++)
         {
             JsonObject? page;
             if (step == 0)
                 page = data;
             else
             {
-                int wk = weekNum - step, st = seasonType, yr = season;
-                if (wk < 1) { yr--; st = 3; wk = 5; }
+                int wk = forward ? weekNum + step : weekNum - step;
+                int st = seasonType, yr = season;
+                if (!forward && wk < 1) { yr--; st = 3; wk = 5; }
                 page = await GetJsonAsync($"{url}&season={yr}&seasontype={st}&week={wk}");
                 if (page is null) continue;
             }
 
-            var final = ParseGames(page, league, teamFilter).Where(g => g.StatusState == "post").ToList();
-            if (final.Count > 0) return final;
+            var matches = ParseGames(page, league).Where(g => g.StatusState == wantState).ToList();
+            if (matches.Count == 0) continue;
+
+            foreach (var target in pending.ToList())
+            {
+                var match = target.Length == 0 ? matches[0]
+                    : matches.FirstOrDefault(g => g.Away == target || g.Home == target);
+                if (match != null) { resolved[target] = match; pending.Remove(target); }
+            }
         }
-        return [];
-    }
-
-    private static async Task<List<SportsGame>> FetchScheduleWeekBasedAsync(SportsLeague league, string teamFilter)
-    {
-        string url  = $"{BaseUrl}/{league.EspnPath}/scoreboard?limit=100";
-        var    data = await GetJsonAsync(url);
-        if (data is null) return [];
-
-        int season     = data["season"]?["year"]?.GetValue<int>() ?? 2025;
-        int weekNum    = data["week"]?["number"]?.GetValue<int>() ?? 1;
-        int seasonType = data["season"]?["type"]?.GetValue<int>() ?? 2;
-
-        for (int step = 0; step < 10; step++)
-        {
-            var page = step == 0
-                ? data
-                : await GetJsonAsync($"{url}&season={season}&seasontype={seasonType}&week={weekNum + step}");
-            if (page is null) continue;
-
-            var pre = ParseGames(page, league, teamFilter).Where(g => g.StatusState == "pre").ToList();
-            if (pre.Count > 0) return pre;
-        }
-        return [];
+        foreach (var t in pending) resolved[t] = null; // exhausted the step budget unresolved
+        return resolved;
     }
 
     // ── Calendar-based navigation (soccer, NBA, NHL) ──────────────────────────
 
-    private static async Task<List<SportsGame>> FetchResultsCalendarAsync(SportsLeague league, string teamFilter)
+    // Same shared-walk approach as FetchWeekBasedMultiAsync, but stepping by date instead of week.
+    private static async Task<Dictionary<string, SportsGame?>> FetchCalendarMultiAsync(
+        SportsLeague league, IReadOnlyList<string> teams, string wantState, bool forward)
     {
+        var targets = new List<string> { "" };
+        targets.AddRange(teams.Select(t => t.ToUpper()).Distinct());
+        var pending  = new HashSet<string>(targets);
+        var resolved = new Dictionary<string, SportsGame?>();
+
         string url   = $"{BaseUrl}/{league.EspnPath}/scoreboard?limit=100";
         var    today = DateTime.UtcNow.Date;
 
-        for (int step = 0; step < 30; step++)
+        for (int step = 0; step < 30 && pending.Count > 0; step++)
         {
-            string date = today.AddDays(-step).ToString("yyyyMMdd");
+            string date = today.AddDays(forward ? step : -step).ToString("yyyyMMdd");
             var page = await GetJsonAsync($"{url}&dates={date}");
             if (page is null) continue;
 
-            var final = ParseGames(page, league, teamFilter).Where(g => g.StatusState == "post").ToList();
-            if (final.Count > 0) return final;
+            var matches = ParseGames(page, league).Where(g => g.StatusState == wantState).ToList();
+            if (matches.Count == 0) continue;
+
+            foreach (var target in pending.ToList())
+            {
+                var match = target.Length == 0 ? matches[0]
+                    : matches.FirstOrDefault(g => g.Away == target || g.Home == target);
+                if (match != null) { resolved[target] = match; pending.Remove(target); }
+            }
         }
-        return [];
-    }
-
-    private static async Task<List<SportsGame>> FetchScheduleCalendarAsync(SportsLeague league, string teamFilter)
-    {
-        string url   = $"{BaseUrl}/{league.EspnPath}/scoreboard?limit=100";
-        var    today = DateTime.UtcNow.Date;
-
-        for (int step = 0; step < 30; step++)
-        {
-            string date = today.AddDays(step).ToString("yyyyMMdd");
-            var page = await GetJsonAsync($"{url}&dates={date}");
-            if (page is null) continue;
-
-            var pre = ParseGames(page, league, teamFilter).Where(g => g.StatusState == "pre").ToList();
-            if (pre.Count > 0) return pre;
-        }
-        return [];
+        foreach (var t in pending) resolved[t] = null; // exhausted the step budget unresolved
+        return resolved;
     }
 
     // ── Formatting ────────────────────────────────────────────────────────────
@@ -296,7 +307,7 @@ public sealed class SportsFeature
 
     // ── Parsing ───────────────────────────────────────────────────────────────
 
-    private static List<SportsGame> ParseGames(JsonObject data, SportsLeague league, string teamFilter)
+    private static List<SportsGame> ParseGames(JsonObject data, SportsLeague league)
     {
         int weekNum = data["week"]?["number"]?.GetValue<int>() ?? 0;
         string week = weekNum > 0 ? $"Wk{weekNum}" : "";
@@ -350,15 +361,6 @@ public sealed class SportsFeature
                 LeagueShort = league.ShortName,
                 Sport = league.Sport,
             });
-        }
-
-        if (!string.IsNullOrWhiteSpace(teamFilter))
-        {
-            var teams = teamFilter
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(t => t.ToUpper())
-                .ToHashSet();
-            games = games.Where(g => teams.Contains(g.Away) || teams.Contains(g.Home)).ToList();
         }
         return games;
     }
