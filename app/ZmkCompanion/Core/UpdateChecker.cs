@@ -29,34 +29,32 @@ static class UpdateChecker
 
     public readonly record struct UpdateInfo(string Version, string Url);
 
-    // Returns the latest release if it's newer than the running build, null
-    // if already current OR the check failed for any reason (offline, a
-    // proxy blocking it, GitHub's rate limit, a malformed response). A
-    // failed check is never an error to surface to the user, it's just
-    // "nothing to report this time" - the same silent-fallback approach
-    // WeatherFeature/SportsFeature already use for their own network calls.
+    // Returns the latest release if it's newer than the running build, or
+    // null if already current. Deliberately does NOT swallow exceptions
+    // (offline, a proxy blocking it, GitHub's rate limit, a malformed
+    // response) the way WeatherFeature/SportsFeature's own network calls
+    // do - those features fail silently because there's always other
+    // content to show instead. Here, the caller needs to tell "checked,
+    // you're current" apart from "couldn't check at all", especially for
+    // the manual "Check for updates…" action, so this throws and leaves
+    // that distinction to the caller instead of collapsing both into null.
     public static async Task<UpdateInfo?> CheckAsync()
     {
-        try
-        {
-            var resp = await Http.GetAsync(ReleasesApiUrl);
-            if (!resp.IsSuccessStatusCode) return null;
+        var resp = await Http.GetAsync(ReleasesApiUrl);
+        resp.EnsureSuccessStatusCode();
 
-            var json = JsonNode.Parse(await resp.Content.ReadAsStringAsync());
-            string? tag = json?["tag_name"]?.GetValue<string>();
-            string? url = json?["html_url"]?.GetValue<string>();
-            if (string.IsNullOrEmpty(tag)) return null;
+        var json = JsonNode.Parse(await resp.Content.ReadAsStringAsync());
+        string? tag = json?["tag_name"]?.GetValue<string>();
+        string? url = json?["html_url"]?.GetValue<string>();
+        if (string.IsNullOrEmpty(tag))
+            throw new InvalidOperationException("GitHub release response had no tag_name.");
 
-            string versionPart = tag.StartsWith('v') ? tag[1..] : tag;
-            if (!Version.TryParse(versionPart, out var latest)) return null;
+        string versionPart = tag.StartsWith('v') ? tag[1..] : tag;
+        if (!Version.TryParse(versionPart, out var latest))
+            throw new InvalidOperationException($"Could not parse release tag as a version: '{tag}'.");
 
-            var current = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version
-                ?? new Version(0, 0, 0);
-            return latest > current ? new UpdateInfo(versionPart, url ?? ReleasesPageUrl) : null;
-        }
-        catch
-        {
-            return null;
-        }
+        var current = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version
+            ?? new Version(0, 0, 0);
+        return latest > current ? new UpdateInfo(versionPart, url ?? ReleasesPageUrl) : null;
     }
 }

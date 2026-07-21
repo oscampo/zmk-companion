@@ -220,12 +220,24 @@ static class Strings
         ? $"Ocurrió un error: {message}"
         : $"Something went wrong: {message}";
     public static string CheckUpdatesMenu => Current == AppLanguage.Es ? "Buscar actualizaciones…" : "Check for updates…";
+    // Automatic startup check: unobtrusive, balloon only.
     public static string UpdateAvailableBalloon(string version) => Current == AppLanguage.Es
         ? $"Versión {version} disponible, haz clic para descargarla."
         : $"Version {version} available, click to download.";
-    public static string UpToDateBalloon => Current == AppLanguage.Es
+    // Manual "Check for updates…": a MessageBox, not a balloon. A user who
+    // clicked and asked needs a guaranteed answer, not a Windows-notification
+    // banner that can go unnoticed (or, per real-world testing, not appear
+    // at all through some path we couldn't pin down) depending on the
+    // system's own notification settings.
+    public static string UpdateAvailableDialog(string version) => Current == AppLanguage.Es
+        ? $"Hay una versión nueva disponible: {version}.\n\n¿Abrir la página de descarga?"
+        : $"A new version is available: {version}.\n\nOpen the download page?";
+    public static string UpToDateDialog => Current == AppLanguage.Es
         ? "Ya tienes la última versión."
         : "You're already on the latest version.";
+    public static string UpdateCheckFailedDialog => Current == AppLanguage.Es
+        ? "No se pudo comprobar si hay actualizaciones (revisa tu conexión a internet)."
+        : "Couldn't check for updates (check your internet connection).";
     public static string DebugLogMenu     => "Debug Log";
     public static string HelpMenu         => Current == AppLanguage.Es ? "Ayuda…" : "Help…";
     public static string AboutMenu        => Current == AppLanguage.Es ? "Acerca de…" : "About…";

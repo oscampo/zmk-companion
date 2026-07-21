@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Windows.Forms;
 using ZmkCompanion.Core;
@@ -637,24 +638,52 @@ sealed class ZmkAppContext : ApplicationContext
         _settings.Save();
     }
 
-    // manual=false (startup): stays quiet if this version was already shown
-    // once (UpdateCheckDismissedVersion), and says nothing at all if already
-    // current, no point announcing "you're up to date" unprompted every
-    // launch. manual=true (tray menu): always shows something, either the
-    // update balloon (bypassing the "already shown" gate, the user is
-    // explicitly asking right now) or an explicit "up to date" balloon.
+    // manual=false (startup): silent balloon only, and only for an update the
+    // user hasn't already been shown (UpdateCheckDismissedVersion). If the
+    // check fails outright (offline, proxy, GitHub rate limit) it just says
+    // nothing, a background check has no one waiting on it. manual=true (tray
+    // menu "Check for updates…"): a MessageBox, not a balloon, always shows
+    // something, an update available (bypassing the "already shown" gate,
+    // asked for right now), up to date, or that the check itself failed.
+    // A user who clicked and asked needs a guaranteed answer either way, a
+    // balloon that silently doesn't render isn't one - confirmed on a real
+    // v1.0.1 install: Connect/Disconnect balloons showed fine, but "Check
+    // for updates…" produced nothing at all, the exact failure mode a
+    // MessageBox can't have.
     private async Task CheckForUpdatesAsync(bool manual)
     {
-        var update = await UpdateChecker.CheckAsync();
+        UpdateChecker.UpdateInfo? update;
+        try
+        {
+            update = await UpdateChecker.CheckAsync();
+        }
+        catch
+        {
+            if (manual)
+                MessageBox.Show(Strings.UpdateCheckFailedDialog, "ZMK Companion",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
 
         if (update is not { } info)
         {
             if (manual)
-                _tray.ShowBalloonTip(3000, "ZMK Companion", Strings.UpToDateBalloon, ToolTipIcon.Info);
+                MessageBox.Show(Strings.UpToDateDialog, "ZMK Companion",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
-        if (manual || _settings.UpdateCheckDismissedVersion != info.Version)
+        if (manual)
+        {
+            var result = MessageBox.Show(Strings.UpdateAvailableDialog(info.Version), "ZMK Companion",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+            if (result == DialogResult.Yes)
+                try { Process.Start(new ProcessStartInfo { FileName = info.Url, UseShellExecute = true }); }
+                catch { /* best effort - worst case the user opens the releases page manually */ }
+            _settings.UpdateCheckDismissedVersion = info.Version;
+            _settings.Save();
+        }
+        else if (_settings.UpdateCheckDismissedVersion != info.Version)
         {
             _settings.UpdateCheckDismissedVersion = info.Version;
             _settings.Save();
