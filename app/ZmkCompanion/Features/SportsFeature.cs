@@ -149,6 +149,24 @@ public sealed class SportsFeature
         // can't do that: an unscheduled period just comes back with zero events.
         var periods = ParseCalendarPeriods(data);
         int nowIndex = periods.FindIndex(p => DateTime.UtcNow >= p.Start && DateTime.UtcNow < p.End);
+
+        // "Now" falls before this season's own calendar even starts (the off-season gap between
+        // one season ending and the next one's preseason opening) - looking for the most recent
+        // COMPLETED game means crossing into the PRIOR season, which this response's calendar
+        // doesn't include at all. Pull that season's calendar via a known-completed week (safe:
+        // it's already-played, historical data, not the future/unpopulated period this whole
+        // date-based rewrite exists to work around).
+        if (nowIndex < 0 && !forward)
+        {
+            int priorYear = (data["season"]?["year"]?.GetValue<int>() ?? DateTime.UtcNow.Year) - 1;
+            var priorData = await GetJsonAsync($"{url}&season={priorYear}&seasontype=3&week=5");
+            var priorPeriods = priorData != null ? ParseCalendarPeriods(priorData) : [];
+            if (priorPeriods.Count > 0)
+            {
+                periods  = priorPeriods;
+                nowIndex = periods.Count; // one past the end: step 1 lands on the last (most recent) period
+            }
+        }
         if (nowIndex < 0) nowIndex = forward ? 0 : periods.Count - 1;
 
         int maxSteps = forward ? 10 : 25;
