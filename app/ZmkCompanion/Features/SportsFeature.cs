@@ -133,24 +133,34 @@ public sealed class SportsFeature
             return resolved;
         }
 
-        int season     = data["season"]?["year"]?.GetValue<int>()   ?? (forward ? 2025 : 2024);
-        int weekNum    = data["week"]?["number"]?.GetValue<int>()   ?? (forward ? 1    : 18);
-        int seasonType = data["season"]?["type"]?.GetValue<int>()   ?? 2;
+        var matches0 = ParseGames(data, league).Where(g => g.StatusState == wantState).ToList();
+        foreach (var target in pending.ToList())
+        {
+            var match = target.Length == 0 ? matches0.FirstOrDefault()
+                : matches0.FirstOrDefault(g => g.Away == target || g.Home == target);
+            if (match != null) { resolved[target] = match; pending.Remove(target); }
+        }
+
+        // Step through the league's own calendar periods (real dates), not "week=N" query
+        // params: confirmed on the live API that requesting an explicit season+seasontype+week
+        // combo ESPN hasn't populated yet (a future preseason week, say) silently returns a
+        // PAST season's completed games instead of an empty/future result, e.g. asking for
+        // 2026 preseason week 2 came back with 2025's already-played week 2. A "dates=" range
+        // can't do that: an unscheduled period just comes back with zero events.
+        var periods = ParseCalendarPeriods(data);
+        int nowIndex = periods.FindIndex(p => DateTime.UtcNow >= p.Start && DateTime.UtcNow < p.End);
+        if (nowIndex < 0) nowIndex = forward ? 0 : periods.Count - 1;
 
         int maxSteps = forward ? 10 : 25;
-        for (int step = 0; step < maxSteps && pending.Count > 0; step++)
+        for (int step = 1; step <= maxSteps && pending.Count > 0; step++)
         {
-            JsonObject? page;
-            if (step == 0)
-                page = data;
-            else
-            {
-                int wk = forward ? weekNum + step : weekNum - step;
-                int st = seasonType, yr = season;
-                if (!forward && wk < 1) { yr--; st = 3; wk = 5; }
-                page = await GetJsonAsync($"{url}&season={yr}&seasontype={st}&week={wk}");
-                if (page is null) continue;
-            }
+            int idx = forward ? nowIndex + step : nowIndex - step;
+            if (idx < 0 || idx >= periods.Count) break;
+
+            var period = periods[idx];
+            string range = $"{period.Start:yyyyMMdd}-{period.End.AddDays(-1):yyyyMMdd}";
+            var page = await GetJsonAsync($"{url}&dates={range}");
+            if (page is null) continue;
 
             var matches = ParseGames(page, league).Where(g => g.StatusState == wantState).ToList();
             if (matches.Count == 0) continue;
@@ -164,6 +174,36 @@ public sealed class SportsFeature
         }
         foreach (var t in pending) resolved[t] = null; // exhausted the step budget unresolved
         return resolved;
+    }
+
+    private readonly record struct CalendarPeriod(DateTime Start, DateTime End);
+
+    // Flattens the scoreboard response's own "calendar" block (preseason/regular/postseason
+    // weeks, each with real start/end dates) into a single chronological list, so the walk above
+    // can step by date instead of by a "week" number ESPN doesn't reliably honor for periods it
+    // hasn't populated yet.
+    private static List<CalendarPeriod> ParseCalendarPeriods(JsonObject data)
+    {
+        var periods  = new List<CalendarPeriod>();
+        var calendar = data["leagues"]?.AsArray().FirstOrDefault()?["calendar"]?.AsArray();
+        if (calendar is null) return periods;
+
+        foreach (var group in calendar)
+        {
+            var entries = group?["entries"]?.AsArray();
+            if (entries is null) continue;
+            foreach (var e in entries)
+            {
+                string? startS = e?["startDate"]?.GetValue<string>();
+                string? endS   = e?["endDate"]?.GetValue<string>();
+                if (DateTime.TryParse(startS, null, System.Globalization.DateTimeStyles.RoundtripKind, out var start) &&
+                    DateTime.TryParse(endS,   null, System.Globalization.DateTimeStyles.RoundtripKind, out var end))
+                {
+                    periods.Add(new CalendarPeriod(start, end));
+                }
+            }
+        }
+        return periods;
     }
 
     // ── Calendar-based navigation (soccer, NBA, NHL) ──────────────────────────
