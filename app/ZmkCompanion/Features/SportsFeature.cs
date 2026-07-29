@@ -149,6 +149,46 @@ public sealed class SportsFeature
         // can't do that: an unscheduled period just comes back with zero events.
         var periods = ParseCalendarPeriods(data);
         int nowIndex = periods.FindIndex(p => DateTime.UtcNow >= p.Start && DateTime.UtcNow < p.End);
+
+        // "Now" falls before this season's own calendar even starts (the off-season gap between
+        // one season ending and the next one's preseason opening) - looking for the most recent
+        // COMPLETED game means crossing into the PRIOR season. The scoreboard endpoint's
+        // "calendar" block always describes the CURRENT/upcoming season regardless of which
+        // season's games you actually query (confirmed: requesting season=2025&seasontype=3&
+        // week=5 correctly returned Super Bowl LX's game data, but its "calendar" block still
+        // described 2026), so it can't be used to derive the prior season's periods. Fall back
+        // to walking by season+seasontype+week directly instead - safe here, unlike the
+        // future-period case this date-based rewrite exists for, because this data already
+        // happened and is fully populated.
+        if (nowIndex < 0 && !forward)
+        {
+            int yr = (data["season"]?["year"]?.GetValue<int>() ?? DateTime.UtcNow.Year) - 1;
+            int st = 3, wk = 5; // Postseason week 5 = Super Bowl, walking backward from there.
+            for (int step = 0; step < 25 && pending.Count > 0; step++)
+            {
+                var page = await GetJsonAsync($"{url}&season={yr}&seasontype={st}&week={wk}");
+                if (page != null)
+                {
+                    var matches = ParseGames(page, league).Where(g => g.StatusState == wantState).ToList();
+                    foreach (var target in pending.ToList())
+                    {
+                        var match = target.Length == 0 ? matches.FirstOrDefault()
+                            : matches.FirstOrDefault(g => g.Away == target || g.Home == target);
+                        if (match != null) { resolved[target] = match; pending.Remove(target); }
+                    }
+                }
+
+                wk--;
+                if (wk < 1)
+                {
+                    st--;
+                    if (st < 1) { yr--; st = 3; wk = 5; }
+                    else wk = st == 2 ? 18 : 4;
+                }
+            }
+            foreach (var t in pending) resolved[t] = null;
+            return resolved;
+        }
         if (nowIndex < 0) nowIndex = forward ? 0 : periods.Count - 1;
 
         int maxSteps = forward ? 10 : 25;
