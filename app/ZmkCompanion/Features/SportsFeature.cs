@@ -150,17 +150,43 @@ public sealed class SportsFeature
         var periods = ParseCalendarPeriods(data);
         int nowIndex = periods.FindIndex(p => DateTime.UtcNow >= p.Start && DateTime.UtcNow < p.End);
 
-        // "Now" falls before this season's own calendar even starts (the off-season gap between
-        // one season ending and the next one's preseason opening) - looking for the most recent
-        // COMPLETED game means crossing into the PRIOR season. The scoreboard endpoint's
-        // "calendar" block always describes the CURRENT/upcoming season regardless of which
-        // season's games you actually query (confirmed: requesting season=2025&seasontype=3&
-        // week=5 correctly returned Super Bowl LX's game data, but its "calendar" block still
-        // described 2026), so it can't be used to derive the prior season's periods. Fall back
-        // to walking by season+seasontype+week directly instead - safe here, unlike the
-        // future-period case this date-based rewrite exists for, because this data already
-        // happened and is fully populated.
-        if (nowIndex < 0 && !forward)
+        if (nowIndex < 0) nowIndex = forward ? 0 : periods.Count - 1;
+
+        int maxSteps = forward ? 10 : 25;
+        for (int step = 1; step <= maxSteps && pending.Count > 0; step++)
+        {
+            int idx = forward ? nowIndex + step : nowIndex - step;
+            if (idx < 0 || idx >= periods.Count) break;
+
+            var period = periods[idx];
+            string range = $"{period.Start:yyyyMMdd}-{period.End.AddDays(-1):yyyyMMdd}";
+            var page = await GetJsonAsync($"{url}&dates={range}");
+            if (page is null) continue;
+
+            var matches = ParseGames(page, league).Where(g => g.StatusState == wantState).ToList();
+            if (matches.Count == 0) continue;
+
+            foreach (var target in pending.ToList())
+            {
+                var match = target.Length == 0 ? matches[0]
+                    : matches.FirstOrDefault(g => g.Away == target || g.Home == target);
+                if (match != null) { resolved[target] = match; pending.Remove(target); }
+            }
+        }
+
+        // Still looking for a completed game after walking this season's own calendar as far
+        // back as it goes: the most recent one is in the PRIOR season - whether because "now"
+        // fell before this season's calendar even starts (the off-season gap), or because we're
+        // early enough in an already-started season (team on a bye in weeks 1-2, say) that
+        // nothing in this season's calendar matched yet. The scoreboard endpoint's "calendar"
+        // block always describes the CURRENT/upcoming season regardless of which season's games
+        // you actually query (confirmed: requesting season=2025&seasontype=3&week=5 correctly
+        // returned Super Bowl LX's game data, but its own "calendar" block still described 2026),
+        // so it can't be used to derive the prior season's periods. Fall back to walking by
+        // season+seasontype+week directly instead - safe here, unlike the future-period case
+        // this date-based rewrite exists for, because this is already-completed, fully
+        // populated historical data.
+        if (!forward && pending.Count > 0)
         {
             int yr = (data["season"]?["year"]?.GetValue<int>() ?? DateTime.UtcNow.Year) - 1;
             int st = 3, wk = 5; // Postseason week 5 = Super Bowl, walking backward from there.
@@ -186,33 +212,9 @@ public sealed class SportsFeature
                     else wk = st == 2 ? 18 : 4;
                 }
             }
-            foreach (var t in pending) resolved[t] = null;
-            return resolved;
         }
-        if (nowIndex < 0) nowIndex = forward ? 0 : periods.Count - 1;
 
-        int maxSteps = forward ? 10 : 25;
-        for (int step = 1; step <= maxSteps && pending.Count > 0; step++)
-        {
-            int idx = forward ? nowIndex + step : nowIndex - step;
-            if (idx < 0 || idx >= periods.Count) break;
-
-            var period = periods[idx];
-            string range = $"{period.Start:yyyyMMdd}-{period.End.AddDays(-1):yyyyMMdd}";
-            var page = await GetJsonAsync($"{url}&dates={range}");
-            if (page is null) continue;
-
-            var matches = ParseGames(page, league).Where(g => g.StatusState == wantState).ToList();
-            if (matches.Count == 0) continue;
-
-            foreach (var target in pending.ToList())
-            {
-                var match = target.Length == 0 ? matches[0]
-                    : matches.FirstOrDefault(g => g.Away == target || g.Home == target);
-                if (match != null) { resolved[target] = match; pending.Remove(target); }
-            }
-        }
-        foreach (var t in pending) resolved[t] = null; // exhausted the step budget unresolved
+        foreach (var t in pending) resolved[t] = null; // exhausted every fallback unresolved
         return resolved;
     }
 

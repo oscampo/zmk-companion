@@ -242,6 +242,25 @@ sealed class ZmkAppContext : ApplicationContext
         _connectionWatchdog.Tick += (_, _) =>
         {
             bool healthy = _ble.IsConnected && _ble.HasCellGridChar;
+
+            // A long outage (keyboard taken out of range overnight, PC left running) has
+            // nothing left to gain from ticking the page cycle every few seconds - the
+            // compositor already stops sending on disconnect, this just stops the cycle
+            // from advancing _activePage in the background too. OnConnected's own
+            // RestartPageCycle() resumes it normally once reconnected, no extra state to
+            // restore here. Doesn't touch the actual reconnect congestion (that's the BLE
+            // stack settling after a resume/unlock, out of this app's control), only avoids
+            // pointless background work during a known-long disconnection.
+            if (!healthy && _pageCycleCts is not null &&
+                _ble.LastDisconnectAt is { } disconnectedSince &&
+                DateTime.Now - disconnectedSince > TimeSpan.FromMinutes(5))
+            {
+                DebugLog.Log("watchdog: disconnected >5min, pausing page cycle");
+                _pageCycleCts.Cancel();
+                _pageCycleCts.Dispose();
+                _pageCycleCts = null;
+            }
+
             if (healthy || _reconnecting || _manualDisconnect) return;
             DebugLog.Log($"watchdog: unhealthy link (IsConnected={_ble.IsConnected} HasCellGridChar={_ble.HasCellGridChar}) — forcing reconnect");
             _reconnecting = true;

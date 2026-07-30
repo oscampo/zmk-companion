@@ -188,9 +188,20 @@ sealed class CellGridCompositor : IDisposable
             var t = CellGridProtocol.Tiers[r.TierId];
             return ((byte)t.W, (byte)t.H, (byte)1);
         }).ToArray();
-        bool ok = await _ble.SendCellGridAsync(CellGridProtocol.BuildClear())
-               && await _ble.SendCellGridAsync(CellGridProtocol.BuildLayoutV2(layoutArgs));
-        DebugLog.Log($"CellGridCompositor: CLEAR+LAYOUT_v2 ok={ok} err={_ble.LastCellGridError ?? "(none)"}");
+
+        // Per-call timing, not just the combined "CLEAR+LAYOUT_v2 ok=" log below: a
+        // multi-second gap between LoadPage() and that combined log has been observed
+        // right after reconnecting, and with no timer on either individual write there
+        // was no way to tell whether CLEAR or LAYOUT (or both) is the slow one, only
+        // that the gap is somewhere inside these two awaits.
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        bool clearOk = await _ble.SendCellGridAsync(CellGridProtocol.BuildClear());
+        long clearMs = sw.ElapsedMilliseconds;
+        sw.Restart();
+        bool layoutOk = clearOk && await _ble.SendCellGridAsync(CellGridProtocol.BuildLayoutV2(layoutArgs));
+        long layoutMs = sw.ElapsedMilliseconds;
+        bool ok = clearOk && layoutOk;
+        DebugLog.Log($"CellGridCompositor: CLEAR+LAYOUT_v2 ok={ok} clearMs={clearMs} layoutMs={layoutMs} err={_ble.LastCellGridError ?? "(none)"}");
         if (!ok) return;
 
         await RenderAndSendAsync(full: true);
