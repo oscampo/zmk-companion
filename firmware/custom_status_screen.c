@@ -667,6 +667,60 @@ static void log_conn_params(struct bt_conn *conn, const char *why)
              info.le.latency, info.le.timeout * 10, tx_phy, rx_phy);
 }
 
+static const struct bt_le_conn_param low_latency_param =
+    BT_LE_CONN_PARAM_INIT(6, 12, 0, 400);
+
+/* Retry state for the low-latency request below, one slot per possible
+ * connection (peripheral link to the companion app, central link to the
+ * other half - both go through on_connected/on_le_param_updated here).
+ * Confirmed against a live app-side + firmware-side log capture: the
+ * request below is sent once on connect, and on the PC-facing link it can
+ * go completely unanswered (latency stays 30, no matching "params
+ * updated, ...latency=0" ever follows) for the entire session, no error
+ * is ever reported, Windows (or the link) just never applies it. The
+ * central-role link to the other half, by contrast, was seen confirming
+ * latency=0 within a fraction of a second every time. Retrying the same
+ * request periodically until it's confirmed converts an occasional
+ * silent failure into eventual success instead of a stall that can only
+ * be cleared by power-cycling the keyboard. */
+#define PARAM_RETRY_DELAY K_SECONDS(3)
+#define PARAM_RETRY_MAX   5
+
+struct param_retry_state {
+    struct bt_conn        *conn;
+    struct k_work_delayable work;
+    uint8_t                attempts;
+};
+
+static struct param_retry_state param_retries[CONFIG_BT_MAX_CONN];
+
+static void param_retry_work_handler(struct k_work *work)
+{
+    struct k_work_delayable  *dwork = k_work_delayable_from_work(work);
+    struct param_retry_state *state = CONTAINER_OF(dwork, struct param_retry_state, work);
+    if (!state->conn) return;
+
+    struct bt_conn_info info;
+    if (bt_conn_get_info(state->conn, &info) != 0 || info.type != BT_CONN_TYPE_LE ||
+        info.le.latency == 0) {
+        bt_conn_unref(state->conn);
+        state->conn = NULL;
+        return;
+    }
+    if (state->attempts >= PARAM_RETRY_MAX) {
+        LOG_WRN("kbd_display: low-latency param update still not applied after %u attempts, giving up",
+                state->attempts);
+        bt_conn_unref(state->conn);
+        state->conn = NULL;
+        return;
+    }
+    state->attempts++;
+    LOG_INF("kbd_display: retrying low-latency param update (attempt %u), still latency=%u",
+            state->attempts, info.le.latency);
+    bt_conn_le_param_update(state->conn, &low_latency_param);
+    k_work_schedule(dwork, PARAM_RETRY_DELAY);
+}
+
 static void on_connected(struct bt_conn *conn, uint8_t err)
 {
     if (err) return;
@@ -684,20 +738,51 @@ static void on_connected(struct bt_conn *conn, uint8_t err)
      * every interval instead of sleeping) for eliminating that stall
      * entirely. Interval range kept close to the observed 15ms so this
      * is purely a latency change, not an interval renegotiation. */
-    static const struct bt_le_conn_param low_latency_param =
-        BT_LE_CONN_PARAM_INIT(6, 12, 0, 400);
     bt_conn_le_param_update(conn, &low_latency_param);
+
+    uint8_t idx = bt_conn_index(conn);
+    struct param_retry_state *state = &param_retries[idx];
+    if (state->conn) {
+        bt_conn_unref(state->conn);
+    }
+    state->conn     = bt_conn_ref(conn);
+    state->attempts = 0;
+    k_work_init_delayable(&state->work, param_retry_work_handler);
+    k_work_schedule(&state->work, PARAM_RETRY_DELAY);
+}
+
+static void on_disconnected(struct bt_conn *conn, uint8_t reason)
+{
+    ARG_UNUSED(reason);
+    uint8_t idx = bt_conn_index(conn);
+    struct param_retry_state *state = &param_retries[idx];
+    if (state->conn == conn) {
+        k_work_cancel_delayable(&state->work);
+        bt_conn_unref(state->conn);
+        state->conn = NULL;
+    }
 }
 
 static void on_le_param_updated(struct bt_conn *conn, uint16_t interval,
                                 uint16_t latency, uint16_t timeout)
 {
-    ARG_UNUSED(latency); ARG_UNUSED(timeout);
+    ARG_UNUSED(timeout);
     log_conn_params(conn, "params updated,");
+
+    if (latency == 0) {
+        uint8_t idx = bt_conn_index(conn);
+        struct param_retry_state *state = &param_retries[idx];
+        if (state->conn == conn) {
+            k_work_cancel_delayable(&state->work);
+            bt_conn_unref(state->conn);
+            state->conn = NULL;
+        }
+    }
 }
 
 BT_CONN_CB_DEFINE(kbd_display_conn_cb) = {
     .connected        = on_connected,
+    .disconnected     = on_disconnected,
     .le_param_updated = on_le_param_updated,
 };
 
