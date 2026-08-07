@@ -47,6 +47,19 @@ public sealed class SportsFeature
         client.DefaultRequestHeaders.UserAgent.ParseAdd(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        // 2026-08-07: UA alone didn't clear the 403 (confirmed against the live
+        // API), so rounding out the rest of what a real Chrome navigation sends.
+        // Browser confirmed to reach this same endpoint fine on the same
+        // machine/network, so whatever's filtering the app's request is
+        // header-based (or TLS-fingerprint-based, in which case none of this
+        // helps, see the comment on Http above).
+        client.DefaultRequestHeaders.Accept.ParseAdd("application/json, text/plain, */*");
+        client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-US,en;q=0.9");
+        client.DefaultRequestHeaders.Add("Sec-Fetch-Site", "same-site");
+        client.DefaultRequestHeaders.Add("Sec-Fetch-Mode", "cors");
+        client.DefaultRequestHeaders.Add("Sec-Fetch-Dest", "empty");
+        client.DefaultRequestHeaders.Referrer = new Uri("https://www.espn.com/");
+        client.DefaultRequestHeaders.Add("Origin", "https://www.espn.com");
         return client;
     }
 
