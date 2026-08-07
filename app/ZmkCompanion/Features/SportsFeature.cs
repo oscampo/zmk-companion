@@ -149,6 +149,10 @@ public sealed class SportsFeature
         // can't do that: an unscheduled period just comes back with zero events.
         var periods = ParseCalendarPeriods(data);
         int nowIndex = periods.FindIndex(p => DateTime.UtcNow >= p.Start && DateTime.UtcNow < p.End);
+        DebugLog.Log($"sports[{league.ShortName}] wantState={wantState} forward={forward} " +
+            $"season={data["season"]?["year"]?.GetValue<int>()} periods={periods.Count} nowIndex={nowIndex} " +
+            $"matches0={matches0.Count} pendingAfterInitial={pending.Count}" +
+            (periods.Count > 0 ? $" firstPeriod={periods[0].Start:yyyy-MM-dd}..{periods[0].End:yyyy-MM-dd} lastPeriod={periods[^1].Start:yyyy-MM-dd}..{periods[^1].End:yyyy-MM-dd}" : ""));
 
         if (nowIndex < 0) nowIndex = forward ? 0 : periods.Count - 1;
 
@@ -164,6 +168,7 @@ public sealed class SportsFeature
             if (page is null) continue;
 
             var matches = ParseGames(page, league).Where(g => g.StatusState == wantState).ToList();
+            DebugLog.Log($"sports[{league.ShortName}] step={step} idx={idx} range={range} matches={matches.Count}");
             if (matches.Count == 0) continue;
 
             foreach (var target in pending.ToList())
@@ -214,6 +219,8 @@ public sealed class SportsFeature
             }
         }
 
+        if (pending.Count > 0)
+            DebugLog.Log($"sports[{league.ShortName}] wantState={wantState} forward={forward} unresolved: {string.Join(",", pending)}");
         foreach (var t in pending) resolved[t] = null; // exhausted every fallback unresolved
         return resolved;
     }
