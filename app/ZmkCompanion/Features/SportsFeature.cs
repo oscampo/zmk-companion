@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using ZmkCompanion.Core;
@@ -33,33 +34,29 @@ public sealed class SportsFeature
     private const char   IconBolt   = ''; // nf-fa-bolt
 
     // 2026-08-06: site.api.espn.com started returning 403 Forbidden on every
-    // request from this app (confirmed via GetJsonAsync's error logging, not
-    // a code bug in the season/week walk below, it never got that far). The
-    // default HttpClient sends no User-Agent at all; ESPN's undocumented site
-    // API rejecting UA-less requests as bot traffic is the most common cause
-    // of this exact failure mode elsewhere, worth trying before assuming
-    // anything more exotic (IP block, rate limit).
+    // request from this app. Confirmed step by step against the live API
+    // (not from this dev environment, which can't reach espn.com at all):
+    // a fake-Chrome User-Agent alone didn't clear it, a full set of
+    // browser-shaped headers (Accept-Language, Sec-Fetch-*, Referer, Origin)
+    // didn't either, but `curl.exe` from the same machine with NO headers
+    // beyond its own default User-Agent got a clean 200. The one structural
+    // difference in curl's own trace: `ALPN: curl offers http/1.1` - it never
+    // even offers HTTP/2. HttpClient negotiates HTTP/2 by default whenever
+    // the server advertises it, and Akamai-style bot detection (ESPN's likely
+    // WAF) fingerprints HTTP/2 connections (SETTINGS/window-size/frame
+    // ordering) far more aggressively than HTTP/1.1, which is consistent with
+    // headers being irrelevant here, the block happens at the protocol
+    // negotiation, before any header is read. Pinning to HTTP/1.1 (matching
+    // curl) instead of continuing to disguise the request as a browser.
     private static readonly HttpClient Http = CreateHttpClient();
 
     private static HttpClient CreateHttpClient()
     {
         var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-        // 2026-08-07: UA alone didn't clear the 403 (confirmed against the live
-        // API), so rounding out the rest of what a real Chrome navigation sends.
-        // Browser confirmed to reach this same endpoint fine on the same
-        // machine/network, so whatever's filtering the app's request is
-        // header-based (or TLS-fingerprint-based, in which case none of this
-        // helps, see the comment on Http above).
-        client.DefaultRequestHeaders.Accept.ParseAdd("application/json, text/plain, */*");
-        client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-US,en;q=0.9");
-        client.DefaultRequestHeaders.Add("Sec-Fetch-Site", "same-site");
-        client.DefaultRequestHeaders.Add("Sec-Fetch-Mode", "cors");
-        client.DefaultRequestHeaders.Add("Sec-Fetch-Dest", "empty");
-        client.DefaultRequestHeaders.Referrer = new Uri("https://www.espn.com/");
-        client.DefaultRequestHeaders.Add("Origin", "https://www.espn.com");
+        client.DefaultRequestVersion = HttpVersion.Version11;
+        client.DefaultVersionPolicy  = HttpVersionPolicy.RequestVersionExact;
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("curl/8.9.1");
+        client.DefaultRequestHeaders.Accept.ParseAdd("*/*");
         return client;
     }
 
