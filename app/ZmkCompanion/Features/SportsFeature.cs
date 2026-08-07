@@ -457,6 +457,10 @@ public sealed class SportsFeature
     private static async Task<JsonObject?> GetJsonAsync(string url)
     {
         try { return await Http.GetFromJsonAsync<JsonObject>(url); }
-        catch { return null; }
+        catch (Exception ex)
+        {
+            DebugLog.Log($"sports: GetJsonAsync failed for {url}: {ex.GetType().Name} {ex.Message}");
+            return null;
+        }
     }
 }

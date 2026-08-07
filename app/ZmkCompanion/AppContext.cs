@@ -419,7 +419,10 @@ sealed class ZmkAppContext : ApplicationContext
                 }
                 first = false;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                DebugLog.Log($"sports[{lg.ShortName}] RefreshSportsAsync failed: {ex.GetType().Name} {ex.Message}");
+            }
         }
     }
 
