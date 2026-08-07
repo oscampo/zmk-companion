@@ -311,21 +311,9 @@ sealed class CellGridEditorForm : Form
         _chkCycle = new CheckBox { Text = Strings.CyclePagesCheck, Checked = settings.CycleDisplayPages, Location = new Point(252, 18), Size = new Size(110, 22) };
         grpPages.Controls.Add(_chkCycle);
 
-        grpPages.Controls.Add(new Label { Text = Strings.DurationLabel, Location = new Point(196, 48), Size = new Size(34, 18) });
-        _nudDuration = new NumericUpDown { Location = new Point(232, 45), Size = new Size(50, 22), Minimum = 2, Maximum = 3600, Value = 10 };
-        _nudDuration.ValueChanged += (_, _) =>
-        {
-            if (_suppressPageUi || _pageIndex < 0) return;
-            _pages[_pageIndex].DurationSeconds = (int)_nudDuration.Value;
-        };
-        grpPages.Controls.Add(_nudDuration);
-        grpPages.Controls.Add(new Label { Text = "s", Location = new Point(284, 48), Size = new Size(12, 18) });
-
-        // Placed after the "s" unit label, not literally between Name and Dur:
-        // that gap is only 14px (Name field ends at x=182, Dur label starts at
-        // x=196), not enough for a legible button. This is the free space left
-        // at the end of the same row (x=296..406).
-        var btnDupPage = new Button { Text = Strings.DuplicatePageButton, Location = new Point(306, 45), Size = new Size(92, 22) };
+        // Between Name and Dur, as requested. Name's field ends at x=182; this
+        // pushes Dur.'s label/field/unit right by ~92px to make room.
+        var btnDupPage = new Button { Text = Strings.DuplicatePageButton, Location = new Point(190, 45), Size = new Size(90, 22) };
         btnDupPage.Click += (_, _) =>
         {
             if (_pageIndex < 0) return;
@@ -335,6 +323,16 @@ sealed class CellGridEditorForm : Form
             LoadPage(_pageIndex + 1);
         };
         grpPages.Controls.Add(btnDupPage);
+
+        grpPages.Controls.Add(new Label { Text = Strings.DurationLabel, Location = new Point(288, 48), Size = new Size(34, 18) });
+        _nudDuration = new NumericUpDown { Location = new Point(324, 45), Size = new Size(50, 22), Minimum = 2, Maximum = 3600, Value = 10 };
+        _nudDuration.ValueChanged += (_, _) =>
+        {
+            if (_suppressPageUi || _pageIndex < 0) return;
+            _pages[_pageIndex].DurationSeconds = (int)_nudDuration.Value;
+        };
+        grpPages.Controls.Add(_nudDuration);
+        grpPages.Controls.Add(new Label { Text = "s", Location = new Point(376, 48), Size = new Size(12, 18) });
 
         Controls.Add(grpPages);
 
