@@ -32,7 +32,23 @@ public sealed class SportsFeature
     private const char   IconTrophy = ''; // nf-fa-trophy
     private const char   IconBolt   = ''; // nf-fa-bolt
 
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
+    // 2026-08-06: site.api.espn.com started returning 403 Forbidden on every
+    // request from this app (confirmed via GetJsonAsync's error logging, not
+    // a code bug in the season/week walk below, it never got that far). The
+    // default HttpClient sends no User-Agent at all; ESPN's undocumented site
+    // API rejecting UA-less requests as bot traffic is the most common cause
+    // of this exact failure mode elsewhere, worth trying before assuming
+    // anything more exotic (IP block, rate limit).
+    private static readonly HttpClient Http = CreateHttpClient();
+
+    private static HttpClient CreateHttpClient()
+    {
+        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        return client;
+    }
 
     public static readonly IReadOnlyList<SportsLeague> AllLeagues =
     [
