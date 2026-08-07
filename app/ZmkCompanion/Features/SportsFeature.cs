@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using ZmkCompanion.Core;
@@ -32,7 +33,32 @@ public sealed class SportsFeature
     private const char   IconTrophy = ''; // nf-fa-trophy
     private const char   IconBolt   = ''; // nf-fa-bolt
 
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
+    // 2026-08-06: site.api.espn.com started returning 403 Forbidden on every
+    // request from this app. Confirmed step by step against the live API
+    // (not from this dev environment, which can't reach espn.com at all):
+    // a fake-Chrome User-Agent alone didn't clear it, a full set of
+    // browser-shaped headers (Accept-Language, Sec-Fetch-*, Referer, Origin)
+    // didn't either, but `curl.exe` from the same machine with NO headers
+    // beyond its own default User-Agent got a clean 200. The one structural
+    // difference in curl's own trace: `ALPN: curl offers http/1.1` - it never
+    // even offers HTTP/2. HttpClient negotiates HTTP/2 by default whenever
+    // the server advertises it, and Akamai-style bot detection (ESPN's likely
+    // WAF) fingerprints HTTP/2 connections (SETTINGS/window-size/frame
+    // ordering) far more aggressively than HTTP/1.1, which is consistent with
+    // headers being irrelevant here, the block happens at the protocol
+    // negotiation, before any header is read. Pinning to HTTP/1.1 (matching
+    // curl) instead of continuing to disguise the request as a browser.
+    private static readonly HttpClient Http = CreateHttpClient();
+
+    private static HttpClient CreateHttpClient()
+    {
+        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        client.DefaultRequestVersion = HttpVersion.Version11;
+        client.DefaultVersionPolicy  = HttpVersionPolicy.RequestVersionExact;
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("curl/8.9.1");
+        client.DefaultRequestHeaders.Accept.ParseAdd("*/*");
+        return client;
+    }
 
     public static readonly IReadOnlyList<SportsLeague> AllLeagues =
     [
@@ -149,6 +175,10 @@ public sealed class SportsFeature
         // can't do that: an unscheduled period just comes back with zero events.
         var periods = ParseCalendarPeriods(data);
         int nowIndex = periods.FindIndex(p => DateTime.UtcNow >= p.Start && DateTime.UtcNow < p.End);
+        DebugLog.Log($"sports[{league.ShortName}] wantState={wantState} forward={forward} " +
+            $"season={data["season"]?["year"]?.GetValue<int>()} periods={periods.Count} nowIndex={nowIndex} " +
+            $"matches0={matches0.Count} pendingAfterInitial={pending.Count}" +
+            (periods.Count > 0 ? $" firstPeriod={periods[0].Start:yyyy-MM-dd}..{periods[0].End:yyyy-MM-dd} lastPeriod={periods[^1].Start:yyyy-MM-dd}..{periods[^1].End:yyyy-MM-dd}" : ""));
 
         if (nowIndex < 0) nowIndex = forward ? 0 : periods.Count - 1;
 
@@ -164,6 +194,7 @@ public sealed class SportsFeature
             if (page is null) continue;
 
             var matches = ParseGames(page, league).Where(g => g.StatusState == wantState).ToList();
+            DebugLog.Log($"sports[{league.ShortName}] step={step} idx={idx} range={range} matches={matches.Count}");
             if (matches.Count == 0) continue;
 
             foreach (var target in pending.ToList())
@@ -214,6 +245,8 @@ public sealed class SportsFeature
             }
         }
 
+        if (pending.Count > 0)
+            DebugLog.Log($"sports[{league.ShortName}] wantState={wantState} forward={forward} unresolved: {string.Join(",", pending)}");
         foreach (var t in pending) resolved[t] = null; // exhausted every fallback unresolved
         return resolved;
     }
@@ -450,6 +483,10 @@ public sealed class SportsFeature
     private static async Task<JsonObject?> GetJsonAsync(string url)
     {
         try { return await Http.GetFromJsonAsync<JsonObject>(url); }
-        catch { return null; }
+        catch (Exception ex)
+        {
+            DebugLog.Log($"sports: GetJsonAsync failed for {url}: {ex.GetType().Name} {ex.Message}");
+            return null;
+        }
     }
 }

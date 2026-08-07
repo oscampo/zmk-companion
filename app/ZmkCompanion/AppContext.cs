@@ -419,7 +419,10 @@ sealed class ZmkAppContext : ApplicationContext
                 }
                 first = false;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                DebugLog.Log($"sports[{lg.ShortName}] RefreshSportsAsync failed: {ex.GetType().Name} {ex.Message}");
+            }
         }
     }
 
@@ -629,6 +632,8 @@ sealed class ZmkAppContext : ApplicationContext
         bool usb      = (status & 0x01) != 0;
         int  profile  = (status >> 1) & 0x07;
         int  bondMask = bonds & 0x1F;
+        DebugLog.Log($"OnStatusChanged: usb={usb} profile={profile} bondMask={bondMask:X2} " +
+            $"layer={layer} wpm={wpm} layerName='{layerName}'");
         _liveState.UpdateConnection(usb, profile, bondMask);
         // 0xFF sentinel = firmware doesn't send byte 2/3 yet (not reflashed
         // with the layer/WPM additions to 0x1526); -1 = "unknown", same
