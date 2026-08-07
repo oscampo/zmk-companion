@@ -84,6 +84,9 @@ static class Strings
     public static string PagesGroupTitle   => Current == AppLanguage.Es ? "Páginas" : "Pages";
     public static string CyclePagesCheck   => Current == AppLanguage.Es ? "Ciclar páginas" : "Cycle pages";
     public static string DurationLabel     => Current == AppLanguage.Es ? "Dur.:" : "Dur.:";
+    public static string DuplicatePageButton => Current == AppLanguage.Es ? "Duplicar" : "Duplicate";
+    public static string CopyPageName(string original) =>
+        Current == AppLanguage.Es ? $"{original} (copia)" : $"{original} (copy)";
     public static string RowsGroupTitle    => Current == AppLanguage.Es ? "Filas" : "Rows";
     public static string AddRowButton      => Current == AppLanguage.Es ? "+ Agregar fila" : "+ Add row";
     public static string DeleteButton      => Current == AppLanguage.Es ? "Eliminar" : "Delete";

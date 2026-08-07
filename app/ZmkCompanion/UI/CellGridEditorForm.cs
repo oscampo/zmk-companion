@@ -320,6 +320,22 @@ sealed class CellGridEditorForm : Form
         };
         grpPages.Controls.Add(_nudDuration);
         grpPages.Controls.Add(new Label { Text = "s", Location = new Point(284, 48), Size = new Size(12, 18) });
+
+        // Placed after the "s" unit label, not literally between Name and Dur:
+        // that gap is only 14px (Name field ends at x=182, Dur label starts at
+        // x=196), not enough for a legible button. This is the free space left
+        // at the end of the same row (x=296..406).
+        var btnDupPage = new Button { Text = Strings.DuplicatePageButton, Location = new Point(306, 45), Size = new Size(92, 22) };
+        btnDupPage.Click += (_, _) =>
+        {
+            if (_pageIndex < 0) return;
+            var copy = _pages[_pageIndex].Clone();
+            copy.Name = Strings.CopyPageName(copy.Name);
+            _pages.Insert(_pageIndex + 1, copy);
+            LoadPage(_pageIndex + 1);
+        };
+        grpPages.Controls.Add(btnDupPage);
+
         Controls.Add(grpPages);
 
         // ── LEFT: Rows group ──────────────────────────────────────────────────
