@@ -275,6 +275,29 @@ sealed class CellGridEditorForm : Form
         };
         grpPages.Controls.Add(btnRemPage);
 
+        // Reorders _pages directly (not LoadPage), so the row list/selection for the
+        // page being moved stays put instead of resetting to row 0, same reasoning
+        // as the row ▲/▼ buttons below.
+        var btnPageUp = new Button { Text = "▲", Location = new Point(196, 18), Size = new Size(24, 23) };
+        btnPageUp.Click += (_, _) =>
+        {
+            if (_pageIndex <= 0) return;
+            (_pages[_pageIndex], _pages[_pageIndex - 1]) = (_pages[_pageIndex - 1], _pages[_pageIndex]);
+            _pageIndex--;
+            RefreshPageCombo();
+        };
+        grpPages.Controls.Add(btnPageUp);
+
+        var btnPageDown = new Button { Text = "▼", Location = new Point(222, 18), Size = new Size(24, 23) };
+        btnPageDown.Click += (_, _) =>
+        {
+            if (_pageIndex < 0 || _pageIndex >= _pages.Count - 1) return;
+            (_pages[_pageIndex], _pages[_pageIndex + 1]) = (_pages[_pageIndex + 1], _pages[_pageIndex]);
+            _pageIndex++;
+            RefreshPageCombo();
+        };
+        grpPages.Controls.Add(btnPageDown);
+
         grpPages.Controls.Add(new Label { Text = Strings.NameLabel, Location = new Point(6, 48), Size = new Size(52, 18) });
         _txtPageName = new TextBox { Location = new Point(62, 45), Size = new Size(120, 22) };
         _txtPageName.TextChanged += (_, _) =>
@@ -285,7 +308,7 @@ sealed class CellGridEditorForm : Form
         };
         grpPages.Controls.Add(_txtPageName);
 
-        _chkCycle = new CheckBox { Text = Strings.CyclePagesCheck, Checked = settings.CycleDisplayPages, Location = new Point(196, 18), Size = new Size(110, 22) };
+        _chkCycle = new CheckBox { Text = Strings.CyclePagesCheck, Checked = settings.CycleDisplayPages, Location = new Point(252, 18), Size = new Size(110, 22) };
         grpPages.Controls.Add(_chkCycle);
 
         grpPages.Controls.Add(new Label { Text = Strings.DurationLabel, Location = new Point(196, 48), Size = new Size(34, 18) });
