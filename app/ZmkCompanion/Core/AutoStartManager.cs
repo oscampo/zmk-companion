@@ -45,6 +45,12 @@ static class AutoStartManager
                 Arguments       = $"/c timeout /t {LaunchDelaySeconds} /nobreak >nul & {command}",
                 UseShellExecute = true,
                 WindowStyle     = System.Diagnostics.ProcessWindowStyle.Minimized,
+                // Without this, cmd.exe inherits ZmkCompanion's own working
+                // directory (C:\Windows\System32 when started via auto-start/
+                // registry Run), breaking any entry that references its
+                // script by a path relative to %LOCALAPPDATA%\ZmkCompanion\
+                // scripts\, the documented convention for this feature.
+                WorkingDirectory = AppContext.BaseDirectory,
             });
             if (p != null) _running.Add(p);
         }
