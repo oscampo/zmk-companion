@@ -1411,6 +1411,11 @@ sealed class CellGridEditorForm : Form
             {
                 FileName  = "cmd.exe",
                 Arguments = $"/K {cmdArgs}",
+                // Without this, the new cmd window inherits ZmkCompanion's own
+                // working directory, which lands in C:\Windows\System32 when
+                // the app is started via auto-start/registry Run rather than
+                // a shortcut with an explicit "Start in" folder.
+                WorkingDirectory = AppContext.BaseDirectory,
                 UseShellExecute = true,
             });
         }
