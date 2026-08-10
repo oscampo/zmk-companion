@@ -92,7 +92,10 @@ Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 Name: "{commondesktop}\{#AppName}";   Filename: "{app}\{#AppExe}"; Tasks: desktopicon
 
 [Registry]
-; HKCU Run key for auto-start — removed cleanly on uninstall
+; HKCU Run key for auto-start — removed cleanly on uninstall. Safe with
+; uninsdeletevalue because ValueName is specific to this app, not a shared
+; system value (unlike the old Path entry this used to sit next to, see
+; AddToPath/RemoveFromPath in [Code] for why that one had to move).
 Root: HKCU; \
   Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
   ValueType: string; \
@@ -100,14 +103,6 @@ Root: HKCU; \
   ValueData: """{app}\{#AppExe}"""; \
   Flags: uninsdeletevalue; \
   Tasks: startup
-
-; Add install dir to user PATH so "zkc" works from any terminal
-Root: HKCU; \
-  Subkey: "Environment"; \
-  ValueType: expandsz; \
-  ValueName: "Path"; \
-  ValueData: "{olddata};{app}"; \
-  Flags: uninsdeletevalue
 
 [Run]
 ; Launch after install (user can uncheck the checkbox)
@@ -188,7 +183,59 @@ begin
   end;
 end;
 
-// Kill any running instance before files are replaced (upgrade scenario).
+// Idempotent user-PATH handling. Previously done via a [Registry] entry
+// (ValueData: "{olddata};{app}", Flags: uninsdeletevalue) with two bugs:
+// (1) no check for whether {app} was already present, so every reinstall or
+// silent auto-update run appended it again, no cap, no dedup, confirmed in
+// the field as 18 duplicate entries after normal use; (2) uninsdeletevalue
+// on ValueName "Path" tells Inno to RegDeleteValue the *entire* Path value
+// on uninstall, not just the fragment this installer added, so a normal
+// uninstall would wipe the user's whole PATH, not just {app}'s entry.
+const
+  EnvironmentKey = 'Environment';
+
+function NeedsAddPath(Param: string): Boolean;
+var
+  OrigPath: string;
+begin
+  if not RegQueryStringValue(HKEY_CURRENT_USER, EnvironmentKey, 'Path', OrigPath) then
+  begin
+    Result := True;
+    exit;
+  end;
+  Result := Pos(';' + Param + ';', ';' + OrigPath + ';') = 0;
+end;
+
+procedure AddToPath(Param: string);
+var
+  OrigPath: string;
+begin
+  if not RegQueryStringValue(HKEY_CURRENT_USER, EnvironmentKey, 'Path', OrigPath) then
+    OrigPath := '';
+  if OrigPath = '' then
+    RegWriteExpandStringValue(HKEY_CURRENT_USER, EnvironmentKey, 'Path', Param)
+  else
+    RegWriteExpandStringValue(HKEY_CURRENT_USER, EnvironmentKey, 'Path', OrigPath + ';' + Param);
+end;
+
+procedure RemoveFromPath(Param: string);
+var
+  OrigPath, NewPath: string;
+  P: Integer;
+begin
+  if not RegQueryStringValue(HKEY_CURRENT_USER, EnvironmentKey, 'Path', OrigPath) then
+    exit;
+  NewPath := ';' + OrigPath + ';';
+  P := Pos(';' + Param + ';', NewPath);
+  if P = 0 then exit;
+  Delete(NewPath, P, Length(Param) + 1);
+  if (Length(NewPath) > 0) and (NewPath[1] = ';') then Delete(NewPath, 1, 1);
+  if (Length(NewPath) > 0) and (NewPath[Length(NewPath)] = ';') then Delete(NewPath, Length(NewPath), 1);
+  RegWriteExpandStringValue(HKEY_CURRENT_USER, EnvironmentKey, 'Path', NewPath);
+end;
+
+// Kill any running instance before files are replaced (upgrade scenario),
+// then (post-install) add {app} to user PATH only if it isn't there yet.
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
@@ -197,13 +244,19 @@ begin
     Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im {#AppExe}',
          '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     // zkc.exe (CLI) is a short-lived process; no need to kill it separately.
+  if CurStep = ssPostInstall then
+    if NeedsAddPath(ExpandConstant('{app}')) then
+      AddToPath(ExpandConstant('{app}'));
 end;
 
-// Remove leftover settings directory on uninstall only if the user confirms.
+// Remove only this app's PATH fragment (not the whole Path value), then
+// offer to remove leftover settings, same confirm prompt as before.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   SettingsDir: String;
 begin
+  if CurUninstallStep = usUninstall then
+    RemoveFromPath(ExpandConstant('{app}'));
   if CurUninstallStep = usPostUninstall then
   begin
     SettingsDir := ExpandConstant('{%APPDATA}\ZmkCompanion');
