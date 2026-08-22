@@ -176,8 +176,9 @@ public sealed class SportsFeature
         var periods = ParseCalendarPeriods(data);
         int nowIndex = periods.FindIndex(p => DateTime.UtcNow >= p.Start && DateTime.UtcNow < p.End);
         DebugLog.Log($"sports[{league.ShortName}] wantState={wantState} forward={forward} " +
+            $"targets=[{string.Join(",", targets)}] " +
             $"season={data["season"]?["year"]?.GetValue<int>()} periods={periods.Count} nowIndex={nowIndex} " +
-            $"matches0={matches0.Count} pendingAfterInitial={pending.Count}" +
+            $"matches0={matches0.Count} pendingAfterInitial=[{string.Join(",", pending)}]" +
             (periods.Count > 0 ? $" firstPeriod={periods[0].Start:yyyy-MM-dd}..{periods[0].End:yyyy-MM-dd} lastPeriod={periods[^1].Start:yyyy-MM-dd}..{periods[^1].End:yyyy-MM-dd}" : ""));
 
         if (nowIndex < 0) nowIndex = forward ? 0 : periods.Count - 1;
