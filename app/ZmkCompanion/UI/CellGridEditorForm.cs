@@ -1671,13 +1671,20 @@ sealed class CellGridEditorForm : Form
 
     private void WarnAboutUnregisteredSportsTeams()
     {
+        // ShortName is ESPN's own per-league "abbreviation" field (LeagueCatalog.cs), not
+        // something this app controls or dedupes, two selected leagues (often from different
+        // sports/countries) can share one. Group instead of ToDictionary so that no longer
+        // crashes Apply, and union the team sets on collision rather than keeping only one
+        // league's teams, so a token still resolves correctly against whichever of the
+        // colliding leagues actually has that team tracked.
         var teamsByLeagueShort = _editLeagues
             .Select(path => SportsFeature.FindOrCreate(path))
+            .GroupBy(lg => lg.ShortName, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
-                lg => lg.ShortName,
-                lg => (_teamBoxes.TryGetValue(lg.EspnPath, out var tb) ? tb.Text : "")
-                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                    .Select(t => t.ToUpper())
+                g => g.Key,
+                g => g.SelectMany(lg => (_teamBoxes.TryGetValue(lg.EspnPath, out var tb) ? tb.Text : "")
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .Select(t => t.ToUpper()))
                     .ToHashSet(),
                 StringComparer.OrdinalIgnoreCase);
 
