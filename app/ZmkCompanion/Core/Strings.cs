@@ -173,6 +173,10 @@ static class Strings
         ? $"La página '{pageName}' excede la altura del display ({total}px > {max}px).\nElimina o reduce filas antes de aplicar."
         : $"Page '{pageName}' exceeds the display height ({total}px > {max}px).\nRemove or shrink rows before applying.";
 
+    public static string UnregisteredSportsTeams(string pairs) => Current == AppLanguage.Es
+        ? $"Estas filas usan un equipo que no está en la lista de equipos a seguir de su liga (pestaña Sports), van a quedar en blanco:\n{pairs}\n\nAgrega el equipo en la pestaña Sports, o quita el token de la fila."
+        : $"These rows use a team that isn't in its league's tracked-teams list (Sports tab), they'll render blank:\n{pairs}\n\nAdd the team in the Sports tab, or remove the token from the row.";
+
     public static string[] SportNames => Current == AppLanguage.Es
         ? ["Fútbol Americano", "Fútbol", "Baloncesto", "Hockey"]
         : ["Football", "Soccer", "Basketball", "Hockey"];
