@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Drawing.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using ZmkCompanion.Core;
 using ZmkCompanion.Features;
@@ -1643,6 +1644,8 @@ sealed class CellGridEditorForm : Form
             }
         }
 
+        WarnAboutUnregisteredSportsTeams();
+
         _settings.WeatherCities     = _editWeatherCities;
         _settings.WeatherUnit       = _radTempF.Checked ? "fahrenheit" : "celsius";
         _settings.SelectedLeagues   = _editLeagues.Count > 0 ? _editLeagues : ["football/nfl"];
@@ -1655,6 +1658,44 @@ sealed class CellGridEditorForm : Form
         _settings.AutoStartEntries = _autoStartEntries.Select(a => a.Clone()).ToList();
 
         _onApply(_pages.Select(p => p.Clone()).ToList(), _chkCycle.Checked);
+    }
+
+    // A {sports.*:LEAGUE.TEAM} token whose TEAM isn't in that league's tracked-teams
+    // box (Sports tab) resolves to nothing, silently, see SportsFeature.targets: the
+    // team is simply never asked for. Warns (doesn't block Apply, a page with a stray
+    // token still renders, just blank for that row) so a typo or an accidentally
+    // cleared team box shows up here instead of as an unexplained blank row on the
+    // keyboard days or weeks later.
+    private static readonly Regex SportsTeamTokenRegex =
+        new(@"\{sports\.[a-z_]+:([A-Za-z0-9]+)\.([A-Za-z0-9]+)\}", RegexOptions.Compiled);
+
+    private void WarnAboutUnregisteredSportsTeams()
+    {
+        var teamsByLeagueShort = _editLeagues
+            .Select(path => SportsFeature.FindOrCreate(path))
+            .ToDictionary(
+                lg => lg.ShortName,
+                lg => (_teamBoxes.TryGetValue(lg.EspnPath, out var tb) ? tb.Text : "")
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(t => t.ToUpper())
+                    .ToHashSet(),
+                StringComparer.OrdinalIgnoreCase);
+
+        var missing = new List<string>();
+        foreach (var page in _pages)
+            foreach (var row in page.Rows)
+                foreach (Match m in SportsTeamTokenRegex.Matches(row.Template))
+                {
+                    string league = m.Groups[1].Value;
+                    string team   = m.Groups[2].Value.ToUpper();
+                    bool known = teamsByLeagueShort.TryGetValue(league, out var teams) && teams.Contains(team);
+                    string pair = $"{page.Name}: {league}.{team}";
+                    if (!known && !missing.Contains(pair)) missing.Add(pair);
+                }
+
+        if (missing.Count > 0)
+            MessageBox.Show(Strings.UnregisteredSportsTeams(string.Join("\n", missing)),
+                "ZMK Companion", MessageBoxButtons.OK, MessageBoxIcon.Warning);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
