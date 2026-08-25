@@ -135,8 +135,19 @@ static lv_obj_t *attached_screen;
  * closed, but would also mean a normal companion restart or brief BLE drop
  * flashes the default screen for no reason. The tradeoff of this choice:
  * connecting to a PC with no companion keeps showing whatever the canvas
- * last had (stale content, or the plain white boot fill) for up to 10
- * minutes before falling back, not instantly.
+ * last had (stale content, or the plain white boot fill) for up to
+ * DISPLAY_IDLE_TIMEOUT_MS before falling back, not instantly.
+ *
+ * 45s, not something closer to instant: the companion app's own
+ * AppContext.cs runs a 15s heartbeat that forces a redraw (a real 0x1525/
+ * 0x1527 write) whenever connected, even if nothing on screen changed, so
+ * 15s is the shortest gap this firmware can ever see during completely
+ * normal operation. 45s (3x that) leaves margin for a single delayed or
+ * dropped heartbeat plus BLE-level latency (this file's own connection-
+ * param fix above documents up to ~465ms of added delay from a
+ * latency=30 link) without mistaking it for "no companion". Anything
+ * close to 15s would flap to the default screen and back on ordinary,
+ * healthy connections, not just on an actual disconnect.
  *
  * last_activity_ms is written from the BT RX context (mark_activity(), in
  * the two GATT write handlers below) and read once a second from
@@ -145,7 +156,7 @@ static lv_obj_t *attached_screen;
  * interval, self-corrects next tick, and never touches canvas_buf/frame
  * state, so it carries none of the real corruption risk irq_lock guards
  * elsewhere in this file (e.g. the write_idx/read_idx swap). */
-#define DISPLAY_IDLE_TIMEOUT_MS (600 * 1000)
+#define DISPLAY_IDLE_TIMEOUT_MS (45 * 1000)
 static int64_t last_activity_ms;
 
 static void mark_activity(void)
