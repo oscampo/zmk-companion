@@ -118,6 +118,52 @@ static uint32_t frames_drawn;
 static lv_obj_t *ble_canvas;
 static lv_obj_t *attached_screen;
 
+/* ── Fallback to nice_view's default status screen when idle ────────────────
+ *
+ * The canvas is a dumb bitmap sink: it has no notion of "is zmk-companion
+ * actually driving me" versus "is some other BLE host just connected for
+ * HID" - on_connected()/on_disconnected() (below) fire identically either
+ * way, since the same link carries HID traffic and this GATT service.
+ * The only signal that's actually specific to the companion app is real
+ * writes to 0x1525/0x1527, so track that directly: if none has landed in
+ * DISPLAY_IDLE_TIMEOUT_MS, assume there's no companion on the other end and
+ * hide the canvas so nice_view's own status widgets (already built and
+ * running underneath, just permanently covered until now) show through.
+ *
+ * Deliberately timeout-based, not disconnect-based: a disconnect-triggered
+ * fallback would flip to the default screen the instant zmk-companion is
+ * closed, but would also mean a normal companion restart or brief BLE drop
+ * flashes the default screen for no reason. The tradeoff of this choice:
+ * connecting to a PC with no companion keeps showing whatever the canvas
+ * last had (stale content, or the plain white boot fill) for up to
+ * DISPLAY_IDLE_TIMEOUT_MS before falling back, not instantly.
+ *
+ * 45s, not something closer to instant: the companion app's own
+ * AppContext.cs runs a 15s heartbeat that forces a redraw (a real 0x1525/
+ * 0x1527 write) whenever connected, even if nothing on screen changed, so
+ * 15s is the shortest gap this firmware can ever see during completely
+ * normal operation. 45s (3x that) leaves margin for a single delayed or
+ * dropped heartbeat plus BLE-level latency (this file's own connection-
+ * param fix above documents up to ~465ms of added delay from a
+ * latency=30 link) without mistaking it for "no companion". Anything
+ * close to 15s would flap to the default screen and back on ordinary,
+ * healthy connections, not just on an actual disconnect.
+ *
+ * last_activity_ms is written from the BT RX context (mark_activity(), in
+ * the two GATT write handlers below) and read once a second from
+ * ensure_timer_cb() on the display/workqueue thread. Not lock-protected:
+ * a torn 64-bit read only skews the idle check by less than the 1s poll
+ * interval, self-corrects next tick, and never touches canvas_buf/frame
+ * state, so it carries none of the real corruption risk irq_lock guards
+ * elsewhere in this file (e.g. the write_idx/read_idx swap). */
+#define DISPLAY_IDLE_TIMEOUT_MS (45 * 1000)
+static int64_t last_activity_ms;
+
+static void mark_activity(void)
+{
+    last_activity_ms = k_uptime_get();
+}
+
 static void create_canvas(lv_obj_t *screen)
 {
     ble_canvas = lv_canvas_create(screen);
@@ -477,6 +523,7 @@ static ssize_t on_cell_grid_write(struct bt_conn *conn,
                                   uint16_t offset, uint8_t flags)
 {
     ARG_UNUSED(conn); ARG_UNUSED(attr); ARG_UNUSED(offset); ARG_UNUSED(flags);
+    mark_activity();
 
     if (len < 1) {
         return BT_GATT_ERR(BT_ATT_ERR_INVALID_ATTRIBUTE_LEN);
@@ -510,6 +557,7 @@ static ssize_t on_bitmap_write(struct bt_conn *conn,
                                uint16_t offset, uint8_t flags)
 {
     ARG_UNUSED(conn); ARG_UNUSED(attr); ARG_UNUSED(offset); ARG_UNUSED(flags);
+    mark_activity();
 
     if (len < 4) {
         return BT_GATT_ERR(BT_ATT_ERR_INVALID_ATTRIBUTE_LEN);
@@ -792,7 +840,21 @@ static void ensure_timer_cb(lv_timer_t *timer)
 {
     lv_obj_t *screen = lv_scr_act();
     if (!screen) return;
+
+    if ((k_uptime_get() - last_activity_ms) >= DISPLAY_IDLE_TIMEOUT_MS) {
+        /* No companion write in DISPLAY_IDLE_TIMEOUT_MS: hide the canvas so
+         * nice_view's own status screen (already running underneath) shows
+         * through, and skip the recreate/foreground dance below entirely -
+         * there's nothing to attach or reorder while we want it hidden. */
+        if (ble_canvas && !lv_obj_has_flag(ble_canvas, LV_OBJ_FLAG_HIDDEN)) {
+            lv_obj_add_flag(ble_canvas, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_invalidate(screen);
+        }
+        return;
+    }
+
     if (ble_canvas && attached_screen == screen) {
+        lv_obj_clear_flag(ble_canvas, LV_OBJ_FLAG_HIDDEN);
         lv_obj_move_foreground(ble_canvas);
         return;
     }
@@ -819,6 +881,12 @@ static void add_canvas_fn(struct k_work *work)
 
 static int kbd_ble_display_init(void)
 {
+    /* Starts the idle countdown from boot, not from the first canvas
+     * creation 3s later, so a keyboard that never sees a companion write
+     * still falls back to the default screen at DISPLAY_IDLE_TIMEOUT_MS
+     * after power-on, not after power-on plus however long until the
+     * canvas happens to be created. */
+    last_activity_ms = k_uptime_get();
     k_work_schedule(&add_canvas_work, K_MSEC(3000));
     return 0;
 }
